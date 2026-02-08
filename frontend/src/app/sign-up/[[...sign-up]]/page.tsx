@@ -2,7 +2,7 @@ import { SignUp } from "@clerk/nextjs";
 
 export default function SignUpPage() {
   return (
-    <div className="min-h-screen mesh-bg flex flex-col items-center justify-start pt-32 p-4">
+    <div className="min-h-screen mesh-bg flex flex-col items-center justify-center pt-6 p-4">
       <div className="grain-overlay" />
 
       {/* Animated orbs */}
