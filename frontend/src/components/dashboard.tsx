@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Play, Square, Gauge, Zap, Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
@@ -93,6 +93,22 @@ export function Dashboard() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clerkUserId]);
+
+  // Sync state from backend when WebSocket connects/reconnects
+  const prevConnectedRef = useRef(false);
+  useEffect(() => {
+    if (ws.connected && !prevConnectedRef.current) {
+      // WS just connected — check backend state
+      api.getStatus().then((status) => {
+        if (status.running && status.phase && status.phase !== "idle" && status.phase !== "done") {
+          // Backend is running but frontend might be out of sync
+          // WS events will take over from here
+        }
+      }).catch(() => { /* ignore — backend may be offline */ });
+    }
+    prevConnectedRef.current = ws.connected;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ws.connected]);
 
   // Save config to backend
   const saveConfig = useCallback(async () => {
@@ -297,7 +313,18 @@ export function Dashboard() {
     notify.playSound("start");
     try {
       await saveConfig();
-      await api.startRegistration();
+      try {
+        await api.startRegistration();
+      } catch (err) {
+        // 409 = stuck engine — auto-reset and retry once
+        if (err instanceof Error && err.message.includes("zaten çalışıyor")) {
+          toast.info("Önceki oturum temizleniyor...");
+          await api.resetRegistration();
+          await api.startRegistration();
+        } else {
+          throw err;
+        }
+      }
       toast.success(
         dryRun ? "🧪 DRY RUN başlatıldı!" : "Kayıt süreci başlatıldı!",
       );

@@ -138,6 +138,9 @@ export const api = {
   cancelRegistration: () =>
     fetchAPI<{ status: string }>("/api/register/cancel", { method: "POST" }),
 
+  resetRegistration: () =>
+    fetchAPI<{ status: string }>("/api/register/reset", { method: "POST" }),
+
   getStatus: () => fetchAPI<RegistrationState>("/api/register/status"),
 
   // OBS Course Lookup

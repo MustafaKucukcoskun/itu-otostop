@@ -193,8 +193,16 @@ async def start_registration():
         raise HTTPException(400, "CRN listesi boş")
     if not state.kayit_saati:
         raise HTTPException(400, "Kayıt saati ayarlanmamış")
+
+    # Engine gerçekten çalışıyor mu kontrol et (thread alive + flag)
     if state.engine and state.engine.is_running:
-        raise HTTPException(409, "Kayıt zaten çalışıyor")
+        # Thread ölmüşse flag sıkışmıştır — zorla temizle
+        if state.engine_thread and not state.engine_thread.is_alive():
+            state.engine._running = False
+            state.engine = None
+            state.engine_thread = None
+        else:
+            raise HTTPException(409, "Kayıt zaten çalışıyor")
 
     state.engine = RegistrationEngine(
         token=state.token,
@@ -224,6 +232,23 @@ async def cancel_registration():
         raise HTTPException(404, "Çalışan kayıt yok")
     state.engine.cancel()
     return {"status": "cancelled"}
+
+
+@app.post("/api/register/reset")
+async def reset_registration():
+    """Engine state'i zorla sıfırla — sıkışmış durumlarda kullanılır."""
+    if state.engine:
+        if state.engine.is_running and state.engine_thread and state.engine_thread.is_alive():
+            state.engine.cancel()
+            # Thread'in bitmesi için kısa süre bekle
+            state.engine_thread.join(timeout=3)
+        state.engine._running = False
+        state.engine = None
+    state.engine_thread = None
+    if state.poll_task and not state.poll_task.done():
+        state.poll_task.cancel()
+    state.poll_task = None
+    return {"status": "reset", "message": "Engine state sıfırlandı"}
 
 
 @app.get("/api/register/status", response_model=RegistrationState)
