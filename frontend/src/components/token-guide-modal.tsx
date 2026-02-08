@@ -25,26 +25,26 @@ const STEPS = [
     color: "text-blue-400 bg-blue-500/10",
   },
   {
-    title: "DevTools'u Aç (F12)",
-    desc: 'Tarayıcıda F12 tuşuna bas veya sağ tık → "İncele" (Inspect) menüsünü aç.',
+    title: "Geliştirici Araçlarını Aç",
+    desc: "F12 tuşuna bas veya sayfada sağ tıklayıp \"İncele\" seçeneğini seç.",
     detail:
-      'Açılan panelde üstteki sekmelerden "Network" (Ağ) sekmesine geç. Eğer boşsa sayfayı yenile (F5).',
+      "Geliştirici Araçları paneli açıldıktan sonra üst kısımdaki sekmelerden \"Ağ\" (Network) sekmesine geç. Liste boşsa sayfayı F5 ile yenile.",
     icon: MonitorSmartphone,
     color: "text-purple-400 bg-purple-500/10",
   },
   {
     title: "Bir API İsteği Bul",
-    desc: "Network sekmesindeki listeden herhangi bir isteğe tıkla.",
+    desc: "Ağ sekmesindeki istek listesinden herhangi bir satıra tıkla.",
     detail:
-      'Filtre kutusuna "api" veya "ders" yaz — obs.itu.edu.tr/api/ ile başlayan istekleri göreceksin. Herhangi birine tıkla.',
+      "Filtre kutusuna \"api\" yazarak obs.itu.edu.tr/api/ ile başlayan istekleri süzebilirsin. Herhangi birine tıklaman yeterli.",
     icon: Search,
     color: "text-amber-400 bg-amber-500/10",
   },
   {
     title: "Token'ı Kopyala",
-    desc: 'Açılan panelde "Headers" sekmesinde Authorization satırını bul.',
+    desc: "Açılan panelde \"Başlıklar\" (Headers) sekmesindeki Authorization satırını bul.",
     detail:
-      '"Authorization: Bearer eyJ..." şeklinde uzun bir metin göreceksin. "Bearer " kısmı dahil tamamını kopyala. (Sağ tık → Kopyala veya Ctrl+C)',
+      "\"Authorization: Bearer eyJ...\" şeklinde uzun bir değer göreceksin. \"Bearer \" dahil tamamını seç ve kopyala (Ctrl+C).",
     icon: Copy,
     color: "text-emerald-400 bg-emerald-500/10",
   },
@@ -52,7 +52,7 @@ const STEPS = [
     title: "Buraya Yapıştır",
     desc: "Kopyaladığın token'ı soldaki Token alanına yapıştır.",
     detail:
-      '"Bearer " prefix\'i otomatik kaldırılır, ikisi de çalışır. Ardından "Token Test Et" butonuyla doğrulayabilirsin.',
+      "\"Bearer \" ön eki otomatik olarak kaldırılır, her iki şekilde de çalışır. Yapıştırdıktan sonra \"Token Test Et\" ile doğrulayabilirsin.",
     icon: ClipboardPaste,
     color: "text-cyan-400 bg-cyan-500/10",
   },
