@@ -133,6 +133,10 @@ Bu formül, isteğin sunucuya tam hedef saatte (ör: 14:00:00.000) ulaşmasını
 | Tema           | next-themes (karanlık/aydınlık)                     |
 | Bildirimler    | Sonner (toast)                                      |
 
+## ❓ Sık Sorulan Sorular
+
+- **GitHub Copilot Kota Kullanımı**: GitHub Copilot kullanırken hangi kota kullanıldığını merak ediyor musunuz? [Copilot Kota SSS](.github/COPILOT-QUOTA-FAQ.md) dökümanına göz atın.
+
 ## 📄 Lisans
 
 Bu proje [Apache License 2.0](LICENSE) altında lisanslanmıştır. Türev çalışmalarda değişikliklerin belirtilmesi zorunludur.

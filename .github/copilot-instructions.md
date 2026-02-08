@@ -1,5 +1,7 @@
 # Copilot instructions
 
+> **Not**: Bu dosya GitHub Copilot'a proje hakkında bağlamsal bilgi sağlar. GitHub Copilot kullanımı **GitHub Copilot aboneliğinizdeki kotayı** kullanır, Claude Pro hesabınızdaki kotayı değil. Detaylı bilgi için [COPILOT-QUOTA-FAQ.md](COPILOT-QUOTA-FAQ.md) dökümanına bakınız.
+
 ## Project overview
 
 - Single-file Python tool that automates ITU OBS course registration via `https://obs.itu.edu.tr/api/ders-kayit/v21`.
