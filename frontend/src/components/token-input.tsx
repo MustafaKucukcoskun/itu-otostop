@@ -45,8 +45,11 @@ function decodeJwt(token: string): JwtInfo | null {
 
 function formatRelativeTime(ms: number): string {
   const totalSec = Math.abs(Math.floor(ms / 1000));
-  const h = Math.floor(totalSec / 3600);
+  const days = Math.floor(totalSec / 86400);
+  const h = Math.floor((totalSec % 86400) / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
+  if (days > 365) return `${Math.floor(days / 365)} yıl+`;
+  if (days > 0) return `${days} gün ${h} saat`;
   if (h > 0) return `${h} saat ${m} dk`;
   if (m > 0) return `${m} dk`;
   return `${totalSec} sn`;
@@ -76,7 +79,7 @@ export function TokenInput({
 
   const jwtInfo = useMemo(() => (token ? decodeJwt(token) : null), [token]);
 
-  const expiryStatus = useMemo(() => {
+  const rawExpiryStatus = useMemo(() => {
     if (!jwtInfo?.exp) return null;
     const diff = jwtInfo.exp.getTime() - now;
     if (diff <= 0)
@@ -103,6 +106,18 @@ export function TokenInput({
       ms: diff,
     };
   }, [jwtInfo, now]);
+
+  // Server validation overrides client-side JWT decode
+  const expiryStatus = useMemo(() => {
+    if (tokenValid === false) {
+      return {
+        level: "expired" as const,
+        text: "Token geçersiz veya süresi dolmuş",
+        ms: 0,
+      };
+    }
+    return rawExpiryStatus;
+  }, [rawExpiryStatus, tokenValid]);
 
   const handleTest = async () => {
     if (!token) {

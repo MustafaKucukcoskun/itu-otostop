@@ -182,6 +182,10 @@ export function CountdownTimer({
         {/* Bottom info bar — context depends on state */}
         <div className="mt-5 flex items-center justify-center gap-6 text-xs font-mono text-muted-foreground/50">
           {isIdle && !hasTarget ? (
+            <span className="text-muted-foreground/30 text-[10px]">
+              Aşağıdan kayıt saatini belirle
+            </span>
+          ) : isIdle && hasTarget ? (
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse" />
               <span className="text-muted-foreground/40 text-[10px]">
@@ -189,24 +193,6 @@ export function CountdownTimer({
               </span>
               <span className="text-foreground/60">{currentTime}</span>
             </span>
-          ) : isIdle && hasTarget ? (
-            <>
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse" />
-                <span className="text-muted-foreground/40 text-[10px]">
-                  Şu an
-                </span>
-                <span className="text-foreground/60">{currentTime}</span>
-              </span>
-              <span className="w-px h-3.5 bg-border/20" />
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500/50" />
-                <span className="text-muted-foreground/40 text-[10px]">
-                  Hedef
-                </span>
-                <span className="text-foreground/60">{targetTime}</span>
-              </span>
-            </>
           ) : (
             <>
               <span className="flex items-center gap-1.5">
