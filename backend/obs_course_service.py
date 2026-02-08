@@ -141,6 +141,7 @@ class OBSCourseService:
                 timeout=15,
             )
             resp.raise_for_status()
+            resp.encoding = "utf-8"
             courses = self._parse_courses_html(resp.text)
         except Exception as e:
             logger.error(f"Course fetch failed for dept {brans_kodu_id}: {e}")
