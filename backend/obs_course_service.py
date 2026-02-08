@@ -280,7 +280,9 @@ class OBSCourseService:
             if len(cols) < 10:
                 continue
 
-            texts = [c.get_text(strip=True) for c in cols]
+            # Use separator=" " so <br> tags become spaces instead of being merged
+            # e.g. "Salı<br>Çarşamba" → "Salı Çarşamba" (not "SalıÇarşamba")
+            texts = [c.get_text(separator=" ", strip=True) for c in cols]
 
             # CRN sütununu bul (5 haneli sayı)
             crn_idx = None
