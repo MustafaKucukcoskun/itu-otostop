@@ -20,7 +20,7 @@ const STEPS = [
     title: "OBS'ye Giriş Yap",
     desc: "Tarayıcından obs.itu.edu.tr adresine gidip İTÜ hesabınla giriş yap.",
     detail:
-      "Ders kayıt veya dersprogram sayfasına git — hangi sayfa olduğu farketmez, önemli olan giriş yapmış olman.",
+      "Hangi sayfada olduğunuzun önemi yok, OBS'e giriş yapmış olmanız yeterli.",
     icon: ExternalLink,
     color: "text-blue-400 bg-blue-500/10",
   },
