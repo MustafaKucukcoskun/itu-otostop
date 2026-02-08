@@ -12,6 +12,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useUser } from "@clerk/nextjs";
 import { usePresets, type Preset } from "@/hooks/use-presets";
 
 interface PresetManagerProps {
@@ -36,6 +37,8 @@ export function PresetManager({
 }: PresetManagerProps) {
   const { presets, addPreset, deletePreset, exportPresets, importPresets } =
     usePresets();
+  const { user } = useUser();
+  const isLoggedIn = !!user;
   const [saving, setSaving] = useState(false);
   const [newName, setNewName] = useState("");
   const [confirmLoad, setConfirmLoad] = useState<Preset | null>(null);
@@ -258,7 +261,9 @@ export function PresetManager({
 
         {/* Data persistence notice */}
         <p className="text-[9px] text-muted-foreground/30 text-center pt-1">
-          Şablonlar bu tarayıcıda saklanır. Tarayıcı verisi silinirse kaybolur.
+          {isLoggedIn
+            ? "Şablonlar hesabına bağlı olarak bulutta saklanır."
+            : "Şablonlar bu tarayıcıda saklanır. Giriş yapılarak bulut senkronizasyonu aktif edilebilir."}
         </p>
       </div>
 

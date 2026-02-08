@@ -538,9 +538,17 @@ class RegistrationEngine:
 
     @staticmethod
     def _saat_to_epoch(saat_str: str) -> float:
+        """HH:MM:SS → bugünün epoch float (Türkiye saati, sunucu timezone'undan bağımsız)."""
+        from datetime import datetime
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            from backports.zoneinfo import ZoneInfo  # Python <3.9 fallback
         h, m, s = map(int, saat_str.split(":"))
-        t = time.localtime()
-        return float(time.mktime((t.tm_year, t.tm_mon, t.tm_mday, h, m, s, 0, 0, t.tm_isdst)))
+        tz = ZoneInfo("Europe/Istanbul")
+        now = datetime.now(tz)
+        target = now.replace(hour=h, minute=m, second=s, microsecond=0)
+        return target.timestamp()
 
     # ── Ana orkestratör (thread içinde çalışır) ──
 
@@ -623,21 +631,21 @@ class RegistrationEngine:
                         fark = (tetik - eski_tetik) * 1000
                         if abs(fark) > 1:
                             self._log(f"🔄 Tetik güncellendi: {fark:+.0f}ms kayma")
+                        kalan = tetik - time.time()  # kalanı güncelle
                     last_recal_time = now
 
-                # ── Son kalibrasyon (~15-20sn kala, tam kalibrasyon) ──
+                # ── Son kalibrasyon (~15-20sn kala, hızlı ölçüm) ──
                 if not final_cal_done and 12 < kalan <= FINAL_CAL_THRESHOLD:
-                    self._log("🎯 Son kalibrasyon başlıyor (tam ölçüm)...")
-                    self._set_phase("calibrating")
-                    final = self.calibrate(source="final")
-                    self._set_phase("waiting")
+                    self._log("🎯 Son kalibrasyon başlıyor (hızlı ölçüm)...")
+                    final = self._quick_calibrate(source="final")
                     if final:
                         eski_tetik = tetik
                         tetik = hedef + final.server_offset - final.rtt_one_way + self.gecikme_buffer
                         self._trigger_time = tetik
                         fark = (tetik - eski_tetik) * 1000
                         self._log(f"🎯 Son kalibrasyon tamam → tetik farkı: {fark:+.0f}ms")
-                        self._emit("countdown", {"trigger_time": tetik, "remaining": tetik - time.time()})
+                        kalan = tetik - time.time()  # kalanı güncelle
+                        self._emit("countdown", {"trigger_time": tetik, "remaining": kalan})
                     final_cal_done = True
                     # Final sonrası bağlantıyı tekrar ısıt
                     self._prewarm(head_only=True)
