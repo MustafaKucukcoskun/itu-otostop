@@ -1,10 +1,43 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Plus, X, BookOpen, BookMinus } from "lucide-react";
+import {
+  Plus,
+  X,
+  BookOpen,
+  BookMinus,
+  Users,
+  MapPin,
+  Loader2,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import type { CourseInfo } from "@/lib/api";
+
+// ── CRN Labels (localStorage) ──
+
+const LABELS_KEY = "otostop-crn-labels";
+
+function loadLabels(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(LABELS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLabel(crn: string, label: string) {
+  try {
+    const labels = loadLabels();
+    if (label) labels[crn] = label;
+    else delete labels[crn];
+    localStorage.setItem(LABELS_KEY, JSON.stringify(labels));
+  } catch {
+    /* ignore */
+  }
+}
 
 interface CRNManagerProps {
   ecrnList: string[];
@@ -12,6 +45,8 @@ interface CRNManagerProps {
   scrnList: string[];
   onScrnListChange: (list: string[]) => void;
   crnResults: Record<string, { status: string; message: string }>;
+  courseInfo?: Record<string, CourseInfo>;
+  lookingUp?: Set<string>;
   disabled?: boolean;
 }
 
@@ -72,35 +107,59 @@ export function CRNManager({
   scrnList,
   onScrnListChange,
   crnResults,
+  courseInfo = {},
+  lookingUp = new Set(),
   disabled,
 }: CRNManagerProps) {
   const [tab, setTab] = useState<Tab>("add");
   const [input, setInput] = useState("");
+  const [labels, setLabels] = useState<Record<string, string>>({});
+
+  // Load labels on mount
+  useEffect(() => {
+    setLabels(loadLabels());
+  }, []);
 
   const activeList = tab === "add" ? ecrnList : scrnList;
   const setActiveList = tab === "add" ? onEcrnListChange : onScrnListChange;
 
-  const addCRN = () => {
+  const addCRN = useCallback(() => {
     const trimmed = input.trim();
     if (!trimmed) return;
-    if (!/^\d{5}$/.test(trimmed)) {
-      toast.error("CRN 5 haneli sayısal olmalı (ör: 12345)");
-      return;
+
+    // Parse "12345 Ders Adı" format
+    const match = trimmed.match(/^(\d{5})\s*(.*)$/);
+    if (!match) {
+      // Try pure 5-digit
+      if (!/^\d{5}$/.test(trimmed)) {
+        toast.error(
+          "CRN 5 haneli sayısal olmalı (ör: 12345 veya 12345 Mat Bilimi)",
+        );
+        return;
+      }
     }
-    if (!activeList.includes(trimmed)) {
-      setActiveList([...activeList, trimmed]);
+
+    const crn = match ? match[1] : trimmed;
+    const label = match ? match[2].trim() : "";
+
+    if (!activeList.includes(crn)) {
+      setActiveList([...activeList, crn]);
+    }
+    if (label) {
+      saveLabel(crn, label);
+      setLabels((prev) => ({ ...prev, [crn]: label }));
     }
     setInput("");
-  };
+  }, [input, activeList, setActiveList]);
 
   const removeCRN = (crn: string) => {
     setActiveList(activeList.filter((c) => c !== crn));
   };
 
   return (
-    <div className="rounded-2xl glass overflow-hidden">
+    <div className="overflow-hidden">
       {/* Tabs */}
-      <div className="flex border-b border-border/30">
+      <div className="flex border-b border-border/20">
         {(["add", "drop"] as Tab[]).map((t) => {
           const isActive = tab === t;
           const count = t === "add" ? ecrnList.length : scrnList.length;
@@ -155,7 +214,9 @@ export function CRNManager({
                 }
               }}
               placeholder={
-                tab === "add" ? "CRN gir (ör: 24066)" : "CRN gir (ör: 20150)"
+                tab === "add"
+                  ? "CRN gir (ör: 24066 Mat Bilimi)"
+                  : "CRN gir (ör: 20150)"
               }
               className="font-mono bg-background/50 border-border/30 rounded-xl text-sm"
             />
@@ -191,13 +252,34 @@ export function CRNManager({
                   }}
                   className={`flex items-center justify-between py-2.5 px-3.5 rounded-xl ${style.bg} group`}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono font-bold text-[15px] tracking-wider">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="font-mono font-bold text-[15px] tracking-wider shrink-0">
                       {crn}
                     </span>
+                    {/* Course info from API */}
+                    {courseInfo[crn] ? (
+                      <div className="flex items-center gap-2 min-w-0 truncate">
+                        <span className="text-[11px] font-medium text-muted-foreground truncate">
+                          {courseInfo[crn].course_code}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground/60 truncate hidden sm:inline">
+                          {courseInfo[crn].course_name}
+                        </span>
+                        <span className="flex items-center gap-0.5 text-[9px] text-muted-foreground/40 shrink-0">
+                          <Users className="h-2.5 w-2.5" />
+                          {courseInfo[crn].enrolled}/{courseInfo[crn].capacity}
+                        </span>
+                      </div>
+                    ) : lookingUp.has(crn) ? (
+                      <Loader2 className="h-3 w-3 text-muted-foreground/40 animate-spin" />
+                    ) : labels[crn] ? (
+                      <span className="text-[11px] text-muted-foreground truncate">
+                        {labels[crn]}
+                      </span>
+                    ) : null}
                     {result && (
                       <span
-                        className={`flex items-center gap-1.5 text-[11px] font-medium ${style.text}`}
+                        className={`flex items-center gap-1.5 text-[11px] font-medium shrink-0 ${style.text}`}
                       >
                         <span
                           className={`h-1.5 w-1.5 rounded-full ${style.dot}`}
@@ -208,7 +290,7 @@ export function CRNManager({
                   </div>
                   {!disabled && (
                     <button
-                      className="h-6 w-6 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 transition-all"
+                      className="h-7 w-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-red-400 hover:bg-red-400/10 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                       onClick={() => removeCRN(crn)}
                     >
                       <X className="h-3.5 w-3.5" />

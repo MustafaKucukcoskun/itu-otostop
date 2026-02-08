@@ -10,6 +10,7 @@ export interface ConfigData {
   max_deneme: number;
   retry_aralik: number;
   gecikme_buffer: number;
+  dry_run: boolean;
 }
 
 export interface ConfigResponse {
@@ -21,6 +22,7 @@ export interface ConfigResponse {
   gecikme_buffer: number;
   token_set: boolean;
   token_preview: string;
+  dry_run: boolean;
 }
 
 export interface CalibrationResult {
@@ -76,6 +78,28 @@ export interface WSEvent {
   timestamp: number;
 }
 
+// ── OBS Course Types ──
+
+export interface CourseSession {
+  day: number; // 0=Pzt, 1=Sal, ..., 4=Cum
+  start_time: string; // "08:30"
+  end_time: string; // "11:29"
+  room: string; // "A11"
+  building: string; // "MED"
+}
+
+export interface CourseInfo {
+  crn: string;
+  course_code: string;
+  course_name: string;
+  instructor: string;
+  teaching_method: string;
+  capacity: number;
+  enrolled: number;
+  programmes: string;
+  sessions: CourseSession[];
+}
+
 // ── API Functions ──
 
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
@@ -114,6 +138,21 @@ export const api = {
     fetchAPI<{ status: string }>("/api/register/cancel", { method: "POST" }),
 
   getStatus: () => fetchAPI<RegistrationState>("/api/register/status"),
+
+  // OBS Course Lookup
+  lookupCRN: (crn: string) =>
+    fetchAPI<CourseInfo>(`/api/crn-lookup/${crn}`).catch(() => null),
+
+  lookupCRNs: (crns: string[]) =>
+    fetchAPI<Record<string, CourseInfo | null>>("/api/crn-lookup", {
+      method: "POST",
+      body: JSON.stringify({ crns }),
+    }).catch(() => ({})),
+
+  getDepartments: () =>
+    fetchAPI<Array<{ bransKoduId: number; dersBransKodu: string }>>(
+      "/api/departments",
+    ),
 };
 
 // ── WebSocket ──

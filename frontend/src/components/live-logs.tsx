@@ -32,12 +32,12 @@ export function LiveLogs({ logs, onClear }: LiveLogsProps) {
   }, [logs]);
 
   return (
-    <div className="rounded-2xl glass overflow-hidden">
+    <div className="overflow-hidden">
       {/* header */}
       <div className="flex items-center justify-between px-5 pt-5 pb-3">
         <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Terminal className="h-4 w-4 text-primary" />
+          <div className="h-8 w-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+            <Terminal className="h-4 w-4 text-emerald-400" />
           </div>
           <h3 className="text-sm font-semibold">Canlı Log</h3>
           {logs.length > 0 && (
@@ -64,7 +64,7 @@ export function LiveLogs({ logs, onClear }: LiveLogsProps) {
       <div className="px-5 pb-5">
         <div
           ref={scrollRef}
-          className="h-75 overflow-y-auto rounded-xl bg-background/60 ring-1 ring-border/20 p-3 font-mono text-xs space-y-0.5"
+          className="h-60 sm:h-75 overflow-y-auto rounded-xl bg-background/60 ring-1 ring-border/20 p-3 font-mono text-xs space-y-0.5"
         >
           {logs.length === 0 ? (
             <div className="flex items-center justify-center h-full text-muted-foreground/40 text-[13px]">

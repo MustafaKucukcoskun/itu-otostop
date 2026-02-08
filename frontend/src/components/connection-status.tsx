@@ -5,9 +5,19 @@ import { Wifi, WifiOff } from "lucide-react";
 
 interface ConnectionStatusProps {
   connected: boolean;
+  latency?: number | null;
 }
 
-export function ConnectionStatus({ connected }: ConnectionStatusProps) {
+function latencyColor(ms: number): string {
+  if (ms < 200) return "text-emerald-400";
+  if (ms < 500) return "text-yellow-400";
+  return "text-red-400";
+}
+
+export function ConnectionStatus({
+  connected,
+  latency,
+}: ConnectionStatusProps) {
   return (
     <motion.div
       className="flex items-center gap-2 px-3 py-1.5 rounded-full glass"
@@ -34,6 +44,13 @@ export function ConnectionStatus({ connected }: ConnectionStatusProps) {
       <span className="text-[11px] font-medium text-muted-foreground">
         {connected ? "Canlı" : "Bağlantı yok"}
       </span>
+      {connected && latency != null && (
+        <span
+          className={`text-[10px] font-mono font-medium ${latencyColor(latency)}`}
+        >
+          {latency}ms
+        </span>
+      )}
     </motion.div>
   );
 }

@@ -19,6 +19,7 @@ from models import (
     RegistrationState, TokenTestResult, CRNResultItem, CRNStatus,
 )
 from engine import RegistrationEngine
+from obs_course_service import get_obs_service, CourseInfo as OBSCourseInfo
 
 
 # ── Global state ──
@@ -28,10 +29,11 @@ class AppState:
         self.token: str = ""
         self.ecrn_list: list[str] = []
         self.scrn_list: list[str] = []
-        self.kayit_saati: str = "14:00:00"
+        self.kayit_saati: str = ""
         self.max_deneme: int = 60
         self.retry_aralik: float = 3.0
         self.gecikme_buffer: float = 0.005
+        self.dry_run: bool = False
         self.engine: Optional[RegistrationEngine] = None
         self.engine_thread: Optional[threading.Thread] = None
         self.poll_task: Optional[asyncio.Task] = None
@@ -125,6 +127,7 @@ async def set_config(req: ConfigRequest):
     state.max_deneme = req.max_deneme
     state.retry_aralik = req.retry_aralik
     state.gecikme_buffer = req.gecikme_buffer
+    state.dry_run = req.dry_run
     return _config_response()
 
 
@@ -146,6 +149,7 @@ def _config_response() -> ConfigResponse:
         gecikme_buffer=state.gecikme_buffer,
         token_set=bool(state.token),
         token_preview=preview,
+        dry_run=state.dry_run,
     )
 
 
@@ -186,6 +190,8 @@ async def start_registration():
         raise HTTPException(400, "Token ayarlanmamış")
     if not state.ecrn_list:
         raise HTTPException(400, "CRN listesi boş")
+    if not state.kayit_saati:
+        raise HTTPException(400, "Kayıt saati ayarlanmamış")
     if state.engine and state.engine.is_running:
         raise HTTPException(409, "Kayıt zaten çalışıyor")
 
@@ -197,6 +203,7 @@ async def start_registration():
         max_deneme=state.max_deneme,
         retry_aralik=state.retry_aralik,
         gecikme_buffer=state.gecikme_buffer,
+        dry_run=state.dry_run,
     )
 
     # Engine'i ayrı thread'de başlat
@@ -257,6 +264,63 @@ async def registration_status():
         countdown_seconds=remaining,
         trigger_time=state.engine.trigger_time,
     )
+
+
+# ── OBS Ders Programı Proxy ──
+
+def _course_to_dict(c: OBSCourseInfo) -> dict:
+    return {
+        "crn": c.crn,
+        "course_code": c.course_code,
+        "course_name": c.course_name,
+        "instructor": c.instructor,
+        "teaching_method": c.teaching_method,
+        "capacity": c.capacity,
+        "enrolled": c.enrolled,
+        "programmes": c.programmes,
+        "sessions": [
+            {
+                "day": s.day,
+                "start_time": s.start_time,
+                "end_time": s.end_time,
+                "room": s.room,
+                "building": s.building,
+            }
+            for s in c.sessions
+        ],
+    }
+
+
+@app.get("/api/departments")
+async def get_departments():
+    service = get_obs_service()
+    return await asyncio.to_thread(service.get_departments)
+
+
+@app.get("/api/courses/{brans_kodu_id}")
+async def get_courses(brans_kodu_id: int):
+    service = get_obs_service()
+    courses = await asyncio.to_thread(service.get_courses, brans_kodu_id)
+    return [_course_to_dict(c) for c in courses]
+
+
+@app.get("/api/crn-lookup/{crn}")
+async def lookup_crn(crn: str):
+    service = get_obs_service()
+    result = await asyncio.to_thread(service.lookup_crn, crn)
+    if result is None:
+        raise HTTPException(404, f"CRN {crn} bulunamadı")
+    return _course_to_dict(result)
+
+
+@app.post("/api/crn-lookup")
+async def lookup_crns_batch(body: dict):
+    crns = body.get("crns", [])
+    if not crns:
+        raise HTTPException(400, "CRN listesi boş")
+    service = get_obs_service()
+    results = await asyncio.to_thread(service.lookup_crns, crns)
+    return {crn: _course_to_dict(info) if info else None for crn, info in results.items()}
 
 
 # ── WebSocket ──

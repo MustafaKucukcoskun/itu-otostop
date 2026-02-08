@@ -141,15 +141,45 @@
   background: oklch(0.5 0 0 / 30%);
 }
 
+/* Touch targets — minimum 44px on mobile */
+@media (pointer: coarse) {
+  button,
+  [role="switch"],
+  input[type="number"],
+  input[type="time"] {
+    min-height: 44px;
+  }
+}
+
+/* Disable hover effects on touch devices */
+@media (hover: none) {
+  .group:hover .group-hover\:opacity-100 {
+    opacity: 1;
+  }
+}
+
 /* Glass panel */
 .glass {
-  background: oklch(1 0 0 / 4%);
-  backdrop-filter: blur(24px) saturate(1.4);
-  border: 1px solid oklch(1 0 0 / 6%);
+  background: oklch(1 0 0 / 3%);
+  backdrop-filter: blur(20px) saturate(1.3);
+  border: 1px solid oklch(1 0 0 / 5%);
+  transition:
+    border-color 0.3s,
+    box-shadow 0.3s;
 }
 .dark .glass {
-  background: oklch(1 0 0 / 5%);
-  border-color: oklch(1 0 0 / 8%);
+  background: oklch(1 0 0 / 4%);
+  border-color: oklch(1 0 0 / 7%);
+}
+
+/* Spotlight card hover lift */
+.spotlight-card.glass:hover {
+  border-color: oklch(1 0 0 / 12%);
+  box-shadow: 0 8px 32px oklch(0 0 0 / 8%);
+}
+.dark .spotlight-card.glass:hover {
+  border-color: oklch(1 0 0 / 14%);
+  box-shadow: 0 8px 40px oklch(0 0 0 / 30%);
 }
 
 /* Glow */
@@ -178,47 +208,169 @@
   animation: pulse-ring 2s ease-out infinite;
 }
 
-/* Mesh gradient bg */
-.mesh-bg {
-  background-image:
-    radial-gradient(
-      ellipse at 15% 25%,
-      oklch(0.55 0.2 195 / 8%) 0%,
-      transparent 50%
-    ),
-    radial-gradient(
-      ellipse at 85% 75%,
-      oklch(0.55 0.15 280 / 5%) 0%,
-      transparent 50%
-    );
+/* Shimmer sweep */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
-.dark .mesh-bg {
-  background-image:
-    radial-gradient(
-      ellipse at 15% 25%,
-      oklch(0.7 0.18 195 / 8%) 0%,
-      transparent 50%
-    ),
-    radial-gradient(
-      ellipse at 85% 75%,
-      oklch(0.6 0.15 280 / 6%) 0%,
-      transparent 50%
-    );
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 25%,
+    oklch(1 0 0 / 6%) 50%,
+    transparent 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+/* Animated gradient border glow */
+@keyframes border-flow {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* Float animation for orbs */
+@keyframes float-slow {
+  0%,
+  100% {
+    transform: translateY(0) translateX(0);
+  }
+  33% {
+    transform: translateY(-20px) translateX(10px);
+  }
+  66% {
+    transform: translateY(10px) translateX(-15px);
+  }
+}
+@keyframes float-slower {
+  0%,
+  100% {
+    transform: translateY(0) translateX(0);
+  }
+  33% {
+    transform: translateY(15px) translateX(-20px);
+  }
+  66% {
+    transform: translateY(-10px) translateX(12px);
+  }
+}
+
+/* Mesh gradient bg — richer with animated orbs */
+.mesh-bg {
+  background-color: var(--background);
+  position: relative;
+}
+.mesh-bg::before,
+.mesh-bg::after {
+  content: "";
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(80px);
+  z-index: 0;
+}
+.mesh-bg::before {
+  width: 600px;
+  height: 600px;
+  top: -10%;
+  left: -5%;
+  background: oklch(0.55 0.2 195 / 8%);
+  animation: float-slow 25s ease-in-out infinite;
+}
+.mesh-bg::after {
+  width: 500px;
+  height: 500px;
+  bottom: -5%;
+  right: -5%;
+  background: oklch(0.55 0.15 280 / 6%);
+  animation: float-slower 30s ease-in-out infinite;
+}
+.dark .mesh-bg::before {
+  background: oklch(0.7 0.18 195 / 10%);
+}
+.dark .mesh-bg::after {
+  background: oklch(0.6 0.15 280 / 8%);
+}
+
+/* Third orb — accent */
+.mesh-orb-accent {
+  position: fixed;
+  width: 400px;
+  height: 400px;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(100px);
+  z-index: 0;
+  top: 40%;
+  right: 20%;
+  background: oklch(0.6 0.15 30 / 4%);
+  animation: float-slow 35s ease-in-out infinite reverse;
+}
+.dark .mesh-orb-accent {
+  background: oklch(0.65 0.18 30 / 6%);
 }
 
 /* Dot grid pattern */
 .dot-grid {
   background-image: radial-gradient(
     circle,
-    oklch(0.5 0 0 / 8%) 1px,
+    oklch(0.5 0 0 / 6%) 1px,
     transparent 1px
   );
-  background-size: 24px 24px;
+  background-size: 28px 28px;
 }
 .dark .dot-grid {
   background-image: radial-gradient(
     circle,
-    oklch(1 0 0 / 6%) 1px,
+    oklch(1 0 0 / 4%) 1px,
     transparent 1px
+  );
+}
+
+/* Noise grain texture overlay */
+.grain-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* Gradient text utility */
+.text-gradient-primary {
+  background: linear-gradient(
+    135deg,
+    oklch(0.7 0.18 195),
+    oklch(0.65 0.2 250),
+    oklch(0.7 0.18 195)
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  background-size: 200% 200%;
+  animation: border-flow 6s ease infinite;
+}
+
+/* Section divider */
+.section-line {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(1 0 0 / 10%),
+    transparent
   );
 }

@@ -19,7 +19,10 @@ export function useWebSocket() {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pingSentRef = useRef<number>(0);
   const [connected, setConnected] = useState(false);
+  const [latency, setLatency] = useState<number | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [phase, setPhase] = useState<string>("idle");
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -38,10 +41,27 @@ export function useWebSocket() {
     try {
       const ws = createWebSocket();
 
-      ws.onopen = () => setConnected(true);
+      ws.onopen = () => {
+        setConnected(true);
+        // Start ping interval for latency measurement
+        pingIntervalRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            pingSentRef.current = performance.now();
+            ws.send("ping");
+          }
+        }, 10_000);
+        // First ping immediately
+        pingSentRef.current = performance.now();
+        ws.send("ping");
+      };
 
       ws.onclose = () => {
         setConnected(false);
+        setLatency(null);
+        if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current);
+          pingIntervalRef.current = null;
+        }
         // Auto reconnect after 3s
         reconnectTimeoutRef.current = setTimeout(connect, 3000);
       };
@@ -101,6 +121,10 @@ export function useWebSocket() {
               break;
 
             case "pong":
+              if (pingSentRef.current > 0) {
+                setLatency(Math.round(performance.now() - pingSentRef.current));
+                pingSentRef.current = 0;
+              }
               break;
           }
         } catch {
@@ -118,6 +142,10 @@ export function useWebSocket() {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
+    }
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
     }
     wsRef.current?.close();
     wsRef.current = null;
@@ -137,6 +165,14 @@ export function useWebSocket() {
     setDone(false);
   }, [clearLogs]);
 
+  // Cancel sonrası: logları koruyarak state sıfırla
+  const softReset = useCallback(() => {
+    setPhase("idle");
+    setCountdown(null);
+    setCrnResults({});
+    setDone(false);
+  }, []);
+
   useEffect(() => {
     connect();
     return disconnect;
@@ -144,6 +180,7 @@ export function useWebSocket() {
 
   return {
     connected,
+    latency,
     logs,
     phase,
     countdown,
@@ -152,5 +189,6 @@ export function useWebSocket() {
     done,
     clearLogs,
     reset,
+    softReset,
   };
 }

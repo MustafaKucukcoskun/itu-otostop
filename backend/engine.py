@@ -45,10 +45,11 @@ class RegistrationEngine:
         token: str,
         ecrn_list: list[str],
         scrn_list: list[str] | None = None,
-        kayit_saati: str = "14:00:00",
+        kayit_saati: str = "",
         max_deneme: int = 60,
         retry_aralik: float = 3.0,
         gecikme_buffer: float = 0.005,
+        dry_run: bool = False,
     ):
         self.token = token
         self.ecrn_list = list(ecrn_list)
@@ -57,6 +58,7 @@ class RegistrationEngine:
         self.max_deneme = max_deneme
         self.retry_aralik = retry_aralik
         self.gecikme_buffer = gecikme_buffer
+        self.dry_run = dry_run
 
         self._events: queue.Queue = queue.Queue()
         self._cancelled = threading.Event()
@@ -295,6 +297,47 @@ class RegistrationEngine:
         )
         return self.session.prepare_request(req)
 
+    # ── Dry-Run Simülasyonu ──
+
+    def _kayit_yap_dry_run(self):
+        """Gerçek kayıt yapmadan simülasyon çalıştır."""
+        kalan = list(self.ecrn_list)
+        basarili = []
+
+        for crn in kalan:
+            self._crn_results[crn] = {"status": "pending", "message": "Bekliyor (DRY RUN)"}
+
+        self._log("🧪 DRY RUN — Gerçek kayıt yapılmayacak!", "warning")
+
+        # Simülasyon: ilk 2 deneme VAL02, sonra başarı
+        for deneme in range(1, min(self.max_deneme, 5) + 1):
+            if not kalan or self._cancelled.is_set():
+                break
+
+            self._current_attempt = deneme
+            t0 = time.perf_counter()
+            time.sleep(0.05)  # Simule edilmiş RTT
+            ms = (time.perf_counter() - t0) * 1000
+            tag = "İLK İSTEK" if deneme == 1 else f"D{deneme}"
+
+            if deneme <= 2:
+                self._log(f"🧪 {tag} → {ms:.0f}ms | SİMÜLASYON: VAL02 (sistem kapalı)")
+                for crn in kalan:
+                    self._crn_results[crn] = {"status": "debounce", "message": "DRY RUN: Sistem henüz açılmadı"}
+                self._emit("crn_update", {"results": dict(self._crn_results)})
+                time.sleep(self.retry_aralik)
+            else:
+                self._log(f"🧪 {tag} → {ms:.0f}ms | SİMÜLASYON: BAŞARILI!")
+                for crn in list(kalan):
+                    self._log(f"🧪 ✅ {crn} → SİMÜLE EDİLMİŞ BAŞARI")
+                    self._crn_results[crn] = {"status": "success", "message": "DRY RUN: Simüle edilmiş başarı"}
+                    kalan.remove(crn)
+                    basarili.append(crn)
+                self._emit("crn_update", {"results": dict(self._crn_results)})
+                break
+
+        self._log(f"🧪 DRY RUN TAMAMLANDI — Simüle edilmiş başarı: {len(basarili)}/{len(self.ecrn_list)}")
+
     # ── Kayıt Döngüsü ──
 
     def _kayit_yap(self):
@@ -448,6 +491,11 @@ class RegistrationEngine:
         self._running = True
 
         try:
+            if self.dry_run:
+                self._log("═══════════════════════════════════", "warning")
+                self._log("🧪 DRY RUN MODU — Gerçek kayıt yapılMAyacak", "warning")
+                self._log("═══════════════════════════════════", "warning")
+
             # 0. Token geçerlilik kontrolü
             self._set_phase("token_check")
             self._log("🔑 Token kontrol ediliyor...")
@@ -483,7 +531,10 @@ class RegistrationEngine:
             if kalan_sn < -5:
                 self._log("Hedef zaman geçti! Hemen başlıyorum...", "warning")
                 self._set_phase("registering")
-                self._kayit_yap()
+                if self.dry_run:
+                    self._kayit_yap_dry_run()
+                else:
+                    self._kayit_yap()
                 return
 
             # 4. Bekleme döngüsü
@@ -520,14 +571,17 @@ class RegistrationEngine:
             self._set_phase("registering")
             fark_ms = (time.time() - hedef) * 1000
             self._log(f"BAŞLIYOR! (hedef farkı: {fark_ms:+.0f}ms)")
-            self._kayit_yap()
+            if self.dry_run:
+                self._kayit_yap_dry_run()
+            else:
+                self._kayit_yap()
 
         except Exception as e:
             self._log(f"Beklenmeyen hata: {e}", "error")
         finally:
-            self._running = False
             self._set_phase("done")
             self._emit("done", {"results": dict(self._crn_results)})
+            self._running = False  # MUST be last — poll_engine_events checks this flag
 
     # ── Token testi ──
 

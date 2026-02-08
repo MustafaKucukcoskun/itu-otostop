@@ -18,10 +18,11 @@ class ConfigRequest(BaseModel):
     token: Optional[str] = Field(default=None, description="JWT Bearer token (gönderilmezse mevcut token korunur)")
     ecrn_list: list[str] = Field(..., description="Eklenecek CRN listesi")
     scrn_list: list[str] = Field(default_factory=list, description="Silinecek CRN listesi")
-    kayit_saati: str = Field(default="14:00:00", pattern=r"^\d{2}:\d{2}:\d{2}$")
+    kayit_saati: str = Field(default="", pattern=r"^(\d{2}:\d{2}:\d{2})?$")
     max_deneme: int = Field(default=60, ge=1, le=300)
     retry_aralik: float = Field(default=3.0, ge=3.0, le=10.0)
     gecikme_buffer: float = Field(default=0.005, ge=0.0, le=0.1)
+    dry_run: bool = Field(default=False, description="Test modu — gerçek kayıt yapmaz")
 
 
 class ConfigResponse(BaseModel):
@@ -33,6 +34,7 @@ class ConfigResponse(BaseModel):
     gecikme_buffer: float
     token_set: bool
     token_preview: str = ""
+    dry_run: bool = False
 
 
 class CalibrationResult(BaseModel):
