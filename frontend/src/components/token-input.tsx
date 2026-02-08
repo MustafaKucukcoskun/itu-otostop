@@ -186,9 +186,7 @@ export function TokenInput({
             value={token}
             onChange={(e) => onTokenChange(e.target.value)}
             placeholder="Token'ı buraya yapıştır..."
-            className={`font-mono text-xs min-h-20 pr-10 resize-none bg-background/50 border-border/30 rounded-xl focus:ring-1 focus:ring-primary/30 transition-all ${
-              !show ? "text-transparent selection:text-transparent" : ""
-            }`}
+            className="font-mono text-xs min-h-20 pr-10 resize-none bg-background/50 border-border/30 rounded-xl focus:ring-1 focus:ring-primary/30 transition-all"
             style={
               !show
                 ? ({ WebkitTextSecurity: "disc" } as React.CSSProperties)
