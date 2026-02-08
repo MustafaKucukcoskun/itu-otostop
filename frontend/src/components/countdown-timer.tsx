@@ -2,11 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { Timer } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 
 interface CountdownTimerProps {
-  targetTime: string; // HH:MM:SS
+  targetTime: string;
   countdown: number | null;
   phase: string;
 }
@@ -19,37 +17,26 @@ export function CountdownTimer({
   const [displayTime, setDisplayTime] = useState("--:--:--");
   const [localCountdown, setLocalCountdown] = useState<number | null>(null);
 
-  // Server countdown'ı kullan, yoksa lokal hesapla
   useEffect(() => {
-    if (countdown !== null) {
-      setLocalCountdown(countdown);
-    }
+    if (countdown !== null) setLocalCountdown(countdown);
   }, [countdown]);
 
-  // Lokal countdown timer
   useEffect(() => {
     if (localCountdown === null || phase === "done" || phase === "idle") return;
-
     const interval = setInterval(() => {
       setLocalCountdown((prev) => {
         if (prev === null || prev <= 0) return 0;
         return prev - 0.1;
       });
     }, 100);
-
     return () => clearInterval(interval);
   }, [localCountdown, phase]);
 
-  // Format countdown
   useEffect(() => {
     if (localCountdown === null || localCountdown <= 0) {
-      if (phase === "registering") {
-        setDisplayTime("KAYIT YAPILIYOR");
-      } else if (phase === "done") {
-        setDisplayTime("TAMAMLANDI");
-      } else {
-        setDisplayTime(targetTime);
-      }
+      if (phase === "registering") setDisplayTime("KAYIT YAPILIYOR");
+      else if (phase === "done") setDisplayTime("TAMAMLANDI");
+      else setDisplayTime(targetTime);
       return;
     }
     const total = Math.max(0, localCountdown);
@@ -64,84 +51,106 @@ export function CountdownTimer({
     );
   }, [localCountdown, phase, targetTime]);
 
-  const isActive = phase === "waiting" || phase === "calibrating";
+  const isActive =
+    phase === "waiting" || phase === "calibrating" || phase === "token_check";
   const isRegistering = phase === "registering";
   const isDone = phase === "done";
 
+  const phaseLabel = isActive
+    ? "Kayıt saatine kalan"
+    : isRegistering
+      ? "Kayıt devam ediyor"
+      : isDone
+        ? "Tamamlandı"
+        : `Hedef → ${targetTime}`;
+
   return (
-    <Card
-      className={`border-border/50 overflow-hidden relative ${
-        isRegistering
-          ? "border-orange-500/50"
-          : isDone
-            ? "border-emerald-500/50"
-            : "border-border/50"
-      }`}
-    >
-      {/* Animated background gradient */}
+    <div className="relative overflow-hidden rounded-2xl">
+      {/* Background layers */}
+      <div className="absolute inset-0 glass" />
+
+      {/* Active state animated gradient */}
       {isActive && (
         <motion.div
-          className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-blue-500/5"
-          animate={{ backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"] }}
-          transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
-          style={{ backgroundSize: "200% 100%" }}
+          className="absolute inset-0 opacity-30"
+          style={{
+            background:
+              "linear-gradient(135deg, oklch(0.70 0.18 195 / 30%), oklch(0.60 0.15 280 / 20%), oklch(0.70 0.18 195 / 30%))",
+            backgroundSize: "200% 200%",
+          }}
+          animate={{ backgroundPosition: ["0% 0%", "100% 100%", "0% 0%"] }}
+          transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
         />
       )}
+
+      {/* Registering pulse */}
       {isRegistering && (
         <motion.div
-          className="absolute inset-0 bg-gradient-to-r from-orange-500/10 via-red-500/10 to-orange-500/10"
-          animate={{ opacity: [0.3, 0.6, 0.3] }}
-          transition={{ duration: 1.5, repeat: Infinity }}
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(135deg, oklch(0.70 0.20 30 / 15%), oklch(0.65 0.22 45 / 10%))",
+          }}
+          animate={{ opacity: [0.3, 0.7, 0.3] }}
+          transition={{ duration: 1.2, repeat: Infinity }}
         />
       )}
-      {isDone && <div className="absolute inset-0 bg-emerald-500/5" />}
 
-      <CardContent className="relative py-8">
-        <div className="text-center space-y-2">
-          <div className="flex items-center justify-center gap-2 text-muted-foreground">
-            <Timer className="h-4 w-4" />
-            <span className="text-sm">
-              {isActive
-                ? "Kayıt saatine kalan"
-                : isRegistering
-                  ? "Kayıt devam ediyor"
-                  : isDone
-                    ? "Kayıt tamamlandı"
-                    : `Hedef: ${targetTime}`}
-            </span>
-          </div>
-          <motion.div
-            key={displayTime}
-            initial={{ opacity: 0.8, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className={`font-mono font-bold tracking-wider ${
-              isRegistering
-                ? "text-4xl text-orange-400"
-                : isDone
-                  ? "text-4xl text-emerald-400"
-                  : isActive
-                    ? "text-5xl text-primary"
-                    : "text-4xl text-muted-foreground"
-            }`}
-          >
-            {displayTime}
-          </motion.div>
-          {isActive && localCountdown !== null && localCountdown > 0 && (
-            <motion.div
-              className="h-1 bg-primary/20 rounded-full mt-4 mx-auto max-w-xs overflow-hidden"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-            >
+      {/* Done glow */}
+      {isDone && (
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(135deg, oklch(0.70 0.18 165 / 10%), oklch(0.65 0.15 195 / 8%))",
+          }}
+        />
+      )}
+
+      <div className="relative px-6 py-10 text-center">
+        {/* Phase label */}
+        <motion.p
+          className="text-sm font-medium text-muted-foreground mb-3 tracking-wide uppercase"
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
+          key={phaseLabel}
+        >
+          {phaseLabel}
+        </motion.p>
+
+        {/* Main timer display */}
+        <motion.div
+          key={`${phase}-${displayTime.length > 12 ? "text" : "num"}`}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: "spring", stiffness: 300, damping: 25 }}
+          className={`font-mono font-bold tracking-[0.08em] leading-none ${
+            isRegistering
+              ? "text-3xl sm:text-4xl text-orange-400"
+              : isDone
+                ? "text-3xl sm:text-4xl text-emerald-400"
+                : isActive
+                  ? "text-5xl sm:text-6xl text-primary"
+                  : "text-4xl sm:text-5xl text-muted-foreground/60"
+          }`}
+        >
+          {displayTime}
+        </motion.div>
+
+        {/* Progress bar */}
+        {isActive && localCountdown !== null && localCountdown > 0 && (
+          <div className="mt-6 mx-auto max-w-sm">
+            <div className="h-0.75 rounded-full bg-primary/10 overflow-hidden">
               <motion.div
-                className="h-full bg-primary rounded-full"
+                className="h-full rounded-full bg-linear-to-r from-primary/60 to-primary"
                 initial={{ width: "100%" }}
                 animate={{ width: "0%" }}
                 transition={{ duration: localCountdown, ease: "linear" }}
               />
-            </motion.div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

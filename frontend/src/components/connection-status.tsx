@@ -9,24 +9,31 @@ interface ConnectionStatusProps {
 
 export function ConnectionStatus({ connected }: ConnectionStatusProps) {
   return (
-    <div className="flex items-center gap-2">
-      <motion.div
-        className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-400" : "bg-red-400"}`}
-        animate={
-          connected
-            ? { scale: [1, 1.2, 1], opacity: [1, 0.8, 1] }
-            : { opacity: [1, 0.3, 1] }
-        }
-        transition={{ repeat: Infinity, duration: connected ? 2 : 1 }}
-      />
+    <motion.div
+      className="flex items-center gap-2 px-3 py-1.5 rounded-full glass"
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+    >
+      <div className="relative">
+        <motion.div
+          className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-400" : "bg-red-400"}`}
+        />
+        {connected && (
+          <motion.div
+            className="absolute inset-0 h-2 w-2 rounded-full bg-emerald-400"
+            animate={{ scale: [1, 2.5], opacity: [0.6, 0] }}
+            transition={{ repeat: Infinity, duration: 2, ease: "easeOut" }}
+          />
+        )}
+      </div>
       {connected ? (
-        <Wifi className="h-4 w-4 text-emerald-400" />
+        <Wifi className="h-3.5 w-3.5 text-emerald-400" />
       ) : (
-        <WifiOff className="h-4 w-4 text-red-400" />
+        <WifiOff className="h-3.5 w-3.5 text-red-400" />
       )}
-      <span className="text-xs text-muted-foreground">
-        {connected ? "Bağlı" : "Bağlantı yok"}
+      <span className="text-[11px] font-medium text-muted-foreground">
+        {connected ? "Canlı" : "Bağlantı yok"}
       </span>
-    </div>
+    </motion.div>
   );
 }

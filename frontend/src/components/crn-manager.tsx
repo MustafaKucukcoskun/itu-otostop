@@ -3,179 +3,228 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Plus, X, BookOpen, BookMinus } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 interface CRNManagerProps {
-  crnList: string[];
-  onCrnListChange: (list: string[]) => void;
+  ecrnList: string[];
+  onEcrnListChange: (list: string[]) => void;
+  scrnList: string[];
+  onScrnListChange: (list: string[]) => void;
   crnResults: Record<string, { status: string; message: string }>;
   disabled?: boolean;
-  mode?: "add" | "drop";
 }
 
-const statusColors: Record<string, string> = {
-  pending: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
-  success: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  already: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  full: "bg-red-500/20 text-red-400 border-red-500/30",
-  conflict: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-  upgrade: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  debounce: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-  error: "bg-red-500/20 text-red-400 border-red-500/30",
-  dropped: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-};
+const statusStyles: Record<string, { bg: string; text: string; dot: string }> =
+  {
+    pending: {
+      bg: "bg-zinc-500/8",
+      text: "text-muted-foreground",
+      dot: "bg-zinc-400",
+    },
+    success: {
+      bg: "bg-emerald-500/8",
+      text: "text-emerald-400",
+      dot: "bg-emerald-400",
+    },
+    already: { bg: "bg-blue-500/8", text: "text-blue-400", dot: "bg-blue-400" },
+    full: { bg: "bg-red-500/8", text: "text-red-400", dot: "bg-red-400" },
+    conflict: {
+      bg: "bg-orange-500/8",
+      text: "text-orange-400",
+      dot: "bg-orange-400",
+    },
+    upgrade: {
+      bg: "bg-purple-500/8",
+      text: "text-purple-400",
+      dot: "bg-purple-400",
+    },
+    debounce: {
+      bg: "bg-yellow-500/8",
+      text: "text-yellow-400",
+      dot: "bg-yellow-400",
+    },
+    error: { bg: "bg-red-500/8", text: "text-red-400", dot: "bg-red-400" },
+    dropped: {
+      bg: "bg-emerald-500/8",
+      text: "text-emerald-400",
+      dot: "bg-emerald-400",
+    },
+  };
 
 const statusLabels: Record<string, string> = {
   pending: "Bekliyor",
-  success: "Başarılı ✓",
-  already: "Zaten Kayıtlı",
-  full: "Kontenjan Dolu",
+  success: "Başarılı",
+  already: "Kayıtlı",
+  full: "Dolu",
   conflict: "Çakışma",
   upgrade: "Yükseltme",
-  debounce: "Debounce",
+  debounce: "Tekrar",
   error: "Hata",
-  dropped: "Bırakıldı ✓",
+  dropped: "Bırakıldı",
 };
 
+type Tab = "add" | "drop";
+
 export function CRNManager({
-  crnList,
-  onCrnListChange,
+  ecrnList,
+  onEcrnListChange,
+  scrnList,
+  onScrnListChange,
   crnResults,
   disabled,
-  mode = "add",
 }: CRNManagerProps) {
+  const [tab, setTab] = useState<Tab>("add");
   const [input, setInput] = useState("");
+
+  const activeList = tab === "add" ? ecrnList : scrnList;
+  const setActiveList = tab === "add" ? onEcrnListChange : onScrnListChange;
 
   const addCRN = () => {
     const trimmed = input.trim();
     if (!trimmed) return;
     if (!/^\d{5}$/.test(trimmed)) {
-      toast.error("CRN 5 haneli sayısal olmalı (örn: 12345)");
+      toast.error("CRN 5 haneli sayısal olmalı (ör: 12345)");
       return;
     }
-    if (!crnList.includes(trimmed)) {
-      onCrnListChange([...crnList, trimmed]);
+    if (!activeList.includes(trimmed)) {
+      setActiveList([...activeList, trimmed]);
     }
     setInput("");
   };
 
   const removeCRN = (crn: string) => {
-    onCrnListChange(crnList.filter((c) => c !== crn));
+    setActiveList(activeList.filter((c) => c !== crn));
   };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      addCRN();
-    }
-  };
-
-  const isDrop = mode === "drop";
-  const Icon = isDrop ? BookMinus : BookOpen;
-  const title = isDrop
-    ? "Bırakılacak Dersler (SCRN)"
-    : "Eklenecek Dersler (ECRN)";
-  const placeholder = isDrop
-    ? "Bırakılacak CRN (ör: 20150)"
-    : "Eklenecek CRN (ör: 24066)";
-  const emptyText = isDrop ? "Bırakılacak ders yok" : "Henüz CRN eklenmedi";
-  const accentColor = isDrop ? "text-orange-500" : "text-primary";
-  const borderAccent = isDrop ? "border-orange-500/30" : "border-border/50";
 
   return (
-    <Card className={`${borderAccent} bg-card/50 backdrop-blur-sm`}>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <Icon className={`h-5 w-5 ${accentColor}`} />
-          {title}
-          <Badge variant="secondary" className="ml-auto">
-            {crnList.length} ders
-          </Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <div className="rounded-2xl glass overflow-hidden">
+      {/* Tabs */}
+      <div className="flex border-b border-border/30">
+        {(["add", "drop"] as Tab[]).map((t) => {
+          const isActive = tab === t;
+          const count = t === "add" ? ecrnList.length : scrnList.length;
+          const Icon = t === "add" ? BookOpen : BookMinus;
+          return (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`flex-1 relative flex items-center justify-center gap-2 py-3.5 text-sm font-medium transition-colors ${
+                isActive
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground/70"
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              <span>{t === "add" ? "Ekle" : "Bırak"}</span>
+              {count > 0 && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                    isActive
+                      ? "bg-primary/15 text-primary"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {count}
+                </span>
+              )}
+              {isActive && (
+                <motion.div
+                  layoutId="crn-tab-indicator"
+                  className="absolute bottom-0 left-4 right-4 h-0.5 bg-primary rounded-full"
+                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Content */}
+      <div className="p-4 space-y-3">
+        {/* Input */}
         {!disabled && (
           <div className="flex gap-2">
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={placeholder}
-              className="font-mono"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addCRN();
+                }
+              }}
+              placeholder={
+                tab === "add" ? "CRN gir (ör: 24066)" : "CRN gir (ör: 20150)"
+              }
+              className="font-mono bg-background/50 border-border/30 rounded-xl text-sm"
             />
-            <Button
+            <button
               onClick={addCRN}
-              size="icon"
-              variant="outline"
               disabled={!input.trim()}
+              className="h-9 w-9 shrink-0 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-30 flex items-center justify-center transition-colors"
             >
               <Plus className="h-4 w-4" />
-            </Button>
+            </button>
           </div>
         )}
-        <div className="space-y-2">
+
+        {/* CRN List */}
+        <div className="space-y-1.5 min-h-15">
           <AnimatePresence mode="popLayout">
-            {crnList.map((crn) => {
+            {activeList.map((crn, i) => {
               const result = crnResults[crn];
               const status = result?.status || "pending";
+              const style = statusStyles[status] || statusStyles.pending;
               return (
                 <motion.div
-                  key={crn}
+                  key={`${tab}-${crn}`}
                   layout
-                  initial={{ opacity: 0, x: -20, scale: 0.95 }}
-                  animate={{ opacity: 1, x: 0, scale: 1 }}
-                  exit={{ opacity: 0, x: 20, scale: 0.95 }}
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  className={`flex items-center justify-between p-3 rounded-lg border ${
-                    status === "success"
-                      ? "border-emerald-500/30 bg-emerald-500/5"
-                      : status === "full" || status === "error"
-                        ? "border-red-500/30 bg-red-500/5"
-                        : "border-border/50 bg-background/50"
-                  }`}
+                  initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.94, x: 30 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 500,
+                    damping: 35,
+                    delay: i * 0.02,
+                  }}
+                  className={`flex items-center justify-between py-2.5 px-3.5 rounded-xl ${style.bg} group`}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="font-mono font-bold text-lg">{crn}</span>
+                    <span className="font-mono font-bold text-[15px] tracking-wider">
+                      {crn}
+                    </span>
                     {result && (
-                      <Badge
-                        className={statusColors[status] || statusColors.pending}
+                      <span
+                        className={`flex items-center gap-1.5 text-[11px] font-medium ${style.text}`}
                       >
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${style.dot}`}
+                        />
                         {statusLabels[status] || status}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {result?.message && (
-                      <span className="text-xs text-muted-foreground">
-                        {result.message}
                       </span>
                     )}
-                    {!disabled && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        onClick={() => removeCRN(crn)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    )}
                   </div>
+                  {!disabled && (
+                    <button
+                      className="h-6 w-6 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 transition-all"
+                      onClick={() => removeCRN(crn)}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </motion.div>
               );
             })}
           </AnimatePresence>
-          {crnList.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              {emptyText}
-            </p>
+          {activeList.length === 0 && (
+            <div className="flex items-center justify-center py-8 text-muted-foreground/50 text-sm">
+              {tab === "add" ? "Henüz CRN eklenmedi" : "Bırakılacak ders yok"}
+            </div>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

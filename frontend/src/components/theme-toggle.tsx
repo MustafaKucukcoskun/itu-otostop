@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { motion } from "motion/react";
 import { Sun, Moon } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -14,21 +13,14 @@ export function ThemeToggle() {
     setMounted(true);
   }, []);
 
-  // SSR'da placeholder render et — hydration mismatch'i önler
   if (!mounted) {
-    return (
-      <Button variant="ghost" size="icon" className="h-9 w-9">
-        <span className="h-5 w-5" />
-      </Button>
-    );
+    return <div className="h-8 w-8 rounded-lg" />;
   }
 
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="h-9 w-9"
+    <button
       onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
     >
       <motion.div
         key={theme}
@@ -37,11 +29,11 @@ export function ThemeToggle() {
         transition={{ type: "spring", stiffness: 300, damping: 20 }}
       >
         {theme === "dark" ? (
-          <Sun className="h-5 w-5" />
+          <Sun className="h-4 w-4" />
         ) : (
-          <Moon className="h-5 w-5" />
+          <Moon className="h-4 w-4" />
         )}
       </motion.div>
-    </Button>
+    </button>
   );
 }

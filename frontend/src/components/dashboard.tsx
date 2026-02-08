@@ -3,8 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "motion/react";
 import { Play, Square, Gauge, Zap } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useWebSocket } from "@/hooks/use-websocket";
@@ -32,6 +30,10 @@ export function Dashboard() {
   const [tokenValid, setTokenValid] = useState<boolean | null>(null);
   const [calibrating, setCalibrating] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [calibrationData, setCalibrationData] = useState<Record<
+    string,
+    number
+  > | null>(null);
 
   // WebSocket real-time data
   const ws = useWebSocket();
@@ -51,11 +53,12 @@ export function Dashboard() {
         if (config.scrn_list?.length) setScrnList(config.scrn_list);
         if (config.kayit_saati) setKayitSaati(config.kayit_saati);
         if (config.max_deneme) setMaxDeneme(config.max_deneme);
-        if (config.retry_aralik) setRetryAralik(config.retry_aralik);
+        if (config.retry_aralik)
+          setRetryAralik(Math.max(3, config.retry_aralik));
         if (config.gecikme_buffer) setGecikmeBuffer(config.gecikme_buffer);
         if (config.token_set) setTokenValid(true);
       } catch {
-        // Backend not running yet, that's OK
+        // Backend not running yet
       }
     })();
   }, []);
@@ -64,7 +67,6 @@ export function Dashboard() {
   const saveConfig = useCallback(async () => {
     try {
       await api.setConfig({
-        // Token sadece kullanıcı değiştirdiyse gönder
         ...(tokenChanged && token ? { token } : {}),
         ecrn_list: crnList,
         scrn_list: scrnList,
@@ -104,7 +106,12 @@ export function Dashboard() {
     saveConfig,
   ]);
 
-  // Watch token changes for test button state
+  // WebSocket'ten gelen kalibrasyon verisini de senkronize et
+  useEffect(() => {
+    if (ws.calibration) setCalibrationData(ws.calibration);
+  }, [ws.calibration]);
+
+  // Watch token changes
   useEffect(() => {
     setTokenValid(null);
     setTokenChanged(true);
@@ -120,6 +127,7 @@ export function Dashboard() {
     try {
       await saveConfig();
       const result = await api.calibrate();
+      setCalibrationData(result);
       toast.success(
         `Kalibrasyon tamam: offset ${result.server_offset_ms >= 0 ? "+" : ""}${result.server_offset_ms?.toFixed(0)}ms, RTT ${result.rtt_one_way_ms?.toFixed(1)}ms`,
       );
@@ -183,37 +191,38 @@ export function Dashboard() {
   }, [ws.done, ws.crnResults]);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen mesh-bg relative">
+      {/* Dot grid overlay */}
+      <div className="dot-grid fixed inset-0 pointer-events-none" />
+
       {/* Header */}
-      <header className="sticky top-0 z-50 backdrop-blur-md bg-background/80 border-b border-border/50">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <motion.div
-              className="flex items-center gap-2"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-            >
-              <Zap className="h-6 w-6 text-primary" />
-              <h1 className="text-lg font-bold tracking-tight">
-                İTÜ OBS Kayıt
-              </h1>
-            </motion.div>
-          </div>
-          <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-50 glass border-b border-border/20">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+          <motion.div
+            className="flex items-center gap-2.5"
+            initial={{ opacity: 0, x: -16 }}
+            animate={{ opacity: 1, x: 0 }}
+          >
+            <div className="h-8 w-8 rounded-lg bg-primary/15 flex items-center justify-center">
+              <Zap className="h-4 w-4 text-primary" />
+            </div>
+            <h1 className="text-sm font-bold tracking-tight">İTÜ OBS Kayıt</h1>
+          </motion.div>
+          <div className="flex items-center gap-2">
             <ConnectionStatus connected={ws.connected} />
-            <Separator orientation="vertical" className="h-6" />
+            <div className="w-px h-5 bg-border/30" />
             <ThemeToggle />
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-        {/* Countdown Timer — always visible */}
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-5 relative z-10">
+        {/* Countdown */}
         <motion.div
-          initial={{ opacity: 0, y: -10 }}
+          initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
+          transition={{ delay: 0.05 }}
         >
           <CountdownTimer
             targetTime={kayitSaati}
@@ -225,48 +234,46 @@ export function Dashboard() {
         {/* Action buttons */}
         <motion.div
           className="flex gap-3"
-          initial={{ opacity: 0, y: -10 }}
+          initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
+          transition={{ delay: 0.1 }}
         >
-          <Button
-            variant="outline"
+          <button
             onClick={handleCalibrate}
             disabled={calibrating || isRunning || !token}
-            className="flex-1"
+            className="flex-1 h-10 rounded-xl ring-1 ring-border/30 bg-background/60 hover:bg-muted/60 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-40 disabled:pointer-events-none"
           >
-            <Gauge className="h-4 w-4 mr-2" />
+            <Gauge className="h-4 w-4" />
             {calibrating ? "Kalibre ediliyor..." : "Kalibre Et"}
-          </Button>
+          </button>
           {!isRunning ? (
-            <Button
+            <button
               onClick={handleStart}
               disabled={starting || !token || crnList.length === 0}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="flex-1 h-10 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors glow-sm disabled:opacity-40 disabled:pointer-events-none"
             >
-              <Play className="h-4 w-4 mr-2" />
+              <Play className="h-4 w-4" />
               {starting ? "Başlatılıyor..." : "Kayıt Başlat"}
-            </Button>
+            </button>
           ) : (
-            <Button
-              variant="destructive"
+            <button
               onClick={handleCancel}
-              className="flex-1"
+              className="flex-1 h-10 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
             >
-              <Square className="h-4 w-4 mr-2" />
+              <Square className="h-4 w-4" />
               İptal Et
-            </Button>
+            </button>
           )}
         </motion.div>
 
         {/* Two-column layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Left column */}
           <motion.div
-            className="space-y-6"
-            initial={{ opacity: 0, x: -20 }}
+            className="space-y-5"
+            initial={{ opacity: 0, x: -16 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2 }}
+            transition={{ delay: 0.15 }}
           >
             <TokenInput
               token={token}
@@ -274,18 +281,12 @@ export function Dashboard() {
               tokenValid={tokenValid}
             />
             <CRNManager
-              crnList={crnList}
-              onCrnListChange={setCrnList}
+              ecrnList={crnList}
+              onEcrnListChange={setCrnList}
+              scrnList={scrnList}
+              onScrnListChange={setScrnList}
               crnResults={ws.crnResults}
               disabled={isRunning}
-              mode="add"
-            />
-            <CRNManager
-              crnList={scrnList}
-              onCrnListChange={setScrnList}
-              crnResults={ws.crnResults}
-              disabled={isRunning}
-              mode="drop"
             />
             <SettingsPanel
               kayitSaati={kayitSaati}
@@ -302,13 +303,13 @@ export function Dashboard() {
 
           {/* Right column */}
           <motion.div
-            className="space-y-6"
-            initial={{ opacity: 0, x: 20 }}
+            className="space-y-5"
+            initial={{ opacity: 0, x: 16 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.3 }}
+            transition={{ delay: 0.2 }}
           >
             <CalibrationCard
-              calibration={ws.calibration}
+              calibration={ws.calibration ?? calibrationData}
               loading={calibrating}
             />
             <LiveLogs logs={ws.logs} onClear={ws.clearLogs} />
@@ -317,8 +318,8 @@ export function Dashboard() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-border/50 mt-12">
-        <div className="max-w-5xl mx-auto px-4 py-4 text-center text-xs text-muted-foreground">
+      <footer className="relative z-10 mt-12 border-t border-border/10">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 text-center text-[11px] text-muted-foreground/40">
           İTÜ OBS Ders Kayıt Otomasyon Aracı — {new Date().getFullYear()}
         </div>
       </footer>
