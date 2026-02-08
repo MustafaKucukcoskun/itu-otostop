@@ -66,6 +66,7 @@ class RegistrationEngine:
         self._phase = "idle"
         self._current_attempt = 0
         self._calibration: Optional[CalibrationData] = None
+        self._cal_samples: list[tuple[float, float, float, str]] = []  # (offset, rtt, timestamp, source)
         self._crn_results: dict[str, dict] = {}
         self._trigger_time: Optional[float] = None
 
@@ -130,6 +131,26 @@ class RegistrationEngine:
     def cancel(self):
         self._cancelled.set()
         self._log("İptal edildi", "warning")
+
+    def _best_calibration(self) -> Optional[CalibrationData]:
+        """Tüm ölçüm havuzundan en düşük RTT'li sample'ı seç (en güvenilir offset)."""
+        if not self._cal_samples:
+            return self._calibration
+        # En düşük RTT = en yüksek güvenilirlik
+        best = min(self._cal_samples, key=lambda s: s[1])
+        return CalibrationData(
+            server_offset=best[0],
+            rtt_one_way=best[1] / 2,
+            ntp_offset=self._calibration.ntp_offset if self._calibration else 0.0,
+        )
+
+    def _add_sample(self, offset: float, rtt: float, source: str):
+        """Kalibrasyon ölçüm havuzuna yeni sample ekle. Max 20 tutar, eski/kötü olanları atar."""
+        self._cal_samples.append((offset, rtt, time.time(), source))
+        # Havuzu 20 ile sınırla: en kötü RTT'lileri at
+        if len(self._cal_samples) > 20:
+            self._cal_samples.sort(key=lambda s: s[1])
+            self._cal_samples = self._cal_samples[:20]
 
     def _set_phase(self, phase: str):
         self._phase = phase
@@ -249,6 +270,10 @@ class RegistrationEngine:
         ntp_off = self._ntp_offset()
 
         if offsets:
+            # Tüm geçişleri havuza ekle
+            for off, rtt in offsets:
+                self._add_sample(off, rtt, source)
+
             offsets.sort(key=lambda x: x[1])
             best_offset, best_rtt = offsets[0]
             tek_yon = best_rtt / 2
@@ -258,7 +283,7 @@ class RegistrationEngine:
                 ntp_offset=ntp_off,
             )
             yon = "İLERİDE" if best_offset > 0 else "GERİDE"
-            self._log(f"Sonuç: {abs(best_offset*1000):.0f}ms {yon} (±{tek_yon*1000:.0f}ms)")
+            self._log(f"Sonuç: {abs(best_offset*1000):.0f}ms {yon} (±{tek_yon*1000:.0f}ms) [havuz: {len(self._cal_samples)} ölçüm]")
         else:
             self._log("Date geçişi yakalanamadı → NTP fallback", "warning")
             self._calibration = CalibrationData(
@@ -310,23 +335,26 @@ class RegistrationEngine:
                     offset = (t_utc + rtt / 2) - server_ts
                     tek_yon = rtt / 2
 
+                    # Havuza ekle
+                    self._add_sample(offset, rtt, source)
+
+                    # En iyi ölçümü havuzdan seç
+                    best = self._best_calibration()
+                    if best:
+                        self._calibration = best
+
                     prev_ntp = self._calibration.ntp_offset if self._calibration else 0.0
-                    self._calibration = CalibrationData(
-                        server_offset=offset,
-                        rtt_one_way=tek_yon,
-                        ntp_offset=prev_ntp,
-                    )
 
                     self._emit("calibration", {
-                        "server_offset_ms": offset * 1000,
-                        "rtt_one_way_ms": tek_yon * 1000,
-                        "rtt_full_ms": rtt * 1000,
+                        "server_offset_ms": self._calibration.server_offset * 1000,
+                        "rtt_one_way_ms": self._calibration.rtt_one_way * 1000,
+                        "rtt_full_ms": self._calibration.rtt_one_way * 2000,
                         "ntp_offset_ms": prev_ntp * 1000,
-                        "server_ntp_diff_ms": (offset - prev_ntp) * 1000,
-                        "accuracy_ms": tek_yon * 1000,
+                        "server_ntp_diff_ms": (self._calibration.server_offset - prev_ntp) * 1000,
+                        "accuracy_ms": self._calibration.rtt_one_way * 1000,
                         "source": source,
                     })
-                    self._log(f"⚡ Hızlı kal: offset={offset*1000:+.0f}ms RTT={rtt*1000:.0f}ms [{source}]")
+                    self._log(f"⚡ Hızlı kal: ölçüm={offset*1000:+.0f}ms/{rtt*1000:.0f}ms → en iyi: {self._calibration.server_offset*1000:+.0f}ms/{self._calibration.rtt_one_way*1000:.0f}ms [havuz:{len(self._cal_samples)}]")
                     return self._calibration
                 time.sleep(poll_aralik)
 
@@ -632,9 +660,10 @@ class RegistrationEngine:
             # 2. Ilk ısınma (POST dahil)
             self._prewarm(head_only=False)
 
-            # 3. Tetik zamanı
+            # 3. Tetik zamanı (havuzdaki en iyi ölçüme göre)
             hedef = self._saat_to_epoch(self.kayit_saati)
-            tetik = hedef + cal.server_offset - cal.rtt_one_way + self.gecikme_buffer
+            best = self._best_calibration()
+            tetik = hedef + best.server_offset - best.rtt_one_way + self.gecikme_buffer
             self._trigger_time = tetik
 
             kalan_sn = tetik - time.time()
@@ -656,9 +685,17 @@ class RegistrationEngine:
             prewarm2 = False
             final_cal_done = False
             last_recal_time = time.time()
-            RECAL_INTERVAL = 30  # saniyede bir hafif kalibrasyon
-            FINAL_CAL_THRESHOLD = 20  # son kalibrasyon bu saniyeden önce
+            RECAL_INTERVAL = 30  # her X saniyede hafif kalibrasyon
+            FINAL_CAL_WINDOW = 45  # son tam kalibrasyon bu saniyede başlar
+            FINAL_CAL_MIN = 15  # bundan yakın olursa zaten yapma
             recal_count = 0
+
+            def _recalc_trigger():
+                """Havuzdaki en iyi ölçüme göre tetik zamanını yeniden hesapla."""
+                best = self._best_calibration()
+                if best:
+                    return hedef + best.server_offset - best.rtt_one_way + self.gecikme_buffer
+                return tetik
 
             while not self._cancelled.is_set():
                 now = time.time()
@@ -671,29 +708,28 @@ class RegistrationEngine:
                 if kalan > 25 and (now - last_recal_time) >= RECAL_INTERVAL:
                     recal_count += 1
                     self._log(f"🔄 Periyodik kalibrasyon #{recal_count}...")
-                    quick = self._quick_calibrate(source="auto")
-                    if quick:
-                        eski_tetik = tetik
-                        tetik = hedef + quick.server_offset - quick.rtt_one_way + self.gecikme_buffer
-                        self._trigger_time = tetik
-                        fark = (tetik - eski_tetik) * 1000
-                        if abs(fark) > 1:
-                            self._log(f"🔄 Tetik güncellendi: {fark:+.0f}ms kayma")
-                        kalan = tetik - time.time()  # kalanı güncelle
+                    self._quick_calibrate(source="auto")
+                    eski_tetik = tetik
+                    tetik = _recalc_trigger()
+                    self._trigger_time = tetik
+                    fark = (tetik - eski_tetik) * 1000
+                    if abs(fark) > 1:
+                        self._log(f"🔄 Tetik güncellendi: {fark:+.0f}ms kayma (en iyi RTT: {self._calibration.rtt_one_way*1000:.0f}ms)")
+                    kalan = tetik - time.time()
                     last_recal_time = now
 
-                # ── Son kalibrasyon (~15-20sn kala, hızlı ölçüm) ──
-                if not final_cal_done and 12 < kalan <= FINAL_CAL_THRESHOLD:
-                    self._log("🎯 Son kalibrasyon başlıyor (hızlı ölçüm)...")
-                    final = self._quick_calibrate(source="final")
-                    if final:
-                        eski_tetik = tetik
-                        tetik = hedef + final.server_offset - final.rtt_one_way + self.gecikme_buffer
-                        self._trigger_time = tetik
-                        fark = (tetik - eski_tetik) * 1000
-                        self._log(f"🎯 Son kalibrasyon tamam → tetik farkı: {fark:+.0f}ms")
-                        kalan = tetik - time.time()  # kalanı güncelle
-                        self._emit("countdown", {"trigger_time": tetik, "remaining": kalan})
+                # ── Son TAM kalibrasyon (35-45sn kala) ──
+                if not final_cal_done and FINAL_CAL_MIN < kalan <= FINAL_CAL_WINDOW:
+                    self._log("🎯 Son tam kalibrasyon başlıyor...")
+                    self.calibrate(source="final")
+                    eski_tetik = tetik
+                    tetik = _recalc_trigger()
+                    self._trigger_time = tetik
+                    fark = (tetik - eski_tetik) * 1000
+                    best = self._best_calibration()
+                    self._log(f"🎯 Son kalibrasyon tamam → tetik farkı: {fark:+.0f}ms | en iyi: offset={best.server_offset*1000:+.0f}ms RTT={best.rtt_one_way*1000:.0f}ms [havuz:{len(self._cal_samples)}]")
+                    kalan = tetik - time.time()
+                    self._emit("countdown", {"trigger_time": tetik, "remaining": kalan})
                     final_cal_done = True
                     # Final sonrası bağlantıyı tekrar ısıt
                     self._prewarm(head_only=True)
@@ -721,7 +757,8 @@ class RegistrationEngine:
             # 5. KAYIT
             self._set_phase("registering")
             fark_ms = (time.time() - hedef) * 1000
-            self._log(f"BAŞLIYOR! (hedef farkı: {fark_ms:+.0f}ms)")
+            best = self._best_calibration()
+            self._log(f"BAŞLIYOR! (hedef farkı: {fark_ms:+.0f}ms) [offset={best.server_offset*1000:+.0f}ms RTT={best.rtt_one_way*1000:.0f}ms havuz:{len(self._cal_samples)}]")
             if self.dry_run:
                 self._kayit_yap_dry_run()
             else:

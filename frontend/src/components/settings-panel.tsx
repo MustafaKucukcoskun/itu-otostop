@@ -221,13 +221,14 @@ export function SettingsPanel({
           </div>
           <div className="flex items-center justify-between">
             <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
-              Retry Aralığı: Sunucu 3sn&apos;den sık istekleri yok sayar (VAL16).
-              Buffer: Erken varış cezasını önler (+5ms önerilen).
+              Retry Aralığı: Sunucu 3sn&apos;den sık istekleri yok sayar
+              (VAL16). Buffer: Erken varış cezasını önler (+5ms önerilen).
             </p>
             {!disabled && (
               <button
                 type="button"
                 onClick={() => {
+                  onKayitSaatiChange("");
                   onMaxDenemeChange(DEFAULTS.maxDeneme);
                   onRetryAralikChange(DEFAULTS.retryAralik);
                   onGecikmeBufferChange(DEFAULTS.gecikmeBuffer);
