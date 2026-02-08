@@ -99,7 +99,7 @@ export function TokenInput({
             value={token}
             onChange={(e) => onTokenChange(e.target.value)}
             placeholder="OBS'den kopyaladığın Bearer token'ı yapıştır..."
-            className={`font-mono text-xs min-h-[80px] pr-10 resize-none ${
+            className={`font-mono text-xs min-h-20 pr-10 resize-none ${
               !show ? "text-transparent selection:text-transparent" : ""
             }`}
             style={
