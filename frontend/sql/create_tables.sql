@@ -35,18 +35,21 @@ CREATE TABLE IF NOT EXISTS user_presets (
 CREATE INDEX IF NOT EXISTS idx_user_configs_clerk ON user_configs(clerk_user_id);
 CREATE INDEX IF NOT EXISTS idx_user_presets_clerk ON user_presets(clerk_user_id);
 
--- 3) Row Level Security — her kullanıcı yalnızca kendi verisini görsün
+-- 3) Row Level Security — direkt tablo erişimini engelle
 ALTER TABLE user_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_presets ENABLE ROW LEVEL SECURITY;
 
--- NOT: RLS policy'leri Clerk JWT olmadan anon key ile kullanıyoruz.
--- clerk_user_id doğrulaması uygulama seviyesinde yapılır.
--- Eğer ileride Supabase Auth + Clerk JWT entegrasyonu yapılırsa,
--- policy'ler auth.uid() bazlı güncellenebilir.
+-- Tüm veri erişimi SECURITY DEFINER RPC fonksiyonları üzerinden yapılır.
+-- RPC fonksiyonları (get_user_config, save_user_config, get_user_presets, vb.)
+-- clerk_user_id parametresi ile filtreleme yapar ve SECURITY DEFINER ile
+-- RLS'i bypass eder. Anon key ile direkt tablo erişimi KAPATILDI.
 
--- Şimdilik: anon rolüne tam erişim (uygulama seviyesinde güvenlik)
-CREATE POLICY "anon_full_access_configs" ON user_configs
-  FOR ALL USING (true) WITH CHECK (true);
+-- NOT: Mevcut "anon_full_access_*" policy'leri varsa önce silin:
+-- DROP POLICY IF EXISTS "anon_full_access_configs" ON user_configs;
+-- DROP POLICY IF EXISTS "anon_full_access_presets" ON user_presets;
 
-CREATE POLICY "anon_full_access_presets" ON user_presets
-  FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "deny_direct_access_configs" ON user_configs
+  FOR ALL USING (false) WITH CHECK (false);
+
+CREATE POLICY "deny_direct_access_presets" ON user_presets
+  FOR ALL USING (false) WITH CHECK (false);
