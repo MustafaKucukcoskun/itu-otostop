@@ -11,7 +11,8 @@
       "Bash(gcloud run services list:*)",
       "Bash(gcloud run services describe:*)",
       "Bash(gcloud run deploy:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(bun run lint:*)"
     ]
   }
 }
