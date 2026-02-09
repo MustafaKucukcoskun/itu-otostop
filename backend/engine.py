@@ -9,6 +9,7 @@ import threading
 import queue
 import subprocess
 import sys
+import ctypes
 from email.utils import parsedate_to_datetime
 from dataclasses import dataclass, field
 from typing import Optional, Callable
@@ -414,8 +415,17 @@ class RegistrationEngine:
 
             self._log(f"📊 HTTP {resp.status_code} | RTT: {rtt_ms:.0f}ms")
             self._log("─────────────────────────────────")
-            self._log(f"📤 İstek gönderim zamanı: hedef {hedef_fark_ms:+.0f}ms")
-            self._log(f"📥 Tahmini sunucu varış: hedef {varis_fark_ms:+.0f}ms")
+            self._log(f"📤 İstek gönderim (yerel saat): hedef {hedef_fark_ms:+.0f}ms")
+            self._log(f"📥 Tahmini varış (yerel saat): hedef {varis_fark_ms:+.0f}ms")
+
+            # Sunucu perspektifine dönüştür (offset = yerel - sunucu)
+            if self._calibration:
+                offset_ms = self._calibration.server_offset * 1000
+                sunucu_gonderim_ms = hedef_fark_ms - offset_ms
+                sunucu_varis_ms = varis_fark_ms - offset_ms
+                self._log(f"🎯 Sunucu perspektifi: gönderim {sunucu_gonderim_ms:+.0f}ms, varış {sunucu_varis_ms:+.0f}ms")
+            else:
+                sunucu_varis_ms = varis_fark_ms
 
             # Sunucu Date header'ından gerçek sunucu saati doğrulaması
             server_date = resp.headers.get("Date", "")
@@ -423,28 +433,28 @@ class RegistrationEngine:
                 try:
                     server_ts = parsedate_to_datetime(server_date).timestamp()
                     server_hedef_fark = (server_ts - hedef) * 1000
-                    self._log(f"🕐 Sunucu Date header: hedef {server_hedef_fark:+.0f}ms")
+                    self._log(f"🕐 Sunucu Date header: hedef {server_hedef_fark:+.0f}ms (1sn granülarite)")
                 except Exception:
                     pass
 
-            # Değerlendirme
-            if abs(varis_fark_ms) <= 50:
-                self._log(f"✅ MÜKEMMEL — İstek hedefe ±50ms içinde ulaştı ({varis_fark_ms:+.0f}ms)")
-            elif abs(varis_fark_ms) <= 200:
-                self._log(f"👍 İYİ — İstek hedefe ±200ms içinde ({varis_fark_ms:+.0f}ms)")
-            elif varis_fark_ms < -200:
-                self._log(f"⚠️ ERKEN — İstek {abs(varis_fark_ms):.0f}ms erken gitti (VAL02 riski)", "warning")
+            # Değerlendirme (sunucu perspektifinden)
+            if abs(sunucu_varis_ms) <= 50:
+                self._log(f"✅ MÜKEMMEL — Sunucuya ±50ms içinde ulaştı ({sunucu_varis_ms:+.0f}ms)")
+            elif abs(sunucu_varis_ms) <= 200:
+                self._log(f"👍 İYİ — Sunucuya ±200ms içinde ulaştı ({sunucu_varis_ms:+.0f}ms)")
+            elif sunucu_varis_ms < -200:
+                self._log(f"⚠️ ERKEN — İstek sunucuya {abs(sunucu_varis_ms):.0f}ms erken ulaştı (VAL02 riski)", "warning")
             else:
-                self._log(f"⚠️ GEÇ — İstek {varis_fark_ms:.0f}ms geç gitti (kontenjan kaçırma riski)", "warning")
+                self._log(f"⚠️ GEÇ — İstek sunucuya {sunucu_varis_ms:.0f}ms geç ulaştı (kontenjan kaçırma riski)", "warning")
 
             self._log("─────────────────────────────────")
 
             # Kalibrasyon verileriyle karşılaştır
             if self._calibration:
                 cal = self._calibration
-                self._log(f"📐 Kalibrasyon: offset={cal.server_offset*1000:+.0f}ms, RTT={cal.rtt_one_way*1000:.0f}ms")
-                teorik_varis = hedef_fark_ms + cal.rtt_one_way * 1000
-                self._log(f"📐 Teorik sunucu varış: hedef {teorik_varis:+.0f}ms")
+                self._log(f"📐 Kalibrasyon: offset={cal.server_offset*1000:+.0f}ms, RTT(tek yön)={cal.rtt_one_way*1000:.0f}ms")
+                teorik_sunucu_varis = sunucu_gonderim_ms + cal.rtt_one_way * 1000
+                self._log(f"📐 Teorik sunucu varış: hedef {teorik_sunucu_varis:+.0f}ms (sunucu saati)")
 
         except Exception as e:
             self._log(f"❌ Test isteği hatası: {e}", "error")
@@ -626,11 +636,45 @@ class RegistrationEngine:
         target = now.replace(hour=h, minute=m, second=s, microsecond=0)
         return target.timestamp()
 
+    # ── Sistem Optimizasyonları ──
+
+    def _set_timer_resolution(self, high_res: bool):
+        """Windows timer çözünürlüğünü 1ms'ye düşür (varsayılan ~15.6ms)."""
+        if sys.platform != "win32":
+            return
+        try:
+            winmm = ctypes.WinDLL("winmm", use_last_error=True)
+            if high_res:
+                winmm.timeBeginPeriod(1)
+                self._log("⚡ Windows timer çözünürlüğü: 1ms")
+            else:
+                winmm.timeEndPeriod(1)
+        except Exception:
+            pass
+
+    def _boost_priority(self):
+        """Process ve thread önceliğini yükselt (Windows)."""
+        if sys.platform != "win32":
+            return
+        try:
+            # Process: HIGH_PRIORITY_CLASS (0x80)
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetCurrentProcess()
+            kernel32.SetPriorityClass(handle, 0x80)
+            # Thread: THREAD_PRIORITY_HIGHEST (2)
+            thread_handle = kernel32.GetCurrentThread()
+            kernel32.SetThreadPriority(thread_handle, 2)
+            self._log("⚡ Process/thread önceliği yükseltildi")
+        except Exception:
+            pass
+
     # ── Ana orkestratör (thread içinde çalışır) ──
 
     def run(self):
         """Tam kayıt akışı: token kontrol → kalibrasyon → ısınma → bekleme → kayıt."""
         self._running = True
+        self._set_timer_resolution(True)
+        self._boost_priority()
 
         try:
             if self.dry_run:
@@ -683,6 +727,7 @@ class RegistrationEngine:
             # 4. Bekleme döngüsü (sürekli kalibrasyon ile)
             self._set_phase("waiting")
             prewarm2 = False
+            keepalive_5s = False
             final_cal_done = False
             last_recal_time = time.time()
             RECAL_INTERVAL = 30  # her X saniyede hafif kalibrasyon
@@ -735,19 +780,30 @@ class RegistrationEngine:
                     self._prewarm(head_only=True)
                     prewarm2 = True
 
-                if not prewarm2 and 0 < kalan <= 5.5:
+                # ── Bağlantı canlı tutma (10s ve 5s kala) ──
+                if not prewarm2 and 0 < kalan <= 10:
                     self._prewarm(head_only=True)
                     prewarm2 = True
+                elif prewarm2 and not keepalive_5s and 4.5 < kalan <= 5.5:
+                    # 5s kala ikinci keepalive
+                    keepalive_5s = True
+                    try:
+                        self.session.head(OBS_BASE, timeout=3, allow_redirects=False)
+                    except Exception:
+                        pass
 
+                # ── Busy-wait (son 50ms — perf_counter ile yüksek çözünürlük) ──
                 if kalan <= 0.05:
-                    while time.time() < tetik:
+                    pc_tetik = time.perf_counter() + (tetik - time.time())
+                    while time.perf_counter() < pc_tetik:
                         pass
                     break
 
+                # ── Kademeli uyku (gereksiz wakeup'ları minimize et) ──
                 if kalan <= 0.5:
-                    time.sleep(0.0001)
+                    time.sleep(max(0, kalan - 0.05))
                 elif kalan <= 5:
-                    time.sleep(0.001)
+                    time.sleep(0.005)
                 else:
                     time.sleep(min(1.0, kalan - 5))
 
@@ -767,6 +823,7 @@ class RegistrationEngine:
         except Exception as e:
             self._log(f"Beklenmeyen hata: {e}", "error")
         finally:
+            self._set_timer_resolution(False)
             self._set_phase("done")
             self._emit("done", {"results": dict(self._crn_results)})
             self._running = False  # MUST be last — poll_engine_events checks this flag
