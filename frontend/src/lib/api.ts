@@ -1,5 +1,17 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// ── Session ID (per-tab, sessionStorage persist) ──
+
+function getSessionId(): string {
+  if (typeof window === "undefined") return "ssr";
+  let sid = sessionStorage.getItem("otostop_session_id");
+  if (!sid) {
+    sid = crypto.randomUUID();
+    sessionStorage.setItem("otostop_session_id", sid);
+  }
+  return sid;
+}
+
 // ── Types ──
 
 export interface ConfigData {
@@ -105,8 +117,12 @@ export interface CourseInfo {
 
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Session-ID": getSessionId(),
+      ...options?.headers,
+    },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -162,6 +178,8 @@ export const api = {
 // ── WebSocket ──
 
 export function createWebSocket(): WebSocket {
-  const wsUrl = API_BASE.replace("http", "ws") + "/ws";
+  const wsUrl =
+    API_BASE.replace("http", "ws") +
+    `/ws?session_id=${encodeURIComponent(getSessionId())}`;
   return new WebSocket(wsUrl);
 }

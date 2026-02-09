@@ -10,12 +10,33 @@ import queue
 import subprocess
 import sys
 import ctypes
+import os
+import socket
 from email.utils import parsedate_to_datetime
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 
 import requests
 import requests.adapters
+
+
+class OptimizedHTTPAdapter(requests.adapters.HTTPAdapter):
+    """Socket seviyesinde TCP optimizasyonları uygulayan HTTP adapter.
+
+    - TCP_NODELAY: Nagle algoritmasını devre dışı bırak (küçük paketler hemen gönderilir)
+    - SO_KEEPALIVE: OS seviyesinde TCP keepalive (bağlantı timeout'unu önler)
+    - TCP_QUICKACK (Linux): Gecikmeli ACK'ları devre dışı bırak → RTT 5-15ms düşer
+    """
+
+    def init_poolmanager(self, *args, **kwargs):
+        super().init_poolmanager(*args, **kwargs)
+        if hasattr(self.poolmanager, 'connection_pool_kw'):
+            opts = list(self.poolmanager.connection_pool_kw.get('socket_options', []))
+            opts.append((socket.IPPROTO_TCP, socket.TCP_NODELAY, 1))
+            opts.append((socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1))
+            if sys.platform == "linux":
+                opts.append((socket.IPPROTO_TCP, 12, 1))  # TCP_QUICKACK
+            self.poolmanager.connection_pool_kw['socket_options'] = opts
 
 
 OBS_URL = "https://obs.itu.edu.tr/api/ders-kayit/v21"
@@ -77,7 +98,7 @@ class RegistrationEngine:
             "Authorization": f"Bearer {token}",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         })
-        adapter = requests.adapters.HTTPAdapter(
+        adapter = OptimizedHTTPAdapter(
             pool_connections=1, pool_maxsize=5, max_retries=0,
         )
         self.session.mount("https://", adapter)
@@ -639,34 +660,47 @@ class RegistrationEngine:
     # ── Sistem Optimizasyonları ──
 
     def _set_timer_resolution(self, high_res: bool):
-        """Windows timer çözünürlüğünü 1ms'ye düşür (varsayılan ~15.6ms)."""
-        if sys.platform != "win32":
-            return
-        try:
-            winmm = ctypes.WinDLL("winmm", use_last_error=True)
-            if high_res:
-                winmm.timeBeginPeriod(1)
-                self._log("⚡ Windows timer çözünürlüğü: 1ms")
-            else:
-                winmm.timeEndPeriod(1)
-        except Exception:
-            pass
+        """Timer çözünürlüğünü optimize et (Windows: 1ms, Linux: native ~1ms)."""
+        if sys.platform == "win32":
+            try:
+                winmm = ctypes.WinDLL("winmm", use_last_error=True)
+                if high_res:
+                    winmm.timeBeginPeriod(1)
+                    self._log("⚡ Windows timer çözünürlüğü: 1ms")
+                else:
+                    winmm.timeEndPeriod(1)
+            except Exception:
+                pass
+        elif high_res:
+            self._log("⚡ Linux timer: ~1ms native")
 
     def _boost_priority(self):
-        """Process ve thread önceliğini yükselt (Windows)."""
-        if sys.platform != "win32":
-            return
-        try:
-            # Process: HIGH_PRIORITY_CLASS (0x80)
-            kernel32 = ctypes.windll.kernel32
-            handle = kernel32.GetCurrentProcess()
-            kernel32.SetPriorityClass(handle, 0x80)
-            # Thread: THREAD_PRIORITY_HIGHEST (2)
-            thread_handle = kernel32.GetCurrentThread()
-            kernel32.SetThreadPriority(thread_handle, 2)
-            self._log("⚡ Process/thread önceliği yükseltildi")
-        except Exception:
-            pass
+        """Process ve thread önceliğini yükselt (cross-platform)."""
+        if sys.platform == "win32":
+            try:
+                kernel32 = ctypes.windll.kernel32
+                handle = kernel32.GetCurrentProcess()
+                kernel32.SetPriorityClass(handle, 0x80)  # HIGH_PRIORITY_CLASS
+                thread_handle = kernel32.GetCurrentThread()
+                kernel32.SetThreadPriority(thread_handle, 2)  # THREAD_PRIORITY_HIGHEST
+                self._log("⚡ Process/thread önceliği yükseltildi")
+            except Exception:
+                pass
+        else:
+            # Linux / Cloud Run (root olarak çalışır)
+            opts = []
+            try:
+                os.nice(-10)
+                opts.append("nice=-10")
+            except (PermissionError, OSError):
+                pass
+            try:
+                os.sched_setaffinity(0, {0})
+                opts.append("cpu=0")
+            except (AttributeError, OSError):
+                pass
+            if opts:
+                self._log(f"⚡ Linux optimizasyonları: {', '.join(opts)}")
 
     # ── Ana orkestratör (thread içinde çalışır) ──
 
