@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { motion } from "motion/react";
 
 interface CountdownTimerProps {
@@ -16,7 +16,6 @@ export function CountdownTimer({
   phase,
   dryRun,
 }: CountdownTimerProps) {
-  const [displayTime, setDisplayTime] = useState("--:--:--");
   const [currentTime, setCurrentTime] = useState("");
   const [localCountdown, setLocalCountdown] = useState<number | null>(null);
 
@@ -38,6 +37,7 @@ export function CountdownTimer({
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- prop-to-state sync for local interpolation
     if (countdown !== null) setLocalCountdown(countdown);
   }, [countdown]);
 
@@ -52,25 +52,21 @@ export function CountdownTimer({
     return () => clearInterval(interval);
   }, [localCountdown, phase]);
 
-  useEffect(() => {
+  const displayTime = useMemo(() => {
     if (localCountdown === null || localCountdown <= 0) {
-      if (phase === "registering") setDisplayTime("KAYIT YAPILIYOR");
-      else if (phase === "done") setDisplayTime("TAMAMLANDI");
-      else if (phase === "idle")
-        setDisplayTime(""); // idle = live clock shown separately
-      else setDisplayTime(targetTime || "--:--:--");
-      return;
+      if (phase === "registering") return "KAYIT YAPILIYOR";
+      if (phase === "done") return "TAMAMLANDI";
+      if (phase === "idle") return ""; // idle = live clock shown separately
+      return targetTime || "--:--:--";
     }
     const total = Math.max(0, localCountdown);
     const h = Math.floor(total / 3600);
     const m = Math.floor((total % 3600) / 60);
     const s = Math.floor(total % 60);
     const ms = Math.floor((total % 1) * 10);
-    setDisplayTime(
-      h > 0
-        ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
-        : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${ms}`,
-    );
+    return h > 0
+      ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+      : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${ms}`;
   }, [localCountdown, phase, targetTime]);
 
   const isIdle = phase === "idle";

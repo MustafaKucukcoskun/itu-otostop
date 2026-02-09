@@ -63,7 +63,7 @@ export function useWebSocket() {
           pingIntervalRef.current = null;
         }
         // Auto reconnect after 3s
-        reconnectTimeoutRef.current = setTimeout(connect, 3000);
+        reconnectTimeoutRef.current = setTimeout(connect, 3000); // eslint-disable-line react-hooks/immutability -- self-referencing closure, valid at call time
       };
 
       ws.onerror = () => ws.close();

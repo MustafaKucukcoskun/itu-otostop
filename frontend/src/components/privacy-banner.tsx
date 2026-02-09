@@ -10,10 +10,9 @@ export function PrivacyBanner() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    // Show banner only on first visit
-    if (!localStorage.getItem(STORAGE_KEY)) {
-      setVisible(true);
-    }
+    // Show banner only on first visit (useEffect required — localStorage unavailable during SSR)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!localStorage.getItem(STORAGE_KEY)) setVisible(true);
   }, []);
 
   const dismiss = () => {

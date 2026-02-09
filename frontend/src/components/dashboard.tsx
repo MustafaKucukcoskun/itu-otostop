@@ -98,7 +98,6 @@ export function Dashboard() {
         }
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clerkUserId]);
 
   // Sync state from backend when WebSocket connects/reconnects
@@ -124,7 +123,6 @@ export function Dashboard() {
         });
     }
     prevConnectedRef.current = ws.connected;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ws.connected]);
 
   // Save config to backend

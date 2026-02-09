@@ -73,7 +73,7 @@ export function usePresets() {
         setCloudLoaded(true);
       });
     } else if (!userId) {
-      setPresets(loadLocal());
+      setPresets(loadLocal()); // eslint-disable-line react-hooks/set-state-in-effect -- SSR + conditional reload
     }
   }, [userId, cloudLoaded]);
 

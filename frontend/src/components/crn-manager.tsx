@@ -8,7 +8,6 @@ import {
   BookOpen,
   BookMinus,
   Users,
-  MapPin,
   Loader2,
   Trash2,
 } from "lucide-react";

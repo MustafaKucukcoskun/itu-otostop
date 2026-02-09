@@ -52,10 +52,11 @@ export function useNotification() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const [muted, setMuted] = useState(false);
 
-  // Restore mute preference
+  // Restore mute preference (useEffect required — localStorage unavailable during SSR)
   useEffect(() => {
     try {
       const saved = localStorage.getItem("otostop-muted");
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (saved === "true") setMuted(true);
     } catch {
       /* ignore */
