@@ -1,6 +1,7 @@
 """
 OBS Ders Kayıt API — FastAPI Backend
 Kayıt motorunu kontrol eden REST + WebSocket API.
+Session bazlı izolasyon: her browser tab kendi bağımsız state'ine sahiptir.
 """
 
 import asyncio
@@ -9,9 +10,10 @@ import os
 import time
 import threading
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from models import (
@@ -22,24 +24,71 @@ from engine import RegistrationEngine
 from obs_course_service import get_obs_service, CourseInfo as OBSCourseInfo
 
 
-# ── Global state ──
+# ── Session-based state ──
 
-class AppState:
-    def __init__(self):
-        self.token: str = ""
-        self.ecrn_list: list[str] = []
-        self.scrn_list: list[str] = []
-        self.kayit_saati: str = ""
-        self.max_deneme: int = 60
-        self.retry_aralik: float = 3.0
-        self.gecikme_buffer: float = 0.005
-        self.dry_run: bool = False
-        self.engine: Optional[RegistrationEngine] = None
-        self.engine_thread: Optional[threading.Thread] = None
-        self.poll_task: Optional[asyncio.Task] = None
-        self.ws_clients: list[WebSocket] = []
+@dataclass
+class SessionState:
+    token: str = ""
+    ecrn_list: list[str] = field(default_factory=list)
+    scrn_list: list[str] = field(default_factory=list)
+    kayit_saati: str = ""
+    max_deneme: int = 60
+    retry_aralik: float = 3.0
+    gecikme_buffer: float = 0.005
+    dry_run: bool = False
+    engine: Optional[RegistrationEngine] = None
+    engine_thread: Optional[threading.Thread] = None
+    poll_task: Optional[asyncio.Task] = None
+    ws_clients: list = field(default_factory=list)  # list[WebSocket]
+    last_active: float = 0.0
 
-state = AppState()
+
+sessions: dict[str, SessionState] = {}
+MAX_SESSIONS = 100
+SESSION_TIMEOUT = 7200  # 2 saat
+
+
+def _cleanup_sessions():
+    """Timeout olan ve engine çalışmayan session'ları temizle."""
+    now = time.time()
+    expired = [
+        sid for sid, s in sessions.items()
+        if now - s.last_active > SESSION_TIMEOUT
+        and (not s.engine or not s.engine.is_running)
+    ]
+    for sid in expired:
+        s = sessions[sid]
+        # Temizlik: çalışan engine varsa iptal et
+        if s.engine and s.engine.is_running:
+            s.engine.cancel()
+        if s.poll_task and not s.poll_task.done():
+            s.poll_task.cancel()
+        del sessions[sid]
+
+
+def get_session(session_id: str) -> SessionState:
+    """Session ID'ye göre state al veya oluştur."""
+    if session_id not in sessions:
+        if len(sessions) >= MAX_SESSIONS:
+            _cleanup_sessions()
+            if len(sessions) >= MAX_SESSIONS:
+                raise HTTPException(503, "Maksimum oturum sayısına ulaşıldı")
+        sessions[session_id] = SessionState()
+    s = sessions[session_id]
+    s.last_active = time.time()
+    return s
+
+
+def get_session_id(request: Request) -> str:
+    """Request'ten session ID'yi çıkar (header veya query param)."""
+    sid = request.headers.get("X-Session-ID", "")
+    if not sid:
+        sid = request.query_params.get("session_id", "")
+    if not sid:
+        raise HTTPException(400, "X-Session-ID header gerekli")
+    if len(sid) > 128:
+        raise HTTPException(400, "Geçersiz session ID")
+    return sid
 
 
 # ── App ──
@@ -47,9 +96,10 @@ state = AppState()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
-    # Shutdown: cancel any running engine
-    if state.engine and state.engine.is_running:
-        state.engine.cancel()
+    # Shutdown: cancel all running engines
+    for sid, s in sessions.items():
+        if s.engine and s.engine.is_running:
+            s.engine.cancel()
 
 app = FastAPI(
     title="İTÜ Otostop API",
@@ -71,32 +121,38 @@ app.add_middleware(
 )
 
 
-# ── WebSocket broadcast ──
+# ── WebSocket broadcast (session bazlı) ──
 
-async def broadcast(event: dict):
+async def broadcast(session_id: str, event: dict):
+    session = sessions.get(session_id)
+    if not session:
+        return
     msg = json.dumps(event, ensure_ascii=False)
     disconnected = []
-    for ws in state.ws_clients:
+    for ws in session.ws_clients:
         try:
             await ws.send_text(msg)
         except Exception:
             disconnected.append(ws)
     for ws in disconnected:
-        state.ws_clients.remove(ws)
+        session.ws_clients.remove(ws)
 
 
-async def poll_engine_events():
+async def poll_engine_events(session_id: str):
     """Engine event kuyruğunu sürekli okuyup WebSocket'e yayınla."""
-    while state.engine and (state.engine.is_running or not state.engine._events.empty()):
-        events = state.engine.get_events()
+    session = sessions.get(session_id)
+    while session and session.engine and (session.engine.is_running or not session.engine._events.empty()):
+        events = session.engine.get_events()
         for event in events:
-            await broadcast(event)
+            await broadcast(session_id, event)
         await asyncio.sleep(0.1)
+        session = sessions.get(session_id)  # Session silinmiş olabilir
     # Son eventleri gönder
-    if state.engine:
-        events = state.engine.get_events()
+    session = sessions.get(session_id)
+    if session and session.engine:
+        events = session.engine.get_events()
         for event in events:
-            await broadcast(event)
+            await broadcast(session_id, event)
 
 
 def _poll_task_done(task: asyncio.Task):
@@ -117,48 +173,56 @@ async def health():
 
 
 @app.post("/api/config", response_model=ConfigResponse)
-async def set_config(req: ConfigRequest):
+async def set_config(req: ConfigRequest, request: Request):
+    session_id = get_session_id(request)
+    session = get_session(session_id)
+
     # Token sadece gönderildiğinde güncellenir (partial update)
     if req.token is not None and req.token != "":
-        state.token = req.token
-    state.ecrn_list = req.ecrn_list
-    state.scrn_list = req.scrn_list
-    state.kayit_saati = req.kayit_saati
-    state.max_deneme = req.max_deneme
-    state.retry_aralik = req.retry_aralik
-    state.gecikme_buffer = req.gecikme_buffer
-    state.dry_run = req.dry_run
-    return _config_response()
+        session.token = req.token
+    session.ecrn_list = req.ecrn_list
+    session.scrn_list = req.scrn_list
+    session.kayit_saati = req.kayit_saati
+    session.max_deneme = req.max_deneme
+    session.retry_aralik = req.retry_aralik
+    session.gecikme_buffer = req.gecikme_buffer
+    session.dry_run = req.dry_run
+    return _config_response(session)
 
 
 @app.get("/api/config", response_model=ConfigResponse)
-async def get_config():
-    return _config_response()
+async def get_config(request: Request):
+    session_id = get_session_id(request)
+    session = get_session(session_id)
+    return _config_response(session)
 
 
-def _config_response() -> ConfigResponse:
+def _config_response(session: SessionState) -> ConfigResponse:
     preview = ""
-    if state.token:
-        preview = state.token[:20] + "..." + state.token[-10:]
+    if session.token:
+        preview = session.token[:20] + "..." + session.token[-10:]
     return ConfigResponse(
-        ecrn_list=state.ecrn_list,
-        scrn_list=state.scrn_list,
-        kayit_saati=state.kayit_saati,
-        max_deneme=state.max_deneme,
-        retry_aralik=state.retry_aralik,
-        gecikme_buffer=state.gecikme_buffer,
-        token_set=bool(state.token),
+        ecrn_list=session.ecrn_list,
+        scrn_list=session.scrn_list,
+        kayit_saati=session.kayit_saati,
+        max_deneme=session.max_deneme,
+        retry_aralik=session.retry_aralik,
+        gecikme_buffer=session.gecikme_buffer,
+        token_set=bool(session.token),
         token_preview=preview,
-        dry_run=state.dry_run,
+        dry_run=session.dry_run,
     )
 
 
 @app.post("/api/test-token", response_model=TokenTestResult)
-async def test_token():
-    if not state.token:
+async def test_token(request: Request):
+    session_id = get_session_id(request)
+    session = get_session(session_id)
+
+    if not session.token:
         raise HTTPException(400, "Token ayarlanmamış")
     engine = RegistrationEngine(
-        token=state.token,
+        token=session.token,
         ecrn_list=["00000"],
     )
     result = await asyncio.to_thread(engine.test_token)
@@ -166,12 +230,15 @@ async def test_token():
 
 
 @app.post("/api/calibrate", response_model=CalibrationResult)
-async def calibrate():
-    if not state.token:
+async def calibrate(request: Request):
+    session_id = get_session_id(request)
+    session = get_session(session_id)
+
+    if not session.token:
         raise HTTPException(400, "Token ayarlanmamış")
     engine = RegistrationEngine(
-        token=state.token,
-        ecrn_list=state.ecrn_list or ["00000"],
+        token=session.token,
+        ecrn_list=session.ecrn_list or ["00000"],
     )
     cal = await asyncio.to_thread(engine.calibrate)
     return CalibrationResult(
@@ -186,78 +253,90 @@ async def calibrate():
 
 
 @app.post("/api/register/start")
-async def start_registration():
-    if not state.token:
+async def start_registration(request: Request):
+    session_id = get_session_id(request)
+    session = get_session(session_id)
+
+    if not session.token:
         raise HTTPException(400, "Token ayarlanmamış")
-    if not state.ecrn_list:
+    if not session.ecrn_list:
         raise HTTPException(400, "CRN listesi boş")
-    if not state.kayit_saati:
+    if not session.kayit_saati:
         raise HTTPException(400, "Kayıt saati ayarlanmamış")
 
     # Engine gerçekten çalışıyor mu kontrol et (thread alive + flag)
-    if state.engine and state.engine.is_running:
+    if session.engine and session.engine.is_running:
         # Thread ölmüşse flag sıkışmıştır — zorla temizle
-        if state.engine_thread and not state.engine_thread.is_alive():
-            state.engine._running = False
-            state.engine = None
-            state.engine_thread = None
+        if session.engine_thread and not session.engine_thread.is_alive():
+            session.engine._running = False
+            session.engine = None
+            session.engine_thread = None
         else:
             raise HTTPException(409, "Kayıt zaten çalışıyor")
 
-    state.engine = RegistrationEngine(
-        token=state.token,
-        ecrn_list=state.ecrn_list,
-        scrn_list=state.scrn_list,
-        kayit_saati=state.kayit_saati,
-        max_deneme=state.max_deneme,
-        retry_aralik=state.retry_aralik,
-        gecikme_buffer=state.gecikme_buffer,
-        dry_run=state.dry_run,
+    session.engine = RegistrationEngine(
+        token=session.token,
+        ecrn_list=session.ecrn_list,
+        scrn_list=session.scrn_list,
+        kayit_saati=session.kayit_saati,
+        max_deneme=session.max_deneme,
+        retry_aralik=session.retry_aralik,
+        gecikme_buffer=session.gecikme_buffer,
+        dry_run=session.dry_run,
     )
 
     # Engine'i ayrı thread'de başlat
-    state.engine_thread = threading.Thread(target=state.engine.run, daemon=True)
-    state.engine_thread.start()
+    session.engine_thread = threading.Thread(target=session.engine.run, daemon=True)
+    session.engine_thread.start()
 
     # Event polling'i background task olarak başlat
-    state.poll_task = asyncio.create_task(poll_engine_events())
-    state.poll_task.add_done_callback(_poll_task_done)
+    session.poll_task = asyncio.create_task(poll_engine_events(session_id))
+    session.poll_task.add_done_callback(_poll_task_done)
 
     return {"status": "started", "message": "Kayıt başlatıldı"}
 
 
 @app.post("/api/register/cancel")
-async def cancel_registration():
-    if not state.engine or not state.engine.is_running:
+async def cancel_registration(request: Request):
+    session_id = get_session_id(request)
+    session = get_session(session_id)
+
+    if not session.engine or not session.engine.is_running:
         raise HTTPException(404, "Çalışan kayıt yok")
-    state.engine.cancel()
+    session.engine.cancel()
     return {"status": "cancelled"}
 
 
 @app.post("/api/register/reset")
-async def reset_registration():
+async def reset_registration(request: Request):
     """Engine state'i zorla sıfırla — sıkışmış durumlarda kullanılır."""
-    if state.engine:
-        if state.engine.is_running and state.engine_thread and state.engine_thread.is_alive():
-            state.engine.cancel()
+    session_id = get_session_id(request)
+    session = get_session(session_id)
+
+    if session.engine:
+        if session.engine.is_running and session.engine_thread and session.engine_thread.is_alive():
+            session.engine.cancel()
             # Thread'in bitmesi için kısa süre bekle
-            state.engine_thread.join(timeout=3)
-        state.engine._running = False
-        state.engine = None
-    state.engine_thread = None
-    if state.poll_task and not state.poll_task.done():
-        state.poll_task.cancel()
-    state.poll_task = None
+            session.engine_thread.join(timeout=3)
+        session.engine._running = False
+        session.engine = None
+    session.engine_thread = None
+    if session.poll_task and not session.poll_task.done():
+        session.poll_task.cancel()
+    session.poll_task = None
     return {"status": "reset", "message": "Engine state sıfırlandı"}
 
 
 @app.get("/api/register/status", response_model=RegistrationState)
-async def registration_status():
-    if not state.engine:
+async def registration_status(request: Request):
+    session_id = get_session_id(request)
+    session = get_session(session_id)
+
+    if not session.engine:
         return RegistrationState()
 
     crn_results = []
-    for crn, info in state.engine.crn_results.items():
+    for crn, info in session.engine.crn_results.items():
         try:
             status = CRNStatus(info["status"])
         except ValueError:
@@ -265,8 +344,8 @@ async def registration_status():
         crn_results.append(CRNResultItem(crn=crn, status=status, message=info.get("message", "")))
 
     cal = None
-    if state.engine.calibration:
-        c = state.engine.calibration
+    if session.engine.calibration:
+        c = session.engine.calibration
         cal = CalibrationResult(
             server_offset_ms=c.server_offset * 1000,
             rtt_one_way_ms=c.rtt_one_way * 1000,
@@ -277,22 +356,22 @@ async def registration_status():
         )
 
     remaining = None
-    if state.engine.trigger_time:
-        remaining = max(0, state.engine.trigger_time - time.time())
+    if session.engine.trigger_time:
+        remaining = max(0, session.engine.trigger_time - time.time())
 
     return RegistrationState(
-        phase=state.engine.phase,
-        running=state.engine.is_running,
-        current_attempt=state.engine.current_attempt,
-        max_attempts=state.max_deneme,
+        phase=session.engine.phase,
+        running=session.engine.is_running,
+        current_attempt=session.engine.current_attempt,
+        max_attempts=session.max_deneme,
         crn_results=crn_results,
         calibration=cal,
         countdown_seconds=remaining,
-        trigger_time=state.engine.trigger_time,
+        trigger_time=session.engine.trigger_time,
     )
 
 
-# ── OBS Ders Programı Proxy ──
+# ── OBS Ders Programı Proxy (session-agnostic) ──
 
 def _course_to_dict(c: OBSCourseInfo) -> dict:
     return {
@@ -352,9 +431,10 @@ async def lookup_crns_batch(body: dict):
 # ── WebSocket ──
 
 @app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket):
+async def websocket_endpoint(ws: WebSocket, session_id: str = Query(...)):
     await ws.accept()
-    state.ws_clients.append(ws)
+    session = get_session(session_id)
+    session.ws_clients.append(ws)
     try:
         while True:
             # Ping/pong veya client mesajlarını oku
@@ -364,8 +444,9 @@ async def websocket_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
-        if ws in state.ws_clients:
-            state.ws_clients.remove(ws)
+        session = sessions.get(session_id)
+        if session and ws in session.ws_clients:
+            session.ws_clients.remove(ws)
 
 
 # ── Run ──

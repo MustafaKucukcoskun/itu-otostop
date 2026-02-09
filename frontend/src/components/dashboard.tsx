@@ -63,11 +63,12 @@ export function Dashboard() {
   // Load config on mount (backend) + cloud sync on login
   useEffect(() => {
     (async () => {
+      let loaded = false;
       try {
         const config = await api.getConfig();
-        if (config.ecrn_list?.length) setCrnList(config.ecrn_list);
-        if (config.scrn_list?.length) setScrnList(config.scrn_list);
-        if (config.kayit_saati) setKayitSaati(config.kayit_saati);
+        if (config.ecrn_list?.length) { setCrnList(config.ecrn_list); loaded = true; }
+        if (config.scrn_list?.length) { setScrnList(config.scrn_list); loaded = true; }
+        if (config.kayit_saati) { setKayitSaati(config.kayit_saati); loaded = true; }
         if (config.max_deneme) setMaxDeneme(config.max_deneme);
         if (config.retry_aralik)
           setRetryAralik(Math.max(3, config.retry_aralik));
@@ -75,8 +76,12 @@ export function Dashboard() {
         if (config.dry_run) setDryRun(config.dry_run);
         if (config.token_set) setTokenValid(true);
       } catch {
-        // Backend not running yet — try cloud
-        if (clerkUserId) {
+        // Backend error
+      }
+
+      // Backend boşsa veya hata verdiyse cloud'dan da kontrol et
+      if (!loaded && clerkUserId) {
+        try {
           const cloud = await ConfigService.getUserConfig(clerkUserId);
           if (cloud) {
             if (cloud.ecrn_list?.length) setCrnList(cloud.ecrn_list);
@@ -88,6 +93,8 @@ export function Dashboard() {
             if (cloud.gecikme_buffer) setGecikmeBuffer(cloud.gecikme_buffer);
             if (cloud.dry_run) setDryRun(cloud.dry_run);
           }
+        } catch {
+          // Cloud da erişilemez
         }
       }
     })();
@@ -399,6 +406,7 @@ export function Dashboard() {
       setMaxDeneme(preset.max_deneme);
       setRetryAralik(Math.max(3, preset.retry_aralik));
       setGecikmeBuffer(preset.gecikme_buffer);
+      setDryRun(false); // Preset yüklendiğinde dry_run kapalı
     },
     [],
   );
