@@ -60,6 +60,28 @@ export function Dashboard() {
     ws.phase === "waiting" ||
     ws.phase === "registering";
 
+  // Detect user switch — clear stale user data from localStorage/sessionStorage
+  useEffect(() => {
+    if (!clerkUserId) return;
+    const lastUser = localStorage.getItem("otostop-last-user");
+    if (lastUser && lastUser !== clerkUserId) {
+      // Farklı kullanıcı — eski kullanıcının verilerini temizle
+      localStorage.removeItem("otostop-presets");
+      localStorage.removeItem("otostop-presets-owner");
+      localStorage.removeItem("otostop-crn-labels");
+      // Kalibrasyon geçmişi (token-bazlı key'ler)
+      const calKeys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith("otostop-cal-")) calKeys.push(key);
+      }
+      calKeys.forEach((k) => localStorage.removeItem(k));
+      // Yeni backend session — eski kullanıcının oturum verilerini taşımasın
+      sessionStorage.removeItem("otostop_session_id");
+    }
+    localStorage.setItem("otostop-last-user", clerkUserId);
+  }, [clerkUserId]);
+
   // Load config on mount (backend) + cloud sync on login
   useEffect(() => {
     (async () => {

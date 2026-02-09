@@ -17,6 +17,7 @@ export interface Preset {
 }
 
 const STORAGE_KEY = "otostop-presets";
+const OWNER_KEY = "otostop-presets-owner";
 
 function loadLocal(): Preset[] {
   try {
@@ -45,12 +46,16 @@ export function usePresets() {
   // Load presets — cloud if logged in, localStorage fallback
   useEffect(() => {
     if (userId && !cloudLoaded) {
+      // Kullanıcı değişimi kontrolü — eski kullanıcının localStorage'ı yeni kullanıcıya taşınmasın
+      const lastOwner = localStorage.getItem(OWNER_KEY);
+      const isUserSwitch = lastOwner !== null && lastOwner !== userId;
+
       PresetService.getUserPresets(userId).then((cloud) => {
         if (cloud.length > 0) {
           setPresets(cloud);
           saveLocal(cloud); // keep local in sync
-        } else {
-          // First login: migrate localStorage presets to cloud
+        } else if (!isUserSwitch) {
+          // İlk giriş (aynı kullanıcı): localStorage preset'lerini cloud'a taşı
           const local = loadLocal();
           if (local.length > 0) {
             setPresets(local);
@@ -69,7 +74,12 @@ export function usePresets() {
           } else {
             setPresets([]);
           }
+        } else {
+          // Kullanıcı değişti ve cloud boş — temiz başla
+          saveLocal([]);
+          setPresets([]);
         }
+        localStorage.setItem(OWNER_KEY, userId);
         setCloudLoaded(true);
       });
     } else if (!userId) {
