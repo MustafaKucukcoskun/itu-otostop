@@ -60,7 +60,10 @@ export function Dashboard() {
     ws.phase === "waiting" ||
     ws.phase === "registering";
 
-  // Detect user switch — clear stale user data from localStorage/sessionStorage
+  // Guard: auto-save'in config load bitmeden cloud'u ezmesini engelle
+  const initialLoadDone = useRef(false);
+
+  // Detect user switch — clear stale data + RESET state
   useEffect(() => {
     if (!clerkUserId) return;
     const lastUser = localStorage.getItem("otostop-last-user");
@@ -69,21 +72,34 @@ export function Dashboard() {
       localStorage.removeItem("otostop-presets");
       localStorage.removeItem("otostop-presets-owner");
       localStorage.removeItem("otostop-crn-labels");
-      // Kalibrasyon geçmişi (token-bazlı key'ler)
       const calKeys: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key?.startsWith("otostop-cal-")) calKeys.push(key);
       }
       calKeys.forEach((k) => localStorage.removeItem(k));
-      // Yeni backend session — eski kullanıcının oturum verilerini taşımasın
       sessionStorage.removeItem("otostop_session_id");
+
+      // React state'i sıfırla — eski kullanıcının verisi yeni hesaba taşınmasın
+      setCrnList([]);
+      setScrnList([]);
+      setKayitSaati("");
+      setToken("");
+      setTokenChanged(false);
+      setTokenValid(null);
+      setMaxDeneme(60);
+      setRetryAralik(3.0);
+      setGecikmeBuffer(0.005);
+      setDryRun(false);
+      setCalibrationData(null);
+      setCourseInfo({});
     }
     localStorage.setItem("otostop-last-user", clerkUserId);
   }, [clerkUserId]);
 
   // Load config on mount (backend) + cloud sync on login
   useEffect(() => {
+    initialLoadDone.current = false; // Auto-save'i kilitle
     (async () => {
       let loaded = false;
       try {
@@ -119,6 +135,8 @@ export function Dashboard() {
           // Cloud da erişilemez
         }
       }
+
+      initialLoadDone.current = true; // Auto-save kilidini aç
     })();
   }, [clerkUserId]);
 
@@ -176,7 +194,9 @@ export function Dashboard() {
   ]);
 
   // Auto-save config on changes (backend + cloud)
+  // Guard: config load tamamlanmadan kaydetme — yoksa boş state cloud'u ezer
   useEffect(() => {
+    if (!initialLoadDone.current) return;
     const timer = setTimeout(() => {
       saveConfig();
       // Cloud sync (token excluded for security)
