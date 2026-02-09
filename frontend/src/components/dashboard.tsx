@@ -21,7 +21,25 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { WeeklySchedule } from "@/components/weekly-schedule";
 import { SpotlightCard } from "@/components/spotlight-card";
 
+// ── Wrapper: kullanıcı değiştiğinde key ile tam remount sağlar ──
+// Bu, tüm useState/useEffect/useRef'leri sıfırdan başlatır.
+// useEffect-based state reset'ten çok daha güvenilir — hiç flash olmaz.
 export function Dashboard() {
+  const { user, isLoaded } = useUser();
+
+  // Clerk yüklenene kadar bekle — double mount + flash önlenir
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen mesh-bg flex items-center justify-center">
+        <div className="h-8 w-8 rounded-xl bg-primary/20 animate-pulse" />
+      </div>
+    );
+  }
+
+  return <DashboardContent key={user?.id ?? "anon"} />;
+}
+
+function DashboardContent() {
   // Auth
   const { user } = useUser();
   const clerkUserId = user?.id ?? null;
@@ -63,12 +81,12 @@ export function Dashboard() {
   // Guard: auto-save'in config load bitmeden cloud'u ezmesini engelle
   const initialLoadDone = useRef(false);
 
-  // Detect user switch — clear stale data + RESET state
+  // Kullanıcı değişiminde localStorage temizliği (defense-in-depth)
+  // NOT: State sıfırlama artık gerekli değil — key prop ile tam remount oluyor
   useEffect(() => {
     if (!clerkUserId) return;
     const lastUser = localStorage.getItem("otostop-last-user");
     if (lastUser && lastUser !== clerkUserId) {
-      // Farklı kullanıcı — eski kullanıcının verilerini temizle
       localStorage.removeItem("otostop-presets");
       localStorage.removeItem("otostop-presets-owner");
       localStorage.removeItem("otostop-crn-labels");
@@ -79,20 +97,6 @@ export function Dashboard() {
       }
       calKeys.forEach((k) => localStorage.removeItem(k));
       sessionStorage.removeItem("otostop_session_id");
-
-      // React state'i sıfırla — eski kullanıcının verisi yeni hesaba taşınmasın
-      setCrnList([]);
-      setScrnList([]);
-      setKayitSaati("");
-      setToken("");
-      setTokenChanged(false);
-      setTokenValid(null);
-      setMaxDeneme(60);
-      setRetryAralik(3.0);
-      setGecikmeBuffer(0.005);
-      setDryRun(false);
-      setCalibrationData(null);
-      setCourseInfo({});
     }
     localStorage.setItem("otostop-last-user", clerkUserId);
   }, [clerkUserId]);
