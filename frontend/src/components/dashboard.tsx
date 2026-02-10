@@ -52,7 +52,7 @@ function DashboardContent() {
   const [kayitSaati, setKayitSaati] = useState("");
   const [maxDeneme, setMaxDeneme] = useState(60);
   const [retryAralik, setRetryAralik] = useState(3.0);
-  const [gecikmeBuffer, setGecikmeBuffer] = useState(0.005);
+  const [gecikmeBuffer, setGecikmeBuffer] = useState(0.025);
   const [dryRun, setDryRun] = useState(false);
 
   // UI state

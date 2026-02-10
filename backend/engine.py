@@ -26,6 +26,7 @@ class OptimizedHTTPAdapter(requests.adapters.HTTPAdapter):
     - TCP_NODELAY: Nagle algoritmasını devre dışı bırak (küçük paketler hemen gönderilir)
     - SO_KEEPALIVE: OS seviyesinde TCP keepalive (bağlantı timeout'unu önler)
     - TCP_QUICKACK (Linux): Gecikmeli ACK'ları devre dışı bırak → RTT 5-15ms düşer
+    - TCP_SLOW_START_AFTER_IDLE=0 (Linux): Boşta kaldıktan sonra cwnd reset'ini önler
     """
 
     def init_poolmanager(self, *args, **kwargs):
@@ -36,6 +37,7 @@ class OptimizedHTTPAdapter(requests.adapters.HTTPAdapter):
             opts.append((socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1))
             if sys.platform == "linux":
                 opts.append((socket.IPPROTO_TCP, 12, 1))  # TCP_QUICKACK
+                opts.append((socket.IPPROTO_TCP, 23, 0))  # TCP_SLOW_START_AFTER_IDLE=0
             self.poolmanager.connection_pool_kw['socket_options'] = opts
 
 
@@ -70,7 +72,7 @@ class RegistrationEngine:
         kayit_saati: str = "",
         max_deneme: int = 60,
         retry_aralik: float = 3.0,
-        gecikme_buffer: float = 0.005,
+        gecikme_buffer: float = 0.025,
         dry_run: bool = False,
     ):
         self.token = token
@@ -193,6 +195,87 @@ class RegistrationEngine:
             return 0.010
         rtts.sort()
         return rtts[len(rtts) // 2]
+
+    # ── RTT İstatistikleri ──
+
+    def _rtt_stats(self, n: int = 10) -> dict:
+        """RTT istatistikleri: median, jitter (std dev), min, max."""
+        rtts = []
+        for _ in range(n):
+            if self._cancelled.is_set():
+                break
+            t0 = time.perf_counter()
+            try:
+                self.session.head(OBS_BASE, timeout=5, allow_redirects=False)
+            except Exception:
+                continue
+            rtts.append(time.perf_counter() - t0)
+        if not rtts:
+            return {"median": 0.010, "jitter": 0.005, "min": 0.010, "max": 0.010, "count": 0}
+        rtts.sort()
+        count = len(rtts)
+        median = rtts[count // 2]
+        mean = sum(rtts) / count
+        variance = sum((r - mean) ** 2 for r in rtts) / count
+        jitter = variance ** 0.5
+        return {"median": median, "jitter": jitter, "min": rtts[0], "max": rtts[-1], "count": count}
+
+    # ── Hassas Zamanlama ──
+
+    def _calculate_precision_buffer(self, cal: CalibrationData, rtt_jitter: float) -> float:
+        """0-50ms varış penceresi için optimal gecikme buffer'ı hesapla.
+
+        Formül analizi:
+          server_arrival = hedef + buffer + measurement_error
+          error = (offset_measured - offset_actual) + (rtt_actual - rtt_measured)
+
+        Hedef: 0 ≤ buffer + error ≤ 0.050
+        Optimal buffer: pencere merkezi (25ms) + belirsizlik payı
+        """
+        PENCERE_MERKEZ = 0.025  # 25ms — ideal varış noktası
+
+        # Offset ölçüm belirsizliği ≈ kalibrasyon RTT tek yön (asimetri hatası)
+        offset_uncertainty = cal.rtt_one_way
+
+        # Toplam belirsizlik (karekök toplam — bağımsız hata kaynakları)
+        total_uncertainty = (offset_uncertainty ** 2 + rtt_jitter ** 2) ** 0.5
+
+        # Buffer = merkez + 1σ güvenlik payı (erken varışı önlemek için yukarı kaydır)
+        buffer = PENCERE_MERKEZ + total_uncertainty
+
+        # Sınırlar: [15ms, 45ms] — pencere dışına çıkma
+        return max(0.015, min(buffer, 0.045))
+
+    def _last_second_probe(self) -> tuple[float, float]:
+        """Son saniye RTT probe'u — tetik düzeltmesi hesapla.
+
+        3 hızlı HEAD isteği ile mevcut RTT'yi ölçer. Kalibrasyon RTT'sinden
+        anlamlı sapma varsa (>3ms), tetik zamanını mikro-düzeltir.
+
+        Returns: (correction_seconds, probe_rtt_seconds)
+        """
+        rtts = []
+        for _ in range(3):
+            t0 = time.perf_counter()
+            try:
+                self.session.head(OBS_BASE, timeout=2, allow_redirects=False)
+            except Exception:
+                continue
+            rtts.append(time.perf_counter() - t0)
+
+        if not rtts or not self._calibration:
+            return 0.0, 0.0
+
+        probe_rtt = min(rtts)  # Minimum = en güvenilir (jitter ekleme yok)
+        probe_one_way = probe_rtt / 2
+        cal_one_way = self._calibration.rtt_one_way
+
+        drift = probe_one_way - cal_one_way
+
+        # >3ms fark varsa düzelt (gürültüyü filtrele)
+        if abs(drift) > 0.003:
+            return -drift, probe_rtt
+        return 0.0, probe_rtt
 
     # ── NTP (bilgilendirme) ──
 
@@ -458,15 +541,17 @@ class RegistrationEngine:
                 except Exception:
                     pass
 
-            # Değerlendirme (sunucu perspektifinden)
-            if abs(sunucu_varis_ms) <= 50:
-                self._log(f"✅ MÜKEMMEL — Sunucuya ±50ms içinde ulaştı ({sunucu_varis_ms:+.0f}ms)")
-            elif abs(sunucu_varis_ms) <= 200:
-                self._log(f"👍 İYİ — Sunucuya ±200ms içinde ulaştı ({sunucu_varis_ms:+.0f}ms)")
-            elif sunucu_varis_ms < -200:
-                self._log(f"⚠️ ERKEN — İstek sunucuya {abs(sunucu_varis_ms):.0f}ms erken ulaştı (VAL02 riski)", "warning")
+            # Değerlendirme (sunucu perspektifinden — hedef pencere: 0-50ms)
+            if 0 <= sunucu_varis_ms <= 50:
+                self._log(f"✅ MÜKEMMEL — Hedef pencere içinde! ({sunucu_varis_ms:+.0f}ms) [0-50ms]")
+            elif sunucu_varis_ms < 0:
+                self._log(f"⚠️ ERKEN — Sunucuya {abs(sunucu_varis_ms):.0f}ms erken ulaştı (VAL02 riski)", "warning")
+            elif sunucu_varis_ms <= 150:
+                self._log(f"👍 İYİ — Pencere dışı ama yakın ({sunucu_varis_ms:+.0f}ms) [hedef: 0-50ms]")
+            elif sunucu_varis_ms <= 500:
+                self._log(f"⚠️ GEÇ — {sunucu_varis_ms:.0f}ms geç (kontenjan riski)", "warning")
             else:
-                self._log(f"⚠️ GEÇ — İstek sunucuya {sunucu_varis_ms:.0f}ms geç ulaştı (kontenjan kaçırma riski)", "warning")
+                self._log(f"❌ ÇOK GEÇ — {sunucu_varis_ms:.0f}ms geç (büyük ihtimalle kaçırıldı)", "error")
 
             self._log("─────────────────────────────────")
 
@@ -738,6 +823,24 @@ class RegistrationEngine:
             # 2. Ilk ısınma (POST dahil)
             self._prewarm(head_only=False)
 
+            if self._cancelled.is_set():
+                return
+
+            # 2b. RTT jitter ölçümü + hassas buffer hesaplama
+            rtt_stats = self._rtt_stats(10)
+            self._log(f"📊 RTT: median={rtt_stats['median']*1000:.0f}ms, jitter(σ)={rtt_stats['jitter']*1000:.1f}ms, min={rtt_stats['min']*1000:.0f}ms, max={rtt_stats['max']*1000:.0f}ms ({rtt_stats['count']} örnek)")
+
+            best = self._best_calibration()
+            optimal_buffer = self._calculate_precision_buffer(best, rtt_stats['jitter'])
+            if self.gecikme_buffer < optimal_buffer:
+                self._log(f"⚡ Buffer: {self.gecikme_buffer*1000:.0f}ms → {optimal_buffer*1000:.0f}ms (hedef pencere: 0-50ms)", "warning")
+                self.gecikme_buffer = optimal_buffer
+            else:
+                self._log(f"⚡ Buffer: {self.gecikme_buffer*1000:.0f}ms ≥ minimum {optimal_buffer*1000:.0f}ms ✓")
+
+            if self._cancelled.is_set():
+                return
+
             # 3. Tetik zamanı (havuzdaki en iyi ölçüme göre)
             hedef = self._saat_to_epoch(self.kayit_saati)
             best = self._best_calibration()
@@ -762,11 +865,13 @@ class RegistrationEngine:
             self._set_phase("waiting")
             prewarm2 = False
             keepalive_5s = False
+            keepalive_3s = False
             final_cal_done = False
+            probe_done = False
             last_recal_time = time.time()
             RECAL_INTERVAL = 30  # her X saniyede hafif kalibrasyon
-            FINAL_CAL_WINDOW = 45  # son tam kalibrasyon bu saniyede başlar
-            FINAL_CAL_MIN = 15  # bundan yakın olursa zaten yapma
+            FINAL_CAL_WINDOW = 20  # son tam kalibrasyon bu saniyede başlar
+            FINAL_CAL_MIN = 10  # bundan yakın olursa zaten yapma
             recal_count = 0
 
             def _recalc_trigger():
@@ -814,17 +919,35 @@ class RegistrationEngine:
                     self._prewarm(head_only=True)
                     prewarm2 = True
 
-                # ── Bağlantı canlı tutma (10s ve 5s kala) ──
+                # ── Bağlantı canlı tutma (10s, 5s, 3.5s kala — cwnd sıcak tutar) ──
                 if not prewarm2 and 0 < kalan <= 10:
                     self._prewarm(head_only=True)
                     prewarm2 = True
                 elif prewarm2 and not keepalive_5s and 4.5 < kalan <= 5.5:
-                    # 5s kala ikinci keepalive
                     keepalive_5s = True
                     try:
                         self.session.head(OBS_BASE, timeout=3, allow_redirects=False)
                     except Exception:
                         pass
+                elif keepalive_5s and not keepalive_3s and 3.0 < kalan <= 4.0:
+                    keepalive_3s = True
+                    try:
+                        self.session.head(OBS_BASE, timeout=2, allow_redirects=False)
+                    except Exception:
+                        pass
+
+                # ── Son saniye RTT probe'u (2s kala — mikro düzeltme) ──
+                if not probe_done and 1.5 < kalan <= 2.5:
+                    probe_done = True
+                    correction, probe_rtt = self._last_second_probe()
+                    if abs(correction) > 0.001:  # >1ms fark
+                        tetik += correction
+                        self._trigger_time = tetik
+                        kalan = tetik - time.time()
+                        self._log(f"🎯 Probe düzeltme: {correction*1000:+.1f}ms (probe RTT: {probe_rtt*1000:.0f}ms, kal. RTT: {self._calibration.rtt_one_way*2000:.0f}ms)")
+                        self._emit("countdown", {"trigger_time": tetik, "remaining": kalan})
+                    else:
+                        self._log(f"🎯 Probe: RTT={probe_rtt*1000:.0f}ms — düzeltme gerekmedi")
 
                 # ── Busy-wait (son 50ms — perf_counter ile yüksek çözünürlük) ──
                 if kalan <= 0.05:
@@ -848,7 +971,7 @@ class RegistrationEngine:
             self._set_phase("registering")
             fark_ms = (time.time() - hedef) * 1000
             best = self._best_calibration()
-            self._log(f"BAŞLIYOR! (hedef farkı: {fark_ms:+.0f}ms) [offset={best.server_offset*1000:+.0f}ms RTT={best.rtt_one_way*1000:.0f}ms havuz:{len(self._cal_samples)}]")
+            self._log(f"🚀 BAŞLIYOR! (hedef farkı: {fark_ms:+.0f}ms) [buffer={self.gecikme_buffer*1000:.0f}ms offset={best.server_offset*1000:+.0f}ms RTT={best.rtt_one_way*1000:.0f}ms havuz:{len(self._cal_samples)}]")
             if self.dry_run:
                 self._kayit_yap_dry_run()
             else:

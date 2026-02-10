@@ -26,7 +26,7 @@ const QUICK_TIMES = [
 const DEFAULTS = {
   maxDeneme: 60,
   retryAralik: 3,
-  gecikmeBuffer: 0.005,
+  gecikmeBuffer: 0.025,
   dryRun: false,
 } as const;
 
@@ -222,7 +222,8 @@ export function SettingsPanel({
           <div className="flex items-center justify-between">
             <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
               Retry Aralığı: Sunucu 3sn&apos;den sık istekleri yok sayar
-              (VAL16). Buffer: Erken varış cezasını önler (+5ms önerilen).
+              (VAL16). Buffer: Otomatik hesaplanır (0-50ms pencere hedefi). Manuel
+              değer küçükse sistem otomatik artırır.
             </p>
             {!disabled && (
               <button

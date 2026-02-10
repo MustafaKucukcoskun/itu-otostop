@@ -182,7 +182,7 @@ export function usePresets() {
               kayit_saati: p.kayit_saati || "",
               max_deneme: p.max_deneme || 60,
               retry_aralik: p.retry_aralik || 3.0,
-              gecikme_buffer: p.gecikme_buffer || 0.005,
+              gecikme_buffer: p.gecikme_buffer || 0.025,
               created_at: p.created_at || Date.now(),
             };
             newPresets.push(preset);
