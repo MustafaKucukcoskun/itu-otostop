@@ -256,7 +256,7 @@ def _config_response(session: SessionState) -> ConfigResponse:
 
 
 @app.post("/api/test-token", response_model=TokenTestResult)
-@limiter.limit("5/minute")
+@limiter.limit("10/minute")
 async def test_token(request: Request):
     session_id = get_session_id(request)
     session = get_session(session_id)
@@ -272,7 +272,7 @@ async def test_token(request: Request):
 
 
 @app.post("/api/calibrate", response_model=CalibrationResult)
-@limiter.limit("3/minute")
+@limiter.limit("6/minute")
 async def calibrate(request: Request):
     session_id = get_session_id(request)
     session = get_session(session_id)
@@ -296,7 +296,7 @@ async def calibrate(request: Request):
 
 
 @app.post("/api/register/start")
-@limiter.limit("2/minute")
+@limiter.limit("6/minute")
 async def start_registration(request: Request):
     session_id = get_session_id(request)
     session = get_session(session_id)
