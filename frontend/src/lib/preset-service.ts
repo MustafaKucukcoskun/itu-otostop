@@ -33,7 +33,7 @@ export class PresetService {
           kayit_saati: row.kayit_saati ?? "",
           max_deneme: row.max_deneme ?? 60,
           retry_aralik: row.retry_aralik ?? 3.0,
-          gecikme_buffer: row.gecikme_buffer ?? 0.005,
+          gecikme_buffer: row.gecikme_buffer ?? 0.025,
           created_at: new Date(row.created_at).getTime(),
         }),
       );
