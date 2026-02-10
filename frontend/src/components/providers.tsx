@@ -5,6 +5,7 @@ import { ThemeProvider as NextThemesProvider } from "next-themes";
 import { dark } from "@clerk/themes";
 import { trTR } from "@clerk/localizations";
 import { useTheme } from "next-themes";
+import { LazyMotion, domMax } from "motion/react";
 
 function ClerkThemeWrapper({ children }: { children: React.ReactNode }) {
   const { resolvedTheme } = useTheme();
@@ -72,7 +73,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       enableSystem
       disableTransitionOnChange
     >
-      <ClerkThemeWrapper>{children}</ClerkThemeWrapper>
+      <LazyMotion features={domMax} strict>
+        <ClerkThemeWrapper>{children}</ClerkThemeWrapper>
+      </LazyMotion>
     </NextThemesProvider>
   );
 }

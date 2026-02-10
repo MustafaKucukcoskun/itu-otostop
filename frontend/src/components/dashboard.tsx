@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { m, AnimatePresence } from "motion/react";
 import { Play, Square, Gauge, Zap, Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
 import { UserButton, useUser } from "@clerk/nextjs";
@@ -455,6 +455,24 @@ function DashboardContent() {
     [],
   );
 
+  // Keyboard shortcuts: Ctrl+Enter = start, Escape = cancel
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Ctrl+Enter → start registration
+      if (e.ctrlKey && e.key === "Enter" && !isRunning && token && crnList.length > 0) {
+        e.preventDefault();
+        handleStart();
+      }
+      // Escape → cancel registration
+      if (e.key === "Escape" && isRunning) {
+        e.preventDefault();
+        handleCancel();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isRunning, token, crnList.length]); // eslint-disable-line react-hooks/exhaustive-deps -- handlers use latest state via closure
+
   // Staggered entrance spring config
   const springIn = { type: "spring" as const, stiffness: 300, damping: 30 };
 
@@ -467,8 +485,8 @@ function DashboardContent() {
 
       {/* Header */}
       <header className="sticky top-0 z-50 glass border-b border-border/10">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <motion.div
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+          <m.div
             className="flex items-center gap-3"
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -482,18 +500,18 @@ function DashboardContent() {
             </h1>
             <AnimatePresence>
               {dryRun && (
-                <motion.span
+                <m.span
                   initial={{ opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.8 }}
                   className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-[10px] font-bold tracking-wider ring-1 ring-amber-500/20"
                 >
                   DRY RUN
-                </motion.span>
+                </m.span>
               )}
             </AnimatePresence>
-          </motion.div>
-          <motion.div
+          </m.div>
+          <m.div
             className="flex items-center gap-2"
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -520,288 +538,266 @@ function DashboardContent() {
                 },
               }}
             />
-          </motion.div>
+          </m.div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 relative z-10">
-        <div className="space-y-8">
-          {/* ═══ SECTION 1: Hero — Countdown + Actions ═══ */}
-          <motion.section
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...springIn, delay: 0.05 }}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 relative z-10 space-y-6">
+        {/* ═══ HERO: Countdown + Actions (always full width) ═══ */}
+        <m.section
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ ...springIn, delay: 0.05 }}
+        >
+          <SpotlightCard
+            className="glass"
+            spotlightColor="oklch(0.7 0.18 195 / 0.08)"
+            spotlightSize={500}
+            accent="oklch(0.7 0.18 195)"
           >
-            <SpotlightCard
-              className="glass"
-              spotlightColor="oklch(0.7 0.18 195 / 0.08)"
-              spotlightSize={500}
-              accent="oklch(0.7 0.18 195)"
-            >
-              <CountdownTimer
-                targetTime={kayitSaati}
-                countdown={ws.countdown}
-                phase={ws.phase}
-                dryRun={dryRun}
-              />
+            <CountdownTimer
+              targetTime={kayitSaati}
+              countdown={ws.countdown}
+              phase={ws.phase}
+              dryRun={dryRun}
+            />
 
-              {/* Action buttons — inside hero card */}
-              <div className="px-6 pb-6 flex gap-3">
+            {/* Action buttons — inside hero card */}
+            <div className="px-6 pb-6 flex gap-3">
+              <button
+                onClick={handleCalibrate}
+                disabled={calibrating || isRunning || !token}
+                className="flex-1 h-11 sm:h-10 rounded-xl ring-1 ring-border/20 bg-background/40 hover:bg-muted/40 text-sm font-medium flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none hover:ring-border/40"
+              >
+                <Gauge className="h-4 w-4" />
+                {calibrating ? "Kalibre ediliyor..." : "Kalibre Et"}
+              </button>
+              {!isRunning ? (
                 <button
-                  onClick={handleCalibrate}
-                  disabled={calibrating || isRunning || !token}
-                  className="flex-1 h-11 sm:h-10 rounded-xl ring-1 ring-border/20 bg-background/40 hover:bg-muted/40 text-sm font-medium flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none hover:ring-border/40"
+                  onClick={handleStart}
+                  disabled={starting || !token || crnList.length === 0}
+                  className={`flex-1 h-11 sm:h-10 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none ${
+                    dryRun
+                      ? "bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 hover:to-orange-400 shadow-lg shadow-amber-500/20"
+                      : "bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 shadow-lg shadow-emerald-500/20"
+                  }`}
                 >
-                  <Gauge className="h-4 w-4" />
-                  {calibrating ? "Kalibre ediliyor..." : "Kalibre Et"}
+                  <Play className="h-4 w-4" />
+                  {starting
+                    ? "Başlatılıyor..."
+                    : dryRun
+                      ? "🧪 Dry Run Başlat"
+                      : "Kayıt Başlat"}
                 </button>
-                {!isRunning ? (
-                  <button
-                    onClick={handleStart}
-                    disabled={starting || !token || crnList.length === 0}
-                    className={`flex-1 h-11 sm:h-10 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none ${
-                      dryRun
-                        ? "bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 hover:to-orange-400 shadow-lg shadow-amber-500/20"
-                        : "bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 shadow-lg shadow-emerald-500/20"
-                    }`}
-                  >
-                    <Play className="h-4 w-4" />
-                    {starting
-                      ? "Başlatılıyor..."
-                      : dryRun
-                        ? "🧪 Dry Run Başlat"
-                        : "Kayıt Başlat"}
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleCancel}
-                    className="flex-1 h-11 sm:h-10 rounded-xl bg-gradient-to-r from-red-600 to-rose-500 hover:from-red-500 hover:to-rose-400 text-white text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 shadow-lg shadow-red-500/20"
-                  >
-                    <Square className="h-4 w-4" />
-                    İptal Et
-                  </button>
-                )}
-              </div>
-            </SpotlightCard>
-          </motion.section>
-
-          {/* ═══ SECTION 2: Setup — Token + CRN Manager ═══ */}
-          <section>
-            <motion.div
-              className="flex items-center gap-2 mb-4 px-1"
-              initial={{ opacity: 0, x: -12 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ ...springIn, delay: 0.12 }}
-            >
-              <div className="h-1 w-6 rounded-full bg-gradient-to-r from-blue-400 to-cyan-400" />
-              <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                Hazırlık
-              </span>
-            </motion.div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-              {/* Token — narrower */}
-              <motion.div
-                className="lg:col-span-2"
-                initial={{ opacity: 0, y: 20, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ ...springIn, delay: 0.15 }}
-              >
-                <SpotlightCard
-                  className="glass h-full"
-                  spotlightColor="oklch(0.65 0.18 240 / 0.10)"
-                  accent="oklch(0.65 0.2 240)"
+              ) : (
+                <button
+                  onClick={handleCancel}
+                  className="flex-1 h-11 sm:h-10 rounded-xl bg-gradient-to-r from-red-600 to-rose-500 hover:from-red-500 hover:to-rose-400 text-white text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 shadow-lg shadow-red-500/20"
                 >
-                  <TokenInput
-                    token={token}
-                    onTokenChange={(t) =>
-                      setToken(t.replace(/^\s*bearer\s+/i, "").trim())
-                    }
-                    tokenValid={tokenValid}
-                  />
-                </SpotlightCard>
-              </motion.div>
-
-              {/* CRN Manager — wider */}
-              <motion.div
-                className="lg:col-span-3"
-                initial={{ opacity: 0, y: 20, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ ...springIn, delay: 0.2 }}
-              >
-                <SpotlightCard
-                  className="glass h-full"
-                  spotlightColor="oklch(0.7 0.18 165 / 0.10)"
-                  accent="oklch(0.7 0.18 165)"
-                >
-                  <CRNManager
-                    ecrnList={crnList}
-                    onEcrnListChange={setCrnList}
-                    scrnList={scrnList}
-                    onScrnListChange={setScrnList}
-                    crnResults={ws.crnResults}
-                    courseInfo={courseInfo}
-                    lookingUp={lookingUpCRNs}
-                    disabled={isRunning}
-                  />
-                </SpotlightCard>
-              </motion.div>
+                  <Square className="h-4 w-4" />
+                  İptal Et
+                </button>
+              )}
             </div>
-          </section>
+          </SpotlightCard>
+        </m.section>
 
-          {/* ═══ SECTION 3: Monitor — Calibration + Logs ═══ */}
-          <section>
-            <motion.div
-              className="flex items-center gap-2 mb-4 px-1"
+        {/* ═══ 2-COLUMN LAYOUT: Config (left) + Monitor (right) ═══ */}
+        <div className="flex flex-col lg:grid lg:grid-cols-12 gap-5 lg:gap-6">
+          {/* ── Left Column: Yapılandırma ── */}
+          <div className="lg:col-span-5 space-y-5">
+            <m.div
+              className="flex items-center gap-2 px-1"
               initial={{ opacity: 0, x: -12 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ ...springIn, delay: 0.25 }}
-            >
-              <div className="h-1 w-6 rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-400" />
-              <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                İzleme
-              </span>
-            </motion.div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-              {/* Calibration — narrower */}
-              <motion.div
-                className="lg:col-span-2"
-                initial={{ opacity: 0, y: 20, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ ...springIn, delay: 0.28 }}
-              >
-                <SpotlightCard
-                  className="glass h-full"
-                  spotlightColor="oklch(0.6 0.15 280 / 0.10)"
-                  accent="oklch(0.6 0.18 280)"
-                >
-                  <CalibrationCard
-                    calibration={ws.calibration ?? calibrationData}
-                    loading={calibrating}
-                    token={token}
-                  />
-                </SpotlightCard>
-              </motion.div>
-
-              {/* Live Logs — wider */}
-              <motion.div
-                className="lg:col-span-3"
-                initial={{ opacity: 0, y: 20, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ ...springIn, delay: 0.32 }}
-              >
-                <SpotlightCard
-                  className="glass h-full"
-                  spotlightColor="oklch(0.7 0.18 165 / 0.08)"
-                  accent="oklch(0.65 0.2 165)"
-                >
-                  <LiveLogs logs={ws.logs} onClear={ws.clearLogs} />
-                </SpotlightCard>
-              </motion.div>
-            </div>
-          </section>
-
-          {/* ═══ SECTION 4: Schedule — full width ═══ */}
-          <motion.section
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...springIn, delay: 0.36 }}
-          >
-            <SpotlightCard
-              className="glass"
-              spotlightColor="oklch(0.7 0.15 80 / 0.08)"
-              spotlightSize={600}
-              accent="oklch(0.7 0.15 80)"
-            >
-              <WeeklySchedule
-                courses={courseInfo}
-                crnList={[...new Set([...crnList, ...scrnList])]}
-                loading={lookingUpCRNs.size > 0}
-              />
-            </SpotlightCard>
-          </motion.section>
-
-          {/* ═══ SECTION 5: Config — Settings + Presets ═══ */}
-          <section>
-            <motion.div
-              className="flex items-center gap-2 mb-4 px-1"
-              initial={{ opacity: 0, x: -12 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ ...springIn, delay: 0.4 }}
+              transition={{ ...springIn, delay: 0.1 }}
             >
               <div className="h-1 w-6 rounded-full bg-gradient-to-r from-amber-400 to-orange-400" />
               <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                 Yapılandırma
               </span>
-            </motion.div>
+            </m.div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-              <motion.div
-                initial={{ opacity: 0, y: 20, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ ...springIn, delay: 0.43 }}
+            {/* Token */}
+            <m.div
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ ...springIn, delay: 0.13 }}
+            >
+              <SpotlightCard
+                className="glass h-full"
+                spotlightColor="oklch(0.65 0.18 240 / 0.10)"
+                accent="oklch(0.65 0.2 240)"
               >
-                <SpotlightCard
-                  className="glass h-full"
-                  spotlightColor="oklch(0.7 0.15 30 / 0.08)"
-                  accent="oklch(0.7 0.18 30)"
-                >
-                  <SettingsPanel
-                    kayitSaati={kayitSaati}
-                    onKayitSaatiChange={setKayitSaati}
-                    maxDeneme={maxDeneme}
-                    onMaxDenemeChange={setMaxDeneme}
-                    retryAralik={retryAralik}
-                    onRetryAralikChange={setRetryAralik}
-                    gecikmeBuffer={gecikmeBuffer}
-                    onGecikmeBufferChange={setGecikmeBuffer}
-                    dryRun={dryRun}
-                    onDryRunChange={setDryRun}
-                    disabled={isRunning}
-                  />
-                </SpotlightCard>
-              </motion.div>
+                <TokenInput
+                  token={token}
+                  onTokenChange={(t) =>
+                    setToken(t.replace(/^\s*bearer\s+/i, "").trim())
+                  }
+                  tokenValid={tokenValid}
+                />
+              </SpotlightCard>
+            </m.div>
 
-              <motion.div
-                initial={{ opacity: 0, y: 20, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ ...springIn, delay: 0.46 }}
+            {/* CRN Manager */}
+            <m.div
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ ...springIn, delay: 0.16 }}
+            >
+              <SpotlightCard
+                className="glass h-full"
+                spotlightColor="oklch(0.7 0.18 165 / 0.10)"
+                accent="oklch(0.7 0.18 165)"
               >
-                <SpotlightCard
-                  className="glass h-full"
-                  spotlightColor="oklch(0.65 0.15 30 / 0.08)"
-                  accent="oklch(0.65 0.18 50)"
-                >
-                  <PresetManager
-                    currentConfig={{
-                      ecrn_list: crnList,
-                      scrn_list: scrnList,
-                      kayit_saati: kayitSaati,
-                      max_deneme: maxDeneme,
-                      retry_aralik: retryAralik,
-                      gecikme_buffer: gecikmeBuffer,
-                    }}
-                    onLoadPreset={handleLoadPreset}
-                    courseLabels={Object.fromEntries(
-                      Object.entries(courseInfo).map(([crn, info]) => [
-                        crn,
-                        info.course_code,
-                      ]),
-                    )}
-                    disabled={isRunning}
-                  />
-                </SpotlightCard>
-              </motion.div>
-            </div>
-          </section>
+                <CRNManager
+                  ecrnList={crnList}
+                  onEcrnListChange={setCrnList}
+                  scrnList={scrnList}
+                  onScrnListChange={setScrnList}
+                  crnResults={ws.crnResults}
+                  courseInfo={courseInfo}
+                  lookingUp={lookingUpCRNs}
+                  disabled={isRunning}
+                />
+              </SpotlightCard>
+            </m.div>
+
+            {/* Settings */}
+            <m.div
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ ...springIn, delay: 0.19 }}
+            >
+              <SpotlightCard
+                className="glass h-full"
+                spotlightColor="oklch(0.7 0.15 30 / 0.08)"
+                accent="oklch(0.7 0.18 30)"
+              >
+                <SettingsPanel
+                  kayitSaati={kayitSaati}
+                  onKayitSaatiChange={setKayitSaati}
+                  maxDeneme={maxDeneme}
+                  onMaxDenemeChange={setMaxDeneme}
+                  retryAralik={retryAralik}
+                  onRetryAralikChange={setRetryAralik}
+                  gecikmeBuffer={gecikmeBuffer}
+                  onGecikmeBufferChange={setGecikmeBuffer}
+                  dryRun={dryRun}
+                  onDryRunChange={setDryRun}
+                  disabled={isRunning}
+                />
+              </SpotlightCard>
+            </m.div>
+
+            {/* Presets */}
+            <m.div
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ ...springIn, delay: 0.22 }}
+            >
+              <SpotlightCard
+                className="glass h-full"
+                spotlightColor="oklch(0.65 0.15 30 / 0.08)"
+                accent="oklch(0.65 0.18 50)"
+              >
+                <PresetManager
+                  currentConfig={{
+                    ecrn_list: crnList,
+                    scrn_list: scrnList,
+                    kayit_saati: kayitSaati,
+                    max_deneme: maxDeneme,
+                    retry_aralik: retryAralik,
+                    gecikme_buffer: gecikmeBuffer,
+                  }}
+                  onLoadPreset={handleLoadPreset}
+                  courseLabels={Object.fromEntries(
+                    Object.entries(courseInfo).map(([crn, info]) => [
+                      crn,
+                      info.course_code,
+                    ]),
+                  )}
+                  disabled={isRunning}
+                />
+              </SpotlightCard>
+            </m.div>
+          </div>
+
+          {/* ── Right Column: İzleme ── */}
+          <div className="lg:col-span-7 space-y-5">
+            <m.div
+              className="flex items-center gap-2 px-1"
+              initial={{ opacity: 0, x: -12 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ ...springIn, delay: 0.1 }}
+            >
+              <div className="h-1 w-6 rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-400" />
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                İzleme
+              </span>
+            </m.div>
+
+            {/* Calibration */}
+            <m.div
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ ...springIn, delay: 0.13 }}
+            >
+              <SpotlightCard
+                className="glass h-full"
+                spotlightColor="oklch(0.6 0.15 280 / 0.10)"
+                accent="oklch(0.6 0.18 280)"
+              >
+                <CalibrationCard
+                  calibration={ws.calibration ?? calibrationData}
+                  loading={calibrating}
+                  token={token}
+                />
+              </SpotlightCard>
+            </m.div>
+
+            {/* Live Logs */}
+            <m.div
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ ...springIn, delay: 0.16 }}
+            >
+              <SpotlightCard
+                className="glass h-full"
+                spotlightColor="oklch(0.7 0.18 165 / 0.08)"
+                accent="oklch(0.65 0.2 165)"
+              >
+                <LiveLogs logs={ws.logs} onClear={ws.clearLogs} />
+              </SpotlightCard>
+            </m.div>
+          </div>
         </div>
+
+        {/* ═══ FULL WIDTH: Schedule ═══ */}
+        <m.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ ...springIn, delay: 0.28 }}
+        >
+          <SpotlightCard
+            className="glass"
+            spotlightColor="oklch(0.7 0.15 80 / 0.08)"
+            spotlightSize={600}
+            accent="oklch(0.7 0.15 80)"
+          >
+            <WeeklySchedule
+              courses={courseInfo}
+              crnList={[...new Set([...crnList, ...scrnList])]}
+              loading={lookingUpCRNs.size > 0}
+            />
+          </SpotlightCard>
+        </m.section>
       </main>
 
       {/* Footer */}
       <footer className="relative z-10 mt-16 border-t border-border/5">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-2 text-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-2 text-center">
           <p className="text-[11px] text-muted-foreground/30 font-medium">
             İTÜ Otostop — Ders Kayıt Otomasyon Aracı v1.0.0 —{" "}
             {new Date().getFullYear()}

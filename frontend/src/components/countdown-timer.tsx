@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { motion } from "motion/react";
+import { m } from "motion/react";
 
 interface CountdownTimerProps {
   targetTime: string;
@@ -86,10 +86,10 @@ export function CountdownTimer({
           : "Canlı Saat";
 
   return (
-    <div className="relative overflow-hidden">
+    <div className="relative overflow-hidden" role="timer" aria-live="assertive" aria-label="Geri sayım sayacı">
       {/* Active state animated gradient */}
       {isActive && (
-        <motion.div
+        <m.div
           className="absolute inset-0 opacity-20"
           style={{
             background:
@@ -103,7 +103,7 @@ export function CountdownTimer({
 
       {/* Registering pulse */}
       {isRegistering && (
-        <motion.div
+        <m.div
           className="absolute inset-0"
           style={{
             background:
@@ -128,28 +128,28 @@ export function CountdownTimer({
       <div className="relative px-6 py-12 sm:py-14 text-center">
         {/* Dry-run badge */}
         {dryRun && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             className="mb-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-400 text-[11px] font-bold tracking-wider uppercase ring-1 ring-amber-500/20"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
             🧪 DRY RUN
-          </motion.div>
+          </m.div>
         )}
 
         {/* Phase label */}
-        <motion.p
+        <m.p
           className="text-xs font-semibold text-muted-foreground/60 mb-4 tracking-[0.2em] uppercase"
           initial={{ opacity: 0, y: -5 }}
           animate={{ opacity: 1, y: 0 }}
           key={phaseLabel}
         >
           {phaseLabel}
-        </motion.p>
+        </m.p>
 
         {/* Main timer display — idle shows live clock, active shows countdown */}
-        <motion.div
+        <m.div
           key={`${phase}-${isIdle ? "live" : displayTime.length > 12 ? "text" : "num"}`}
           initial={{ opacity: 0, scale: 0.9, filter: "blur(8px)" }}
           animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
@@ -173,7 +173,7 @@ export function CountdownTimer({
               ? targetTime
               : currentTime || "— : — : —"
             : displayTime}
-        </motion.div>
+        </m.div>
 
         {/* Bottom info bar — context depends on state */}
         <div className="mt-5 flex items-center justify-center gap-6 text-xs font-mono text-muted-foreground/50">
@@ -218,7 +218,7 @@ export function CountdownTimer({
         {isActive && localCountdown !== null && localCountdown > 0 && (
           <div className="mt-7 mx-auto max-w-md">
             <div className="h-1 rounded-full bg-primary/8 overflow-hidden">
-              <motion.div
+              <m.div
                 className="h-full rounded-full bg-gradient-to-r from-primary/40 via-primary to-primary/40"
                 initial={{ width: "100%" }}
                 animate={{ width: "0%" }}

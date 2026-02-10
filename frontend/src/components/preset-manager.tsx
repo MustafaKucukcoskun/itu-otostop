@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { m, AnimatePresence } from "motion/react";
 import {
   BookmarkPlus,
   Plus,
@@ -176,7 +176,7 @@ export function PresetManager({
               />
             </>
           ) : (
-            <motion.div
+            <m.div
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               className="flex gap-2 w-full"
@@ -204,7 +204,7 @@ export function PresetManager({
               >
                 ✕
               </button>
-            </motion.div>
+            </m.div>
           )}
         </div>
 
@@ -212,7 +212,7 @@ export function PresetManager({
         <div className="space-y-1.5">
           <AnimatePresence mode="popLayout">
             {presets.map((preset) => (
-              <motion.div
+              <m.div
                 key={preset.id}
                 layout
                 initial={{ opacity: 0, y: -4 }}
@@ -245,7 +245,7 @@ export function PresetManager({
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
-              </motion.div>
+              </m.div>
             ))}
           </AnimatePresence>
 
@@ -265,14 +265,14 @@ export function PresetManager({
       {/* Confirmation dialog overlay */}
       <AnimatePresence>
         {confirmLoad && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm"
             onClick={() => setConfirmLoad(null)}
           >
-            <motion.div
+            <m.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
@@ -305,8 +305,8 @@ export function PresetManager({
                   Yükle
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
+            </m.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>

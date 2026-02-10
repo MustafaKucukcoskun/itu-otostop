@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { m, AnimatePresence } from "motion/react";
 import { ShieldCheck, X } from "lucide-react";
 
 const STORAGE_KEY = "otostop-privacy-ack";
@@ -23,7 +23,7 @@ export function PrivacyBanner() {
   return (
     <AnimatePresence>
       {visible && (
-        <motion.div
+        <m.div
           initial={{ y: 80, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 80, opacity: 0 }}
@@ -56,7 +56,7 @@ export function PrivacyBanner() {
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

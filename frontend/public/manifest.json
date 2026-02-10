@@ -1,0 +1,22 @@
+{
+  "name": "İTÜ Otostop",
+  "short_name": "Otostop",
+  "description": "İTÜ OBS otomatik ders kayıt aracı",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1c1c22",
+  "theme_color": "#c2743e",
+  "lang": "tr",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

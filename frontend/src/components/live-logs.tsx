@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { m } from "motion/react";
 import { Terminal, Trash2 } from "lucide-react";
 import type { LogEntry } from "@/hooks/use-websocket";
 
@@ -41,13 +41,13 @@ export function LiveLogs({ logs, onClear }: LiveLogsProps) {
           </div>
           <h3 className="text-sm font-semibold">Canlı Log</h3>
           {logs.length > 0 && (
-            <motion.span
+            <m.span
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               className="text-[10px] bg-primary/15 text-primary px-2 py-0.5 rounded-full font-medium"
             >
               {logs.length}
-            </motion.span>
+            </m.span>
           )}
         </div>
         {logs.length > 0 && (
@@ -64,6 +64,9 @@ export function LiveLogs({ logs, onClear }: LiveLogsProps) {
       <div className="px-5 pb-5">
         <div
           ref={scrollRef}
+          role="log"
+          aria-live="polite"
+          aria-label="Canlı kayıt logları"
           className="h-60 sm:h-75 overflow-y-auto rounded-xl bg-background/60 ring-1 ring-border/20 p-3 font-mono text-xs space-y-0.5"
         >
           {logs.length === 0 ? (
@@ -71,29 +74,24 @@ export function LiveLogs({ logs, onClear }: LiveLogsProps) {
               Kayıt başlatılınca loglar burada görünecek
             </div>
           ) : (
-            <AnimatePresence initial={false}>
-              {logs.map((log) => (
-                <motion.div
-                  key={log.id}
-                  initial={{ opacity: 0, x: -8, height: 0 }}
-                  animate={{ opacity: 1, x: 0, height: "auto" }}
-                  transition={{ duration: 0.12 }}
-                  className={`flex items-start gap-2 py-0.5 ${levelColors[log.level]}`}
-                >
-                  <span
-                    className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${levelDots[log.level]}`}
-                  />
-                  <span className="text-muted-foreground/60 shrink-0">
-                    {new Date(log.time * 1000).toLocaleTimeString("tr-TR", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                    })}
-                  </span>
-                  <span className="break-all">{log.message}</span>
-                </motion.div>
-              ))}
-            </AnimatePresence>
+            logs.map((log) => (
+              <div
+                key={log.id}
+                className={`log-entry flex items-start gap-2 py-0.5 ${levelColors[log.level]}`}
+              >
+                <span
+                  className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${levelDots[log.level]}`}
+                />
+                <span className="text-muted-foreground/60 shrink-0">
+                  {new Date(log.time * 1000).toLocaleTimeString("tr-TR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  })}
+                </span>
+                <span className="break-all">{log.message}</span>
+              </div>
+            ))
           )}
         </div>
       </div>

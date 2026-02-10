@@ -374,3 +374,18 @@
     transparent
   );
 }
+
+/* Log entry slide-in animation (replaces AnimatePresence per-log) */
+@keyframes log-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.log-entry {
+  animation: log-enter 0.12s ease-out both;
+}

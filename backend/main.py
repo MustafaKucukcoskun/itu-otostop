@@ -7,6 +7,7 @@ Session bazlı izolasyon: her browser tab kendi bağımsız state'ine sahiptir.
 import asyncio
 import json
 import os
+import re
 import time
 import threading
 from contextlib import asynccontextmanager
@@ -15,6 +16,11 @@ from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from models import (
     ConfigRequest, ConfigResponse, CalibrationResult,
@@ -46,6 +52,15 @@ class SessionState:
 sessions: dict[str, SessionState] = {}
 MAX_SESSIONS = 100
 SESSION_TIMEOUT = 7200  # 2 saat
+
+# Session ID format doğrulama (UUIDv4)
+UUID_RE = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+    re.IGNORECASE,
+)
+
+# Rate limiter (IP bazlı)
+limiter = Limiter(key_func=get_remote_address)
 
 
 def _cleanup_sessions():
@@ -80,14 +95,14 @@ def get_session(session_id: str) -> SessionState:
 
 
 def get_session_id(request: Request) -> str:
-    """Request'ten session ID'yi çıkar (header veya query param)."""
+    """Request'ten session ID'yi çıkar ve UUIDv4 formatını doğrula."""
     sid = request.headers.get("X-Session-ID", "")
     if not sid:
         sid = request.query_params.get("session_id", "")
     if not sid:
         raise HTTPException(400, "X-Session-ID header gerekli")
-    if len(sid) > 128:
-        raise HTTPException(400, "Geçersiz session ID")
+    if not UUID_RE.match(sid):
+        raise HTTPException(400, "Geçersiz session ID formatı")
     return sid
 
 
@@ -101,12 +116,40 @@ async def lifespan(app: FastAPI):
         if s.engine and s.engine.is_running:
             s.engine.cancel()
 
+_is_production = os.getenv("ENV", "").lower() == "production"
+
 app = FastAPI(
     title="İTÜ Otostop API",
     description="İTÜ OBS otomatik ders kayıt sistemi - Otostop",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
 )
+
+app.state.limiter = limiter
+
+
+# ── Rate limit error handler ──
+
+@app.exception_handler(RateLimitExceeded)
+async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "İstek sınırı aşıldı. Lütfen bekleyin."},
+    )
+
+
+# ── Security headers middleware ──
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        return response
 
 app.add_middleware(
     CORSMiddleware,
@@ -116,9 +159,10 @@ app.add_middleware(
         *[o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()],
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Session-ID"],
 )
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 # ── WebSocket broadcast (session bazlı) ──
@@ -198,9 +242,6 @@ async def get_config(request: Request):
 
 
 def _config_response(session: SessionState) -> ConfigResponse:
-    preview = ""
-    if session.token:
-        preview = session.token[:20] + "..." + session.token[-10:]
     return ConfigResponse(
         ecrn_list=session.ecrn_list,
         scrn_list=session.scrn_list,
@@ -209,12 +250,13 @@ def _config_response(session: SessionState) -> ConfigResponse:
         retry_aralik=session.retry_aralik,
         gecikme_buffer=session.gecikme_buffer,
         token_set=bool(session.token),
-        token_preview=preview,
+        token_preview="",
         dry_run=session.dry_run,
     )
 
 
 @app.post("/api/test-token", response_model=TokenTestResult)
+@limiter.limit("5/minute")
 async def test_token(request: Request):
     session_id = get_session_id(request)
     session = get_session(session_id)
@@ -230,6 +272,7 @@ async def test_token(request: Request):
 
 
 @app.post("/api/calibrate", response_model=CalibrationResult)
+@limiter.limit("3/minute")
 async def calibrate(request: Request):
     session_id = get_session_id(request)
     session = get_session(session_id)
@@ -253,6 +296,7 @@ async def calibrate(request: Request):
 
 
 @app.post("/api/register/start")
+@limiter.limit("2/minute")
 async def start_registration(request: Request):
     session_id = get_session_id(request)
     session = get_session(session_id)

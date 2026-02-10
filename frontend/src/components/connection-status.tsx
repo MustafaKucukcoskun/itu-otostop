@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "motion/react";
+import { m } from "motion/react";
 import { Wifi, WifiOff } from "lucide-react";
 
 interface ConnectionStatusProps {
@@ -19,17 +19,19 @@ export function ConnectionStatus({
   latency,
 }: ConnectionStatusProps) {
   return (
-    <motion.div
+    <m.div
+      role="status"
+      aria-label={connected ? `Bağlı${latency != null ? `, gecikme ${latency}ms` : ""}` : "Bağlantı yok"}
       className="flex items-center gap-2 px-3 py-1.5 rounded-full glass"
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
     >
       <div className="relative">
-        <motion.div
+        <m.div
           className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-400" : "bg-red-400"}`}
         />
         {connected && (
-          <motion.div
+          <m.div
             className="absolute inset-0 h-2 w-2 rounded-full bg-emerald-400"
             animate={{ scale: [1, 2.5], opacity: [0.6, 0] }}
             transition={{ repeat: Infinity, duration: 2, ease: "easeOut" }}
@@ -51,6 +53,6 @@ export function ConnectionStatus({
           {latency}ms
         </span>
       )}
-    </motion.div>
+    </m.div>
   );
 }

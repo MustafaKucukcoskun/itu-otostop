@@ -1,6 +1,10 @@
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from enum import Enum
+
+CRN_RE = re.compile(r'^\d{5}$')
 
 
 class CRNStatus(str, Enum):
@@ -16,13 +20,21 @@ class CRNStatus(str, Enum):
 
 class ConfigRequest(BaseModel):
     token: Optional[str] = Field(default=None, description="JWT Bearer token (gönderilmezse mevcut token korunur)")
-    ecrn_list: list[str] = Field(..., description="Eklenecek CRN listesi")
-    scrn_list: list[str] = Field(default_factory=list, description="Silinecek CRN listesi")
+    ecrn_list: list[str] = Field(..., description="Eklenecek CRN listesi", max_length=20)
+    scrn_list: list[str] = Field(default_factory=list, description="Silinecek CRN listesi", max_length=20)
     kayit_saati: str = Field(default="", pattern=r"^(\d{2}:\d{2}:\d{2})?$")
     max_deneme: int = Field(default=60, ge=1, le=300)
     retry_aralik: float = Field(default=3.0, ge=3.0, le=10.0)
     gecikme_buffer: float = Field(default=0.005, ge=0.0, le=0.1)
     dry_run: bool = Field(default=False, description="Test modu — gerçek kayıt yapmaz")
+
+    @field_validator('ecrn_list', 'scrn_list')
+    @classmethod
+    def validate_crn_format(cls, v: list[str]) -> list[str]:
+        for crn in v:
+            if not CRN_RE.match(crn):
+                raise ValueError(f"Geçersiz CRN formatı: '{crn}' (5 haneli sayı olmalı)")
+        return v
 
 
 class ConfigResponse(BaseModel):

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { m, AnimatePresence } from "motion/react";
 import {
   Eye,
   EyeOff,
@@ -155,7 +155,7 @@ export function TokenInput({
         </div>
         <AnimatePresence mode="wait">
           {tokenValid === true && (
-            <motion.div
+            <m.div
               key="valid"
               initial={{ scale: 0, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -163,10 +163,10 @@ export function TokenInput({
               className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[11px] font-medium"
             >
               <CheckCircle2 className="h-3 w-3" /> Geçerli
-            </motion.div>
+            </m.div>
           )}
           {tokenValid === false && (
-            <motion.div
+            <m.div
               key="invalid"
               initial={{ scale: 0, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -174,7 +174,7 @@ export function TokenInput({
               className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 text-[11px] font-medium"
             >
               <XCircle className="h-3 w-3" /> Geçersiz
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
       </div>
@@ -209,7 +209,7 @@ export function TokenInput({
         {/* Token Expiry Indicator */}
         <AnimatePresence>
           {token && expiryStatus && (
-            <motion.div
+            <m.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
@@ -240,10 +240,10 @@ export function TokenInput({
                   })}
                 </span>
               )}
-            </motion.div>
+            </m.div>
           )}
           {token && !jwtInfo && token.length > 20 && (
-            <motion.div
+            <m.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
@@ -251,7 +251,7 @@ export function TokenInput({
             >
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
               <span>JWT formatı tanınmadı — süre bilgisi gösterilemiyor</span>
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
 

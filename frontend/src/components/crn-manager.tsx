@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { m, AnimatePresence } from "motion/react";
 import {
   Plus,
   X,
@@ -188,7 +188,7 @@ export function CRNManager({
                 </span>
               )}
               {isActive && (
-                <motion.div
+                <m.div
                   layoutId="crn-tab-indicator"
                   className="absolute bottom-0 left-4 right-4 h-0.5 bg-primary rounded-full"
                   transition={{ type: "spring", stiffness: 400, damping: 30 }}
@@ -238,7 +238,7 @@ export function CRNManager({
               const status = result?.status || "pending";
               const style = statusStyles[status] || statusStyles.pending;
               return (
-                <motion.div
+                <m.div
                   key={`${tab}-${crn}`}
                   layout
                   initial={{ opacity: 0, y: -8, scale: 0.96 }}
@@ -296,7 +296,7 @@ export function CRNManager({
                       <X className="h-3.5 w-3.5" />
                     </button>
                   )}
-                </motion.div>
+                </m.div>
               );
             })}
           </AnimatePresence>

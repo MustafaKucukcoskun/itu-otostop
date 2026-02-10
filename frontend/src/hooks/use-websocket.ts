@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
   createWebSocket,
+  api,
   type WSEvent,
   type CalibrationResult,
 } from "@/lib/api";
@@ -14,11 +15,20 @@ export interface LogEntry {
   level: "info" | "warning" | "error";
 }
 
+// Exponential backoff: 3s → 6s → 12s → 24s → max 30s
+const RECONNECT_BASE = 3000;
+const RECONNECT_MAX = 30000;
+
+function getReconnectDelay(attempt: number): number {
+  return Math.min(RECONNECT_BASE * Math.pow(2, attempt), RECONNECT_MAX);
+}
+
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const reconnectAttemptRef = useRef(0);
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pingSentRef = useRef<number>(0);
   const [connected, setConnected] = useState(false);
@@ -43,6 +53,37 @@ export function useWebSocket() {
 
       ws.onopen = () => {
         setConnected(true);
+        reconnectAttemptRef.current = 0; // Başarılı bağlantıda sayacı sıfırla
+
+        // Reconnect sonrası backend state'i senkronize et
+        api
+          .getStatus()
+          .then((status) => {
+            if (status.phase && status.phase !== "idle") {
+              setPhase(status.phase);
+              if (status.countdown_seconds != null) {
+                setCountdown(status.countdown_seconds);
+              }
+              if (status.crn_results?.length) {
+                const map: Record<string, { status: string; message: string }> =
+                  {};
+                for (const r of status.crn_results) {
+                  map[r.crn] = { status: r.status, message: r.message };
+                }
+                setCrnResults(map);
+              }
+              if (status.calibration) {
+                setCalibration(status.calibration);
+              }
+              if (status.phase === "done") {
+                setDone(true);
+              }
+            }
+          })
+          .catch(() => {
+            /* backend offline — WS events will sync later */
+          });
+
         // Start ping interval for latency measurement
         pingIntervalRef.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
@@ -62,8 +103,10 @@ export function useWebSocket() {
           clearInterval(pingIntervalRef.current);
           pingIntervalRef.current = null;
         }
-        // Auto reconnect after 3s
-        reconnectTimeoutRef.current = setTimeout(connect, 3000); // eslint-disable-line react-hooks/immutability -- self-referencing closure, valid at call time
+        // Exponential backoff ile reconnect
+        const delay = getReconnectDelay(reconnectAttemptRef.current);
+        reconnectAttemptRef.current++;
+        reconnectTimeoutRef.current = setTimeout(connect, delay); // eslint-disable-line react-hooks/immutability -- self-referencing closure, valid at call time
       };
 
       ws.onerror = () => ws.close();
@@ -134,7 +177,9 @@ export function useWebSocket() {
 
       wsRef.current = ws;
     } catch {
-      reconnectTimeoutRef.current = setTimeout(connect, 3000);
+      const delay = getReconnectDelay(reconnectAttemptRef.current);
+      reconnectAttemptRef.current++;
+      reconnectTimeoutRef.current = setTimeout(connect, delay);
     }
   }, []);
 

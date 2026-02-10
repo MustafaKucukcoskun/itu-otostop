@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { motion } from "motion/react";
+import { m } from "motion/react";
 import {
   Activity,
   Server,
@@ -165,7 +165,7 @@ function Metric({
   delay?: number;
 }) {
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.3 }}
@@ -183,7 +183,7 @@ function Metric({
         <span className="font-mono font-semibold text-sm">{value}</span>
         <span className="text-[10px] text-muted-foreground">{unit}</span>
       </div>
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -273,12 +273,12 @@ export function CalibrationCard({
             </span>
           )}
           {loading && (
-            <motion.div
+            <m.div
               animate={{ rotate: 360 }}
               transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
             >
               <Activity className="h-4 w-4 text-muted-foreground" />
-            </motion.div>
+            </m.div>
           )}
         </div>
       </div>
@@ -338,7 +338,7 @@ export function CalibrationCard({
 
             {/* History sparklines */}
             {history.length >= 2 && (
-              <motion.div
+              <m.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.3 }}
@@ -376,18 +376,18 @@ export function CalibrationCard({
                     />
                   </div>
                 </div>
-              </motion.div>
+              </m.div>
             )}
           </>
         ) : (
           <div className="text-center py-8 text-muted-foreground/50 text-sm">
             {loading ? (
-              <motion.span
+              <m.span
                 animate={{ opacity: [0.4, 1, 0.4] }}
                 transition={{ repeat: Infinity, duration: 1.5 }}
               >
                 Ölçülüyor...
-              </motion.span>
+              </m.span>
             ) : (
               "Kalibre Et butonuna bas"
             )}

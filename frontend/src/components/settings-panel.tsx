@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion } from "motion/react";
+import { m } from "motion/react";
 import {
   Settings,
   Clock,
@@ -96,16 +96,16 @@ export function SettingsPanel({
           </div>
           <h3 className="text-sm font-semibold">Ayarlar</h3>
         </div>
-        <motion.div
+        <m.div
           animate={{ rotate: expanded ? 180 : 0 }}
           transition={{ duration: 0.2 }}
         >
           <ChevronDown className="h-4 w-4 text-muted-foreground" />
-        </motion.div>
+        </m.div>
       </button>
 
       {/* Expandable body */}
-      <motion.div
+      <m.div
         initial={false}
         animate={{ height: expanded ? "auto" : 0, opacity: expanded ? 1 : 0 }}
         transition={{ duration: 0.25, ease: "easeInOut" }}
@@ -274,7 +274,7 @@ export function SettingsPanel({
             </button>
           </div>
         </div>
-      </motion.div>
+      </m.div>
     </div>
   );
 }

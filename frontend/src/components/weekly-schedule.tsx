@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { m, AnimatePresence } from "motion/react";
 import {
   Calendar,
   AlertTriangle,
@@ -243,7 +243,7 @@ export function WeeklySchedule({
 
       <AnimatePresence initial={false}>
         {!collapsed && (
-          <motion.div
+          <m.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -319,7 +319,7 @@ export function WeeklySchedule({
                         const isHovered = hoveredBlock === block.courseCode;
 
                         return (
-                          <motion.div
+                          <m.div
                             key={`${block.crn}-${dayIdx}-${block.startMin}`}
                             initial={{ opacity: 0, scale: 0.9 }}
                             animate={{
@@ -380,7 +380,7 @@ export function WeeklySchedule({
                                 <AlertTriangle className="h-2.5 w-2.5 text-red-400" />
                               </div>
                             )}
-                          </motion.div>
+                          </m.div>
                         );
                       })}
                   </div>
@@ -427,7 +427,7 @@ export function WeeklySchedule({
                 })}
               </div>
             )}
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>

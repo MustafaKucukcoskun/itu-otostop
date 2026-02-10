@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "motion/react";
+import { m, AnimatePresence } from "motion/react";
 import {
   X,
   ExternalLink,
@@ -83,14 +83,14 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
   return createPortal(
     <AnimatePresence>
       {open && (
-        <motion.div
+        <m.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm"
           onClick={onClose}
         >
-          <motion.div
+          <m.div
             initial={{ scale: 0.92, opacity: 0, y: 12 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.92, opacity: 0, y: 12 }}
@@ -131,7 +131,7 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
 
             {/* Step content */}
             <AnimatePresence mode="wait">
-              <motion.div
+              <m.div
                 key={step}
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -161,7 +161,7 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
                 <div className="bg-muted/20 rounded-xl p-3.5 text-xs text-muted-foreground/70 leading-relaxed">
                   💡 {current.detail}
                 </div>
-              </motion.div>
+              </m.div>
             </AnimatePresence>
 
             {/* Navigation */}
@@ -191,8 +191,8 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
                 </button>
               )}
             </div>
-          </motion.div>
-        </motion.div>
+          </m.div>
+        </m.div>
       )}
     </AnimatePresence>,
     document.body,

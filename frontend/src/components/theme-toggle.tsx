@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
-import { motion } from "motion/react";
+import { m } from "motion/react";
 import { Sun, Moon } from "lucide-react";
 
 export function ThemeToggle() {
@@ -22,7 +22,7 @@ export function ThemeToggle() {
       onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
       className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
     >
-      <motion.div
+      <m.div
         key={theme}
         initial={{ scale: 0, rotate: -90, opacity: 0 }}
         animate={{ scale: 1, rotate: 0, opacity: 1 }}
@@ -33,7 +33,7 @@ export function ThemeToggle() {
         ) : (
           <Moon className="h-4 w-4" />
         )}
-      </motion.div>
+      </m.div>
     </button>
   );
 }
