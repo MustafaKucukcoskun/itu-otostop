@@ -12,7 +12,9 @@
       "Bash(gcloud run services describe:*)",
       "Bash(gcloud run deploy:*)",
       "Bash(curl:*)",
-      "Bash(bun run lint:*)"
+      "Bash(bun run lint:*)",
+      "Bash(pip install:*)",
+      "Bash(findstr:*)"
     ]
   }
 }

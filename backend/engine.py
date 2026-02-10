@@ -211,14 +211,20 @@ class RegistrationEngine:
                 continue
             rtts.append(time.perf_counter() - t0)
         if not rtts:
-            return {"median": 0.010, "jitter": 0.005, "min": 0.010, "max": 0.010, "count": 0}
+            return {"median": 0.010, "jitter": 0.005, "min": 0.010, "max": 0.010, "count": 0, "trend": 0.0}
         rtts.sort()
         count = len(rtts)
         median = rtts[count // 2]
         mean = sum(rtts) / count
         variance = sum((r - mean) ** 2 for r in rtts) / count
         jitter = variance ** 0.5
-        return {"median": median, "jitter": jitter, "min": rtts[0], "max": rtts[-1], "count": count}
+        
+        # RTT trend analizi (son ve ilk değerler arasındaki fark)
+        trend = 0.0
+        if len(rtts) >= 2:
+            trend = rtts[-1] - rtts[0]  # Son değer - ilk değer
+        
+        return {"median": median, "jitter": jitter, "min": rtts[0], "max": rtts[-1], "count": count, "trend": trend}
 
     # ── Hassas Zamanlama ──
 
@@ -254,7 +260,36 @@ class RegistrationEngine:
         buffer = max(PENCERE_MERKEZ, 2 * sigma)
 
         # Sınırlar: [15ms, 40ms] — üst sınırdan 10ms güvenlik payı
-        return max(0.015, min(buffer, 0.040))
+        base_buffer = max(0.015, min(buffer, 0.040))
+        
+        # ADAPTIF BUFFER: RTT trend analizi ve güven aralığı ekleyelim
+        adaptive_buffer = self._calculate_adaptive_buffer(base_buffer, rtt_jitter)
+        
+        return adaptive_buffer
+    
+    def _calculate_adaptive_buffer(self, base_buffer: float, rtt_jitter: float) -> float:
+        """Ağ koşullarına göre adaptif buffer hesapla."""
+        # RTT trend analizi (son 5 ölçüm üzerinden)
+        if len(self._cal_samples) >= 5:
+            recent_samples = self._cal_samples[-5:]
+            recent_rtts = [sample[1] for sample in recent_samples]  # RTT değerleri
+            
+            # RTT trend analizi
+            if len(recent_rtts) >= 2:
+                # Son iki RTT arasındaki fark
+                rtt_change = recent_rtts[-1] - recent_rtts[-2]
+                
+                # Pozitif trend varsa (RTT artıyorsa) buffer'ı artır
+                if rtt_change > 0.010:  # 10ms artış
+                    base_buffer += 0.005  # 5ms artır
+                    
+        # Jitter yüksekse buffer'ı artır
+        if rtt_jitter > 0.020:  # 20ms üzerindeyse
+            base_buffer += 0.005  # 5ms artır
+            
+        # Minimum güvenli buffer (VAL02 riskini azaltmak için)
+        MIN_SAFE_BUFFER = 0.020  # 20ms minimum
+        return max(base_buffer, MIN_SAFE_BUFFER)
 
     def _last_second_probe(self) -> tuple[float, float]:
         """Son saniye RTT probe'u — tetik düzeltmesi hesapla.
@@ -572,6 +607,12 @@ class RegistrationEngine:
                 teorik_sunucu_varis = sunucu_gonderim_ms + cal.rtt_one_way * 1000
                 self._log(f"📐 Teorik sunucu varış: hedef {teorik_sunucu_varis:+.0f}ms (sunucu saati)")
 
+            # NEGATIF VARIS KORUMASI ANALIZI: Gelecekte bu koruma sayesinde ne olurdu?
+            if sunucu_varis_ms < 0:
+                # Eğer negatif varış koruması olsaydı, en az 10ms gecikmeli olurdu
+                corrected_varis_ms = 10  # En az 10ms gecikmeli (pozitif varış)
+                self._log(f"🔄 Simüle edilen koruma: {sunucu_varis_ms:+.0f}ms → {corrected_varis_ms:+.0f}ms (VAL02 riski azaltıldı)")
+
         except Exception as e:
             self._log(f"❌ Test isteği hatası: {e}", "error")
 
@@ -855,6 +896,12 @@ class RegistrationEngine:
             hedef = self._saat_to_epoch(self.kayit_saati)
             best = self._best_calibration()
             tetik = hedef + best.server_offset - best.rtt_one_way + self.gecikme_buffer
+            
+            # NEGATIF VARIS KORUMASI: Tetik zamanı hedef zamandan erkense, en az 10ms geciktir
+            if tetik < hedef:
+                self._log(f"⚠️ Tetik zamanı hedeften {((hedef - tetik) * 1000):+.0f}ms erken! 10ms geciktiriliyor...", "warning")
+                tetik = hedef + 0.010  # En az 10ms gecikmeli başlat
+            
             self._trigger_time = tetik
 
             kalan_sn = tetik - time.time()
@@ -888,7 +935,12 @@ class RegistrationEngine:
                 """Havuzdaki en iyi ölçüme göre tetik zamanını yeniden hesapla."""
                 best = self._best_calibration()
                 if best:
-                    return hedef + best.server_offset - best.rtt_one_way + self.gecikme_buffer
+                    new_trigger = hedef + best.server_offset - best.rtt_one_way + self.gecikme_buffer
+                    # NEGATIF VARIS KORUMASI: Tetik zamanı hedef zamandan erkense, en az 10ms geciktir
+                    if new_trigger < hedef:
+                        self._log(f"⚠️ Tetik zamanı hedeften {((hedef - new_trigger) * 1000):+.0f}ms erken! 10ms geciktiriliyor...", "warning")
+                        new_trigger = hedef + 0.010  # En az 10ms gecikmeli başlat
+                    return new_trigger
                 return tetik
 
             while not self._cancelled.is_set():
@@ -946,15 +998,35 @@ class RegistrationEngine:
                     except Exception:
                         pass
 
+                # ── Sürekli RTT izleme ve düzeltme (kalan > 5sn ve 30sn aralıklarla) ──
+                if kalan > 5 and (now - last_recal_time) >= 30:  # 30sn aralıklarla
+                    # RTT trend izleme
+                    rtt_trend_data = self._rtt_stats(5)
+                    self._log(f"📊 Sürekli RTT izleme: median={rtt_trend_data['median']*1000:.0f}ms, trend={rtt_trend_data['trend']*1000:+.1f}ms", "info")
+                    
+                    # Anormal artış varsa alarm ver
+                    if rtt_trend_data['trend'] > 0.020:  # 20ms artış
+                        self._log(f"⚠️ RTT trend artışı tespit edildi: {rtt_trend_data['trend']*1000:+.1f}ms", "warning")
+                    
+                    last_recal_time = now
+
                 # ── Son saniye RTT probe'u (2s kala — mikro düzeltme) ──
                 if not probe_done and 1.5 < kalan <= 2.5:
                     probe_done = True
                     correction, probe_rtt = self._last_second_probe()
                     if abs(correction) > 0.001:  # >1ms fark
-                        tetik += correction
+                        # NEGATIF VARIS KORUMASI: Düzeltme sonucu tetik zamanı hedeften önce olursa, koru
+                        new_trigger = tetik + correction
+                        hedef = self._saat_to_epoch(self.kayit_saati)
+                        
+                        if new_trigger < hedef:
+                            self._log(f"⚠️ Düzeltme sonucu tetik zamanı hedeften {((hedef - new_trigger) * 1000):+.0f}ms erken olacaktı! 10ms geciktiriliyor...", "warning")
+                            new_trigger = hedef + 0.010  # En az 10ms gecikmeli başlat
+                        
+                        tetik = new_trigger
                         self._trigger_time = tetik
                         kalan = tetik - time.time()
-                        self._log(f"🎯 Probe düzeltme: {correction*1000:+.1f}ms (probe RTT: {probe_rtt*1000:.0f}ms, kal. RTT: {self._calibration.rtt_one_way*2000:.0f}ms)")
+                        self._log(f"🎯 Probe düzeltme: {correction*1000:+.1f}ms → yeni tetik: {((tetik - hedef) * 1000):+.0f}ms (probe RTT: {probe_rtt*1000:.0f}ms, kal. RTT: {self._calibration.rtt_one_way*2000:.0f}ms)")
                         self._emit("countdown", {"trigger_time": tetik, "remaining": kalan})
                     else:
                         self._log(f"🎯 Probe: RTT={probe_rtt*1000:.0f}ms — düzeltme gerekmedi")
