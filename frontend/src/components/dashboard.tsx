@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { m, AnimatePresence } from "motion/react";
-import { Play, Square, Gauge, Zap, Volume2, VolumeX } from "lucide-react";
+import { Play, Square, Gauge, Zap, Volume2, VolumeX, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { UserButton, useUser } from "@clerk/nextjs";
 import { api, type CalibrationResult, type CourseInfo } from "@/lib/api";
@@ -77,6 +77,8 @@ function DashboardContent() {
     ws.phase === "calibrating" ||
     ws.phase === "waiting" ||
     ws.phase === "registering";
+
+  const isDone = ws.phase === "done";
 
   // Guard: auto-save'in config load bitmeden cloud'u ezmesini engelle
   const initialLoadDone = useRef(false);
@@ -368,6 +370,13 @@ function DashboardContent() {
       );
       return;
     }
+
+    // Done/stuck state'den yeniden başlatıyorsak önce temizle
+    if (ws.phase === "done" || ws.done) {
+      try { await api.resetRegistration(); } catch { /* temiz olabilir */ }
+      ws.softReset();
+    }
+
     setStarting(true);
     // Request notification permission on first start
     notify.requestPermission();
@@ -396,6 +405,12 @@ function DashboardContent() {
     } finally {
       setStarting(false);
     }
+  };
+
+  // Reset — done state'den idle'a dön (logları koru)
+  const handleReset = async () => {
+    try { await api.resetRegistration(); } catch { /* temiz olabilir */ }
+    ws.softReset();
   };
 
   // Cancel
@@ -565,39 +580,65 @@ function DashboardContent() {
 
             {/* Action buttons — inside hero card */}
             <div className="px-6 pb-6 flex gap-3">
-              <button
-                onClick={handleCalibrate}
-                disabled={calibrating || isRunning || !token}
-                className="flex-1 h-11 sm:h-10 rounded-xl ring-1 ring-border/20 bg-background/40 hover:bg-muted/40 text-sm font-medium flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none hover:ring-border/40"
-              >
-                <Gauge className="h-4 w-4" />
-                {calibrating ? "Kalibre ediliyor..." : "Kalibre Et"}
-              </button>
-              {!isRunning ? (
-                <button
-                  onClick={handleStart}
-                  disabled={starting || !token || crnList.length === 0}
-                  className={`flex-1 h-11 sm:h-10 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none ${
-                    dryRun
-                      ? "bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 hover:to-orange-400 shadow-lg shadow-amber-500/20"
-                      : "bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 shadow-lg shadow-emerald-500/20"
-                  }`}
-                >
-                  <Play className="h-4 w-4" />
-                  {starting
-                    ? "Başlatılıyor..."
-                    : dryRun
-                      ? "🧪 Dry Run Başlat"
-                      : "Kayıt Başlat"}
-                </button>
+              {isDone ? (
+                <>
+                  <button
+                    onClick={handleReset}
+                    className="flex-1 h-11 sm:h-10 rounded-xl ring-1 ring-border/20 bg-background/40 hover:bg-muted/40 text-sm font-medium flex items-center justify-center gap-2 transition-all duration-200 hover:ring-border/40"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    Yeni Kayıt
+                  </button>
+                  <button
+                    onClick={handleStart}
+                    disabled={starting || !token || crnList.length === 0}
+                    className={`flex-1 h-11 sm:h-10 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none ${
+                      dryRun
+                        ? "bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 hover:to-orange-400 shadow-lg shadow-amber-500/20"
+                        : "bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 shadow-lg shadow-emerald-500/20"
+                    }`}
+                  >
+                    <Play className="h-4 w-4" />
+                    {starting ? "Başlatılıyor..." : "Tekrar Başlat"}
+                  </button>
+                </>
               ) : (
-                <button
-                  onClick={handleCancel}
-                  className="flex-1 h-11 sm:h-10 rounded-xl bg-gradient-to-r from-red-600 to-rose-500 hover:from-red-500 hover:to-rose-400 text-white text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 shadow-lg shadow-red-500/20"
-                >
-                  <Square className="h-4 w-4" />
-                  İptal Et
-                </button>
+                <>
+                  <button
+                    onClick={handleCalibrate}
+                    disabled={calibrating || isRunning || !token}
+                    className="flex-1 h-11 sm:h-10 rounded-xl ring-1 ring-border/20 bg-background/40 hover:bg-muted/40 text-sm font-medium flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none hover:ring-border/40"
+                  >
+                    <Gauge className="h-4 w-4" />
+                    {calibrating ? "Kalibre ediliyor..." : "Kalibre Et"}
+                  </button>
+                  {!isRunning ? (
+                    <button
+                      onClick={handleStart}
+                      disabled={starting || !token || crnList.length === 0}
+                      className={`flex-1 h-11 sm:h-10 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none ${
+                        dryRun
+                          ? "bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 hover:to-orange-400 shadow-lg shadow-amber-500/20"
+                          : "bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 shadow-lg shadow-emerald-500/20"
+                      }`}
+                    >
+                      <Play className="h-4 w-4" />
+                      {starting
+                        ? "Başlatılıyor..."
+                        : dryRun
+                          ? "🧪 Dry Run Başlat"
+                          : "Kayıt Başlat"}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleCancel}
+                      className="flex-1 h-11 sm:h-10 rounded-xl bg-gradient-to-r from-red-600 to-rose-500 hover:from-red-500 hover:to-rose-400 text-white text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 shadow-lg shadow-red-500/20"
+                    >
+                      <Square className="h-4 w-4" />
+                      İptal Et
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </SpotlightCard>
