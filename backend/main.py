@@ -185,18 +185,42 @@ async def broadcast(session_id: str, event: dict):
 async def poll_engine_events(session_id: str):
     """Engine event kuyruğunu sürekli okuyup WebSocket'e yayınla."""
     session = sessions.get(session_id)
-    while session and session.engine and (session.engine.is_running or not session.engine._events.empty()):
-        events = session.engine.get_events()
-        for event in events:
-            await broadcast(session_id, event)
+    if not session or not session.engine:
+        return
+
+    engine = session.engine
+    thread = session.engine_thread
+
+    # Engine thread'in başlamasını bekle (race condition önleme)
+    # Thread henüz is_running=True yapmamış olabilir
+    for _ in range(100):  # max 10s
+        if engine.is_running or not engine._events.empty():
+            break
+        if thread and not thread.is_alive():
+            break  # Thread zaten bitti (hata?)
         await asyncio.sleep(0.1)
-        session = sessions.get(session_id)  # Session silinmiş olabilir
-    # Son eventleri gönder
-    session = sessions.get(session_id)
-    if session and session.engine:
-        events = session.engine.get_events()
+
+    # Event loop: thread alive VEYA events var oldukça devam
+    while True:
+        session = sessions.get(session_id)
+        if not session or not session.engine:
+            break
+
+        events = engine.get_events()
         for event in events:
             await broadcast(session_id, event)
+
+        # Çıkış: engine durdu VE kuyruk boş VE thread bitti
+        if not engine.is_running and engine._events.empty():
+            if not thread or not thread.is_alive():
+                break
+
+        await asyncio.sleep(0.1)
+
+    # Son kalan eventleri gönder
+    remaining = engine.get_events()
+    for event in remaining:
+        await broadcast(session_id, event)
 
 
 def _poll_task_done(task: asyncio.Task):
