@@ -225,26 +225,36 @@ class RegistrationEngine:
     def _calculate_precision_buffer(self, cal: CalibrationData, rtt_jitter: float) -> float:
         """0-50ms varış penceresi için optimal gecikme buffer'ı hesapla.
 
-        Formül analizi:
-          server_arrival = hedef + buffer + measurement_error
-          error = (offset_measured - offset_actual) + (rtt_actual - rtt_measured)
+        Formül:
+          server_arrival = hedef + buffer + error
+          error = offset_error + rtt_error
 
-        Hedef: 0 ≤ buffer + error ≤ 0.050
-        Optimal buffer: pencere merkezi (25ms) + belirsizlik payı
+        Offset ölçüm hatası analizi:
+          offset = (t_local + RTT/2) - server_ts
+          error = RTT/2 - gerçek_send_latency
+          Worst case: ±RTT/2 (tam asimetrik yol — pratikte olmuyor)
+          Best-of-N ile: en düşük RTT = en simetrik ölçüm → hata << RTT/2
+          Araştırma: tipik asimetri %10-30 → hata ≈ RTT * 0.15
+
+        Strateji: buffer'ı pencere merkezine (25ms) yerleştir.
+        σ büyükse alt sınırdan (0ms) uzaklaş → buffer = max(25ms, 2σ)
         """
-        PENCERE_MERKEZ = 0.025  # 25ms — ideal varış noktası
+        PENCERE_MERKEZ = 0.025  # 25ms — [0,50ms] penceresinin merkezi
 
-        # Offset ölçüm belirsizliği ≈ kalibrasyon RTT tek yön (asimetri hatası)
-        offset_uncertainty = cal.rtt_one_way
+        # Gerçekçi offset belirsizliği: best-of-N seçimi asimetriyi minimize eder
+        # Tam worst-case (rtt_one_way) yerine %30 asimetri faktörü kullan
+        offset_uncertainty = cal.rtt_one_way * 0.3
 
         # Toplam belirsizlik (karekök toplam — bağımsız hata kaynakları)
-        total_uncertainty = (offset_uncertainty ** 2 + rtt_jitter ** 2) ** 0.5
+        sigma = (offset_uncertainty ** 2 + rtt_jitter ** 2) ** 0.5
 
-        # Buffer = merkez + 1σ güvenlik payı (erken varışı önlemek için yukarı kaydır)
-        buffer = PENCERE_MERKEZ + total_uncertainty
+        # Buffer = pencere merkezi VEYA 2σ (hangisi büyükse)
+        # Pencere merkezi: varışı [0,50ms] ortasına hedefler
+        # 2σ güvenlik: alt sınırdan (0ms) 2σ uzaklık → %97.7 üstünde kalma
+        buffer = max(PENCERE_MERKEZ, 2 * sigma)
 
-        # Sınırlar: [15ms, 45ms] — pencere dışına çıkma
-        return max(0.015, min(buffer, 0.045))
+        # Sınırlar: [15ms, 40ms] — üst sınırdan 10ms güvenlik payı
+        return max(0.015, min(buffer, 0.040))
 
     def _last_second_probe(self) -> tuple[float, float]:
         """Son saniye RTT probe'u — tetik düzeltmesi hesapla.
