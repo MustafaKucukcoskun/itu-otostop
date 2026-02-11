@@ -12,6 +12,7 @@ import sys
 import ctypes
 import os
 import socket
+from collections import deque
 from email.utils import parsedate_to_datetime
 from dataclasses import dataclass, field
 from typing import Optional, Callable
@@ -61,6 +62,79 @@ class CalibrationData:
     ntp_offset: float = 0.0
 
 
+class TrendAnalyzer:
+    """Ofset ve RTT değerlerinin trend analizini yapar."""
+    def __init__(self, window_size=10):
+        self.window_size = window_size
+        self.data_points = deque(maxlen=window_size)  # [(timestamp, value), ...]
+    
+    def add_measurement(self, timestamp, value):
+        """Yeni ölçüm ekle"""
+        self.data_points.append((timestamp, value))
+    
+    def calculate_linear_trend(self):
+        """Lineer regresyonla trend hesapla: y = mx + b"""
+        if len(self.data_points) < 2:
+            return 0.0, 0.0  # slope, intercept
+        
+        n = len(self.data_points)
+        timestamps = [point[0] for point in self.data_points]
+        values = [point[1] for point in self.data_points]
+        
+        # Lineer regresyon: y = mx + b
+        sum_x = sum(timestamps)
+        sum_y = sum(values)
+        sum_xy = sum(x * y for x, y in zip(timestamps, values))
+        sum_x_sq = sum(x * x for x in timestamps)
+        
+        denominator = n * sum_x_sq - sum_x * sum_x
+        if denominator == 0:
+            return 0.0, sum_y / n
+        
+        slope = (n * sum_xy - sum_x * sum_y) / denominator
+        intercept = (sum_y - slope * sum_x) / n
+        
+        return slope, intercept
+    
+    def predict_value_at_time(self, future_timestamp):
+        """Belirli bir zamanda değerin ne olacağını tahmin et"""
+        slope, intercept = self.calculate_linear_trend()
+        return slope * future_timestamp + intercept
+
+
+class ChangeDetector:
+    """Anlamlı değişiklikleri tespit eder."""
+    def __init__(self, threshold=0.050, min_window=3):
+        self.threshold = threshold  # 50ms değişiklik eşik değeri
+        self.min_window = min_window
+        self.values = deque(maxlen=10)
+    
+    def add_value(self, value):
+        """Yeni değeri ekle"""
+        self.values.append(value)
+    
+    def detect_significant_change(self):
+        """Anlamlı değişiklik olup olmadığını kontrol et"""
+        if len(self.values) < self.min_window:
+            return False
+        
+        # Son iki değre arasındaki fark
+        if len(self.values) >= 2:
+            recent_change = abs(self.values[-1] - self.values[-2])
+            return recent_change > self.threshold
+        
+        return False
+    
+    def calculate_average_change(self):
+        """Ortalama değişim miktarını hesapla"""
+        if len(self.values) < 2:
+            return 0.0
+        
+        changes = [abs(self.values[i+1] - self.values[i]) 
+                   for i in range(len(self.values)-1)]
+        return sum(changes) / len(changes) if changes else 0.0
+
+
 class RegistrationEngine:
     """Tek kullanımlık kayıt motoru. Her kayıt oturumu için yeni instance oluştur."""
 
@@ -93,6 +167,11 @@ class RegistrationEngine:
         self._cal_samples: list[tuple[float, float, float, str]] = []  # (offset, rtt, timestamp, source)
         self._crn_results: dict[str, dict] = {}
         self._trigger_time: Optional[float] = None
+
+        # Yeni geliştirme özellikleri
+        self._trend_analyzer = TrendAnalyzer(window_size=10)
+        self._change_detector = ChangeDetector(threshold=0.050)  # 50ms eşik
+        self._target_time: Optional[float] = None  # Hedef zamanı sakla
 
         # Session
         self.session = requests.Session()
@@ -168,6 +247,39 @@ class RegistrationEngine:
             ntp_offset=self._calibration.ntp_offset if self._calibration else 0.0,
         )
 
+    def _apply_advanced_protection(self, calculated_trigger: float, target_time: float) -> float:
+        """Gelişmiş koruma mekanizmalarını uygula."""
+        protected_trigger = calculated_trigger
+        
+        # 1. VAL02 riski koruması (sistem açılmadan gönderim engeli)
+        # En az 5ms sistem açıldıktan sonra gönderim (VAL02 riskini azaltmak için)
+        min_safe_time = target_time + 0.005  # 5ms gecikmeli gönderim
+        
+        if protected_trigger < min_safe_time:
+            self._log(f"🔒 VAL02 koruma: {(min_safe_time - protected_trigger)*1000:+.0f}ms geciktirildi", "info")
+            protected_trigger = min_safe_time
+        
+        # 2. VAL02 riski koruması (50ms erken varış - ekstra koruma)
+        earliest_allowed = target_time - 0.050
+        if protected_trigger < earliest_allowed:
+            self._log(f"⚠️ VAL02 riski koruması: 50ms erken varış engellendi", "warning")
+            protected_trigger = earliest_allowed
+        
+        # 3. Fırsat kaçırma koruması (200ms geç varış)
+        latest_allowed = target_time + 0.200
+        if protected_trigger > latest_allowed:
+            self._log(f"⚠️ Fırsat kaçırma koruması: 200ms geç varış engellendi", "warning")
+            protected_trigger = latest_allowed
+        
+        # 4. RTT güven aralığına göre koruma
+        if self._calibration:
+            rtt_margin = self._calibration.rtt_one_way * 2  # 2x RTT güvenlik payı
+            if protected_trigger < (target_time - rtt_margin):
+                protected_trigger = target_time - rtt_margin
+                self._log(f"⚠️ RTT güven aralığı koruması: {rtt_margin*1000:.0f}ms", "warning")
+        
+        return protected_trigger
+
     def _add_sample(self, offset: float, rtt: float, source: str):
         """Kalibrasyon ölçüm havuzuna yeni sample ekle. Max 20 tutar, eski/kötü olanları atar."""
         self._cal_samples.append((offset, rtt, time.time(), source))
@@ -175,6 +287,29 @@ class RegistrationEngine:
         if len(self._cal_samples) > 20:
             self._cal_samples.sort(key=lambda s: s[1])
             self._cal_samples = self._cal_samples[:20]
+
+    def _update_trend_analysis(self):
+        """Trend analizini güncelle."""
+        if self._calibration:
+            current_offset = self._calibration.server_offset
+            current_time = time.time()
+            
+            # Ofset trend analizi
+            self._trend_analyzer.add_measurement(current_time, current_offset)
+            
+            # Anlamlı değişiklik var mı kontrol et
+            self._change_detector.add_value(current_offset)
+            if self._change_detector.detect_significant_change():
+                self._log(f"📈 Anlamlı ofset değişikliği tespit edildi: {current_offset*1000:+.0f}ms", "info")
+
+    def _predict_offset_at_target_time(self, target_time: float) -> float:
+        """Hedef zamanda ofsetin ne olacağını tahmin et."""
+        if len(self._trend_analyzer.data_points) >= 2:
+            predicted_offset = self._trend_analyzer.predict_value_at_time(target_time)
+            return predicted_offset
+        # Yeterli veri yoksa mevcut en iyi ofseti kullan
+        best = self._best_calibration()
+        return best.server_offset if best else 0.0
 
     def _set_phase(self, phase: str):
         self._phase = phase
@@ -187,7 +322,8 @@ class RegistrationEngine:
         for _ in range(n):
             t0 = time.perf_counter()
             try:
-                self.session.head(OBS_BASE, timeout=5, allow_redirects=False)
+                # POST isteği ile RTT ölçümü (gerçek kayıt isteği gibi)
+                self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
             except Exception:
                 continue
             rtts.append(time.perf_counter() - t0)
@@ -206,7 +342,8 @@ class RegistrationEngine:
                 break
             t0 = time.perf_counter()
             try:
-                self.session.head(OBS_BASE, timeout=5, allow_redirects=False)
+                # POST isteği ile RTT ölçümü (gerçek kayıt isteği gibi)
+                self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
             except Exception:
                 continue
             rtts.append(time.perf_counter() - t0)
@@ -294,7 +431,7 @@ class RegistrationEngine:
     def _last_second_probe(self) -> tuple[float, float]:
         """Son saniye RTT probe'u — tetik düzeltmesi hesapla.
 
-        3 hızlı HEAD isteği ile mevcut RTT'yi ölçer. Kalibrasyon RTT'sinden
+        3 hızlı POST isteği ile mevcut RTT'yi ölçer. Kalibrasyon RTT'sinden
         anlamlı sapma varsa (>3ms), tetik zamanını mikro-düzeltir.
 
         Returns: (correction_seconds, probe_rtt_seconds)
@@ -303,7 +440,8 @@ class RegistrationEngine:
         for _ in range(3):
             t0 = time.perf_counter()
             try:
-                self.session.head(OBS_BASE, timeout=2, allow_redirects=False)
+                # POST isteği ile RTT ölçümü (gerçek kayıt isteği gibi)
+                self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
             except Exception:
                 continue
             rtts.append(time.perf_counter() - t0)
@@ -360,14 +498,18 @@ class RegistrationEngine:
         self._set_phase("calibrating")
         self._log("Sunucu saati ölçülüyor...")
 
-        # Bağlantıyı ısıt
+        # Bağlantıyı ısıt - POST ile ısıtma (TCP yollarını doğru ısıtmak için)
         try:
-            self.session.head(OBS_BASE, timeout=10, allow_redirects=False)
+            self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
         except Exception as e:
-            self._log(f"Bağlantı hatası: {e}", "error")
-            ntp = self._ntp_offset()
-            self._calibration = CalibrationData(server_offset=ntp, rtt_one_way=0.010, ntp_offset=ntp)
-            return self._calibration
+            self._log(f"POST bağlantısı hatası: {e}, HEAD ile deniyor...", "warning")
+            try:
+                self.session.head(OBS_BASE, timeout=10, allow_redirects=False)
+            except Exception as e2:
+                self._log(f"HEAD bağlantısı da başarısız: {e2}", "error")
+                ntp = self._ntp_offset()
+                self._calibration = CalibrationData(server_offset=ntp, rtt_one_way=0.010, ntp_offset=ntp)
+                return self._calibration
 
         medyan_rtt = self._rtt_olc(5)
         poll_aralik = max(0.002, min(medyan_rtt / 2, 0.050))
@@ -379,6 +521,7 @@ class RegistrationEngine:
         for gecis_no in range(3):
             if self._cancelled.is_set():
                 break
+            # HEAD isteği ile Date header geçişi (daha hafif, daha az server-side işlem)
             try:
                 r = self.session.head(OBS_BASE, timeout=10, allow_redirects=False)
             except Exception:
@@ -396,6 +539,7 @@ class RegistrationEngine:
                 t0_pc = time.perf_counter()
                 t_utc = time.time()
                 try:
+                    # HEAD isteği ile Date header geçişi (daha hafif)
                     r = self.session.head(OBS_BASE, timeout=5, allow_redirects=False)
                 except Exception:
                     time.sleep(poll_aralik)
@@ -442,6 +586,9 @@ class RegistrationEngine:
                 ntp_offset=ntp_off,
             )
 
+        # Trend analizini güncelle
+        self._update_trend_analysis()
+        
         self._emit("calibration", {
             "server_offset_ms": self._calibration.server_offset * 1000,
             "rtt_one_way_ms": self._calibration.rtt_one_way * 1000,
@@ -462,6 +609,7 @@ class RegistrationEngine:
             poll_aralik = max(0.002, min(medyan_rtt / 2, 0.050))
             max_poll = int(2.0 / poll_aralik)
 
+            # HEAD isteği ile Date header geçişi (daha hafif)
             r = self.session.head(OBS_BASE, timeout=5, allow_redirects=False)
             son_date = r.headers.get("Date", "")
             if not son_date:
@@ -473,6 +621,7 @@ class RegistrationEngine:
                 t0_pc = time.perf_counter()
                 t_utc = time.time()
                 try:
+                    # HEAD isteği ile Date header geçişi (daha hafif)
                     r = self.session.head(OBS_BASE, timeout=5, allow_redirects=False)
                 except Exception:
                     time.sleep(poll_aralik)
@@ -495,6 +644,9 @@ class RegistrationEngine:
 
                     prev_ntp = self._calibration.ntp_offset if self._calibration else 0.0
 
+                    # Trend analizini güncelle
+                    self._update_trend_analysis()
+                    
                     self._emit("calibration", {
                         "server_offset_ms": self._calibration.server_offset * 1000,
                         "rtt_one_way_ms": self._calibration.rtt_one_way * 1000,
@@ -517,7 +669,8 @@ class RegistrationEngine:
 
     def _prewarm(self, head_only: bool = False):
         try:
-            self.session.head(OBS_BASE, timeout=10, allow_redirects=False)
+            # POST isteği ile ısıtma (gerçek kayıt isteği gibi)
+            self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
             if not head_only:
                 self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
             self._log("Bağlantı hazır" + (" (HEAD only)" if head_only else ""))
@@ -894,20 +1047,25 @@ class RegistrationEngine:
 
             # 3. Tetik zamanı (havuzdaki en iyi ölçüme göre)
             hedef = self._saat_to_epoch(self.kayit_saati)
+            self._target_time = hedef  # Hedef zamanı sakla
+            
             best = self._best_calibration()
-            tetik = hedef + best.server_offset - best.rtt_one_way + self.gecikme_buffer
             
-            # NEGATIF VARIS KORUMASI: Tetik zamanı hedef zamandan erkense, en az 10ms geciktir
-            if tetik < hedef:
-                self._log(f"⚠️ Tetik zamanı hedeften {((hedef - tetik) * 1000):+.0f}ms erken! 10ms geciktiriliyor...", "warning")
-                tetik = hedef + 0.010  # En az 10ms gecikmeli başlat
+            # ADVANCED TREND ANALYSIS: Hedef zamanda ofseti tahmin et
+            predicted_offset = self._predict_offset_at_target_time(hedef)
             
-            self._trigger_time = tetik
+            # Temel tetik zamanı hesapla
+            base_trigger = hedef + predicted_offset - best.rtt_one_way + self.gecikme_buffer
+            
+            # GELIŞMIŞ KORUMA MEKANIZMALARI UYGULA
+            final_trigger = self._apply_advanced_protection(base_trigger, hedef)
+            
+            self._trigger_time = final_trigger
 
-            kalan_sn = tetik - time.time()
+            kalan_sn = final_trigger - time.time()
             self._log(f"Tetik: {self.kayit_saati} +{self.gecikme_buffer*1000:.0f}ms | {kalan_sn:.1f}s kaldı")
 
-            self._emit("countdown", {"trigger_time": tetik, "remaining": kalan_sn})
+            self._emit("countdown", {"trigger_time": final_trigger, "remaining": kalan_sn})
 
             if kalan_sn < -5:
                 self._log("Hedef zaman geçti! Hemen başlıyorum...", "warning")
@@ -935,47 +1093,51 @@ class RegistrationEngine:
                 """Havuzdaki en iyi ölçüme göre tetik zamanını yeniden hesapla."""
                 best = self._best_calibration()
                 if best:
-                    new_trigger = hedef + best.server_offset - best.rtt_one_way + self.gecikme_buffer
-                    # NEGATIF VARIS KORUMASI: Tetik zamanı hedef zamandan erkense, en az 10ms geciktir
-                    if new_trigger < hedef:
-                        self._log(f"⚠️ Tetik zamanı hedeften {((hedef - new_trigger) * 1000):+.0f}ms erken! 10ms geciktiriliyor...", "warning")
-                        new_trigger = hedef + 0.010  # En az 10ms gecikmeli başlat
+                    # ADVANCED TREND ANALYSIS: Hedef zamanda ofseti tahmin et
+                    predicted_offset = self._predict_offset_at_target_time(hedef)
+                    
+                    # Temel tetik zamanı hesapla
+                    base_trigger = hedef + predicted_offset - best.rtt_one_way + self.gecikme_buffer
+                    
+                    # GELIŞMIŞ KORUMA MEKANIZMALARI UYGULA
+                    new_trigger = self._apply_advanced_protection(base_trigger, hedef)
+                    
                     return new_trigger
-                return tetik
+                return final_trigger
 
             while not self._cancelled.is_set():
                 now = time.time()
-                kalan = tetik - now
+                kalan = final_trigger - now
 
                 # Countdown event (her saniye)
-                self._emit("countdown", {"trigger_time": tetik, "remaining": kalan})
+                self._emit("countdown", {"trigger_time": final_trigger, "remaining": kalan})
 
                 # ── Periyodik hafif kalibrasyon (>25sn kala, her 30sn) ──
                 if kalan > 25 and (now - last_recal_time) >= RECAL_INTERVAL:
                     recal_count += 1
                     self._log(f"🔄 Periyodik kalibrasyon #{recal_count}...")
                     self._quick_calibrate(source="auto")
-                    eski_tetik = tetik
-                    tetik = _recalc_trigger()
-                    self._trigger_time = tetik
-                    fark = (tetik - eski_tetik) * 1000
+                    eski_tetik = final_trigger
+                    final_trigger = _recalc_trigger()
+                    self._trigger_time = final_trigger
+                    fark = (final_trigger - eski_tetik) * 1000
                     if abs(fark) > 1:
                         self._log(f"🔄 Tetik güncellendi: {fark:+.0f}ms kayma (en iyi RTT: {self._calibration.rtt_one_way*1000:.0f}ms)")
-                    kalan = tetik - time.time()
+                    kalan = final_trigger - time.time()
                     last_recal_time = now
 
                 # ── Son TAM kalibrasyon (35-45sn kala) ──
                 if not final_cal_done and FINAL_CAL_MIN < kalan <= FINAL_CAL_WINDOW:
                     self._log("🎯 Son tam kalibrasyon başlıyor...")
                     self.calibrate(source="final")
-                    eski_tetik = tetik
-                    tetik = _recalc_trigger()
-                    self._trigger_time = tetik
-                    fark = (tetik - eski_tetik) * 1000
+                    eski_tetik = final_trigger
+                    final_trigger = _recalc_trigger()
+                    self._trigger_time = final_trigger
+                    fark = (final_trigger - eski_tetik) * 1000
                     best = self._best_calibration()
                     self._log(f"🎯 Son kalibrasyon tamam → tetik farkı: {fark:+.0f}ms | en iyi: offset={best.server_offset*1000:+.0f}ms RTT={best.rtt_one_way*1000:.0f}ms [havuz:{len(self._cal_samples)}]")
-                    kalan = tetik - time.time()
-                    self._emit("countdown", {"trigger_time": tetik, "remaining": kalan})
+                    kalan = final_trigger - time.time()
+                    self._emit("countdown", {"trigger_time": final_trigger, "remaining": kalan})
                     final_cal_done = True
                     # Final sonrası bağlantıyı tekrar ısıt
                     self._prewarm(head_only=True)
@@ -988,13 +1150,15 @@ class RegistrationEngine:
                 elif prewarm2 and not keepalive_5s and 4.5 < kalan <= 5.5:
                     keepalive_5s = True
                     try:
-                        self.session.head(OBS_BASE, timeout=3, allow_redirects=False)
+                        # POST isteği ile bağlantı canlı tutma (gerçek kayıt isteği gibi)
+                        self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
                     except Exception:
                         pass
                 elif keepalive_5s and not keepalive_3s and 3.0 < kalan <= 4.0:
                     keepalive_3s = True
                     try:
-                        self.session.head(OBS_BASE, timeout=2, allow_redirects=False)
+                        # POST isteği ile bağlantı canlı tutma (gerçek kayıt isteği gibi)
+                        self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
                     except Exception:
                         pass
 
@@ -1008,6 +1172,9 @@ class RegistrationEngine:
                     if rtt_trend_data['trend'] > 0.020:  # 20ms artış
                         self._log(f"⚠️ RTT trend artışı tespit edildi: {rtt_trend_data['trend']*1000:+.1f}ms", "warning")
                     
+                    # Trend analizini güncelle
+                    self._update_trend_analysis()
+                    
                     last_recal_time = now
 
                 # ── Son saniye RTT probe'u (2s kala — mikro düzeltme) ──
@@ -1015,25 +1182,24 @@ class RegistrationEngine:
                     probe_done = True
                     correction, probe_rtt = self._last_second_probe()
                     if abs(correction) > 0.001:  # >1ms fark
-                        # NEGATIF VARIS KORUMASI: Düzeltme sonucu tetik zamanı hedeften önce olursa, koru
-                        new_trigger = tetik + correction
+                        # ADVANCED PROTECTION: Düzeltme sonucu tetik zamanını değerlendir
+                        raw_new_trigger = final_trigger + correction
                         hedef = self._saat_to_epoch(self.kayit_saati)
                         
-                        if new_trigger < hedef:
-                            self._log(f"⚠️ Düzeltme sonucu tetik zamanı hedeften {((hedef - new_trigger) * 1000):+.0f}ms erken olacaktı! 10ms geciktiriliyor...", "warning")
-                            new_trigger = hedef + 0.010  # En az 10ms gecikmeli başlat
+                        # Gelişmiş koruma mekanizmalarını uygula
+                        new_trigger = self._apply_advanced_protection(raw_new_trigger, hedef)
                         
-                        tetik = new_trigger
-                        self._trigger_time = tetik
-                        kalan = tetik - time.time()
-                        self._log(f"🎯 Probe düzeltme: {correction*1000:+.1f}ms → yeni tetik: {((tetik - hedef) * 1000):+.0f}ms (probe RTT: {probe_rtt*1000:.0f}ms, kal. RTT: {self._calibration.rtt_one_way*2000:.0f}ms)")
-                        self._emit("countdown", {"trigger_time": tetik, "remaining": kalan})
+                        final_trigger = new_trigger
+                        self._trigger_time = final_trigger
+                        kalan = final_trigger - time.time()
+                        self._log(f"🎯 Probe düzeltme: {correction*1000:+.1f}ms → yeni tetik: {((final_trigger - hedef) * 1000):+.0f}ms (probe RTT: {probe_rtt*1000:.0f}ms, kal. RTT: {self._calibration.rtt_one_way*2000:.0f}ms)")
+                        self._emit("countdown", {"trigger_time": final_trigger, "remaining": kalan})
                     else:
                         self._log(f"🎯 Probe: RTT={probe_rtt*1000:.0f}ms — düzeltme gerekmedi")
 
                 # ── Busy-wait (son 50ms — perf_counter ile yüksek çözünürlük) ──
                 if kalan <= 0.05:
-                    pc_tetik = time.perf_counter() + (tetik - time.time())
+                    pc_tetik = time.perf_counter() + (final_trigger - time.time())
                     while time.perf_counter() < pc_tetik:
                         pass
                     break
@@ -1052,8 +1218,9 @@ class RegistrationEngine:
             # 5. KAYIT
             self._set_phase("registering")
             fark_ms = (time.time() - hedef) * 1000
+            actual_trigger_fark = (time.time() - self._trigger_time) * 1000
             best = self._best_calibration()
-            self._log(f"🚀 BAŞLIYOR! (hedef farkı: {fark_ms:+.0f}ms) [buffer={self.gecikme_buffer*1000:.0f}ms offset={best.server_offset*1000:+.0f}ms RTT={best.rtt_one_way*1000:.0f}ms havuz:{len(self._cal_samples)}]")
+            self._log(f"🚀 BAŞLIYOR! (hedef farkı: {fark_ms:+.0f}ms, tetik farkı: {actual_trigger_fark:+.0f}ms) [buffer={self.gecikme_buffer*1000:.0f}ms offset={best.server_offset*1000:+.0f}ms RTT={best.rtt_one_way*1000:.0f}ms havuz:{len(self._cal_samples)}]")
             if self.dry_run:
                 self._kayit_yap_dry_run()
             else:
