@@ -316,10 +316,13 @@ function DashboardContent() {
           return next;
         });
         // Schedule automatic retry (3s, 6s, 12s — max 3 retries)
-        setTimeout(
-          () => setLookupRetry((r) => r + 1),
-          Math.min(3000 * Math.pow(2, lookupRetry), 12000),
-        );
+        const MAX_RETRIES = 3;
+        if (lookupRetry < MAX_RETRIES) {
+          setTimeout(
+            () => setLookupRetry((r) => r + 1),
+            Math.min(3000 * Math.pow(2, lookupRetry), 12000),
+          );
+        }
       })
       .finally(() => {
         setLookingUpCRNs((prev) => {

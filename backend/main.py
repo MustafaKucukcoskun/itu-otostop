@@ -73,9 +73,6 @@ def _cleanup_sessions():
     ]
     for sid in expired:
         s = sessions[sid]
-        # Temizlik: çalışan engine varsa iptal et
-        if s.engine and s.engine.is_running:
-            s.engine.cancel()
         if s.poll_task and not s.poll_task.done():
             s.poll_task.cancel()
         del sessions[sid]
@@ -357,6 +354,10 @@ async def start_registration(request: Request):
     session.engine_thread = threading.Thread(target=session.engine.run, daemon=True)
     session.engine_thread.start()
 
+    # Eski poll_task varsa iptal et (duplicate event yayını önlenir)
+    if session.poll_task and not session.poll_task.done():
+        session.poll_task.cancel()
+
     # Event polling'i background task olarak başlat
     session.poll_task = asyncio.create_task(poll_engine_events(session_id))
     session.poll_task.add_done_callback(_poll_task_done)
@@ -500,6 +501,10 @@ async def lookup_crns_batch(body: dict):
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket, session_id: str = Query(...)):
+    # UUID format doğrulaması (REST API ile aynı güvenlik seviyesi)
+    if not UUID_RE.match(session_id):
+        await ws.close(code=4000, reason="Geçersiz session ID formatı")
+        return
     await ws.accept()
     session = get_session(session_id)
     session.ws_clients.append(ws)

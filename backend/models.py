@@ -15,6 +15,7 @@ class CRNStatus(str, Enum):
     CONFLICT = "conflict"
     UPGRADE = "upgrade"
     DEBOUNCE = "debounce"
+    DROPPED = "dropped"
     ERROR = "error"
 
 

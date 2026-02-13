@@ -172,6 +172,7 @@ class RegistrationEngine:
         self._trend_analyzer = TrendAnalyzer(window_size=10)
         self._change_detector = ChangeDetector(threshold=0.050)  # 50ms eşik
         self._target_time: Optional[float] = None  # Hedef zamanı sakla
+        self._cal_samples_chrono: list[tuple[float, float, float, str]] = []  # Kronolojik sıralı kopya
 
         # Session
         self.session = requests.Session()
@@ -248,45 +249,53 @@ class RegistrationEngine:
         )
 
     def _apply_advanced_protection(self, calculated_trigger: float, target_time: float) -> float:
-        """Gelişmiş koruma mekanizmalarını uygula."""
+        """Tetik zamanını güvenli pencereye sıkıştır.
+
+        Hedef: Paketin sunucuya varış zamanı [target + 0ms, target + 50ms]
+        Risk: Erken varış → VAL02 + 3sn ceza
+        Risk: Geç varış → kontenjan dolar
+        """
         protected_trigger = calculated_trigger
-        
-        # 1. VAL02 riski koruması (sistem açılmadan gönderim engeli)
-        # En az 5ms sistem açıldıktan sonra gönderim (VAL02 riskini azaltmak için)
-        min_safe_time = target_time + 0.005  # 5ms gecikmeli gönderim
-        
+
+        # ALT SINIR: En erken gönderim zamanı.
+        # Paket sunucuya RTT/2 sonra ulaşır; offset ölçüm hatası ±RTT/2 olabilir.
+        # 5ms güvenlik payı ile VAL02 riskini minimize et.
+        min_safe_time = target_time + 0.005
         if protected_trigger < min_safe_time:
             self._log(f"🔒 VAL02 koruma: {(min_safe_time - protected_trigger)*1000:+.0f}ms geciktirildi", "info")
             protected_trigger = min_safe_time
-        
-        # 2. VAL02 riski koruması (50ms erken varış - ekstra koruma)
-        earliest_allowed = target_time - 0.050
-        if protected_trigger < earliest_allowed:
-            self._log(f"⚠️ VAL02 riski koruması: 50ms erken varış engellendi", "warning")
-            protected_trigger = earliest_allowed
-        
-        # 3. Fırsat kaçırma koruması (200ms geç varış)
+
+        # ÜST SINIR: 200ms sonra kontenjan dolmuş olabilir.
         latest_allowed = target_time + 0.200
         if protected_trigger > latest_allowed:
-            self._log(f"⚠️ Fırsat kaçırma koruması: 200ms geç varış engellendi", "warning")
+            self._log(f"⚠️ Geç varış koruması: {(protected_trigger - latest_allowed)*1000:.0f}ms öne çekildi", "warning")
             protected_trigger = latest_allowed
-        
-        # 4. RTT güven aralığına göre koruma
-        if self._calibration:
-            rtt_margin = self._calibration.rtt_one_way * 2  # 2x RTT güvenlik payı
-            if protected_trigger < (target_time - rtt_margin):
-                protected_trigger = target_time - rtt_margin
-                self._log(f"⚠️ RTT güven aralığı koruması: {rtt_margin*1000:.0f}ms", "warning")
-        
+
         return protected_trigger
 
     def _add_sample(self, offset: float, rtt: float, source: str):
         """Kalibrasyon ölçüm havuzuna yeni sample ekle. Max 20 tutar, eski/kötü olanları atar."""
-        self._cal_samples.append((offset, rtt, time.time(), source))
+        # Outlier filtresi: mevcut en iyi offset'ten 200ms+ sapan ölçümleri reddet
+        if self._cal_samples:
+            best_offset = min(self._cal_samples, key=lambda s: s[1])[0]
+            deviation = abs(offset - best_offset)
+            if deviation > 0.200:  # 200ms eşik
+                self._log(
+                    f"⚡ Outlier filtrelendi: {offset*1000:+.0f}ms "
+                    f"(en iyi: {best_offset*1000:+.0f}ms, sapma: {deviation*1000:.0f}ms)"
+                )
+                return  # Havuza ekleme
+
+        sample = (offset, rtt, time.time(), source)
+        self._cal_samples.append(sample)
+        self._cal_samples_chrono.append(sample)  # Kronolojik kopya (sıralama bozulmaz)
         # Havuzu 20 ile sınırla: en kötü RTT'lileri at
         if len(self._cal_samples) > 20:
             self._cal_samples.sort(key=lambda s: s[1])
             self._cal_samples = self._cal_samples[:20]
+        # Kronolojik listeyi de 20 ile sınırla (eski olanları at)
+        if len(self._cal_samples_chrono) > 20:
+            self._cal_samples_chrono = self._cal_samples_chrono[-20:]
 
     def _update_trend_analysis(self):
         """Trend analizini güncelle."""
@@ -349,18 +358,19 @@ class RegistrationEngine:
             rtts.append(time.perf_counter() - t0)
         if not rtts:
             return {"median": 0.010, "jitter": 0.005, "min": 0.010, "max": 0.010, "count": 0, "trend": 0.0}
+
+        # Trend hesabını sıralama ÖNCESİ yap (kronolojik sıra korunmalı)
+        trend = 0.0
+        if len(rtts) >= 2:
+            trend = rtts[-1] - rtts[0]  # Kronolojik: son ölçüm - ilk ölçüm
+
         rtts.sort()
         count = len(rtts)
         median = rtts[count // 2]
         mean = sum(rtts) / count
         variance = sum((r - mean) ** 2 for r in rtts) / count
         jitter = variance ** 0.5
-        
-        # RTT trend analizi (son ve ilk değerler arasındaki fark)
-        trend = 0.0
-        if len(rtts) >= 2:
-            trend = rtts[-1] - rtts[0]  # Son değer - ilk değer
-        
+
         return {"median": median, "jitter": jitter, "min": rtts[0], "max": rtts[-1], "count": count, "trend": trend}
 
     # ── Hassas Zamanlama ──
@@ -405,25 +415,28 @@ class RegistrationEngine:
         return adaptive_buffer
     
     def _calculate_adaptive_buffer(self, base_buffer: float, rtt_jitter: float) -> float:
-        """Ağ koşullarına göre adaptif buffer hesapla."""
-        # RTT trend analizi (son 5 ölçüm üzerinden)
-        if len(self._cal_samples) >= 5:
-            recent_samples = self._cal_samples[-5:]
-            recent_rtts = [sample[1] for sample in recent_samples]  # RTT değerleri
-            
-            # RTT trend analizi
+        """Ağ koşullarına göre adaptif buffer hesapla.
+
+        Kronolojik sıralı sample listesini kullanır (_cal_samples_chrono)
+        çünkü _cal_samples RTT'ye göre sıralanıyor ve temporal sıra bozuluyor.
+        """
+        # RTT trend analizi (son 5 kronolojik ölçüm üzerinden)
+        if len(self._cal_samples_chrono) >= 5:
+            recent_samples = self._cal_samples_chrono[-5:]
+            recent_rtts = [sample[1] for sample in recent_samples]
+
+            # Son iki kronolojik ölçüm arasındaki RTT farkı
             if len(recent_rtts) >= 2:
-                # Son iki RTT arasındaki fark
                 rtt_change = recent_rtts[-1] - recent_rtts[-2]
-                
+
                 # Pozitif trend varsa (RTT artıyorsa) buffer'ı artır
                 if rtt_change > 0.010:  # 10ms artış
                     base_buffer += 0.005  # 5ms artır
-                    
+
         # Jitter yüksekse buffer'ı artır
         if rtt_jitter > 0.020:  # 20ms üzerindeyse
             base_buffer += 0.005  # 5ms artır
-            
+
         # Minimum güvenli buffer (VAL02 riskini azaltmak için)
         MIN_SAFE_BUFFER = 0.020  # 20ms minimum
         return max(base_buffer, MIN_SAFE_BUFFER)
@@ -460,45 +473,91 @@ class RegistrationEngine:
             return -drift, probe_rtt
         return 0.0, probe_rtt
 
-    # ── NTP (bilgilendirme) ──
+    # ── NTP Kalibrasyon (birincil offset kaynağı) ──
+
+    def _ntp_calibrate(self, servers: list[str] | None = None) -> tuple[float, float] | None:
+        """NTP sunucusundan ms-hassasiyetinde offset ve delay ölç.
+
+        NTP offset = sunucu_saati - yerel_saat.
+        Pozitif: NTP sunucusu ileride, negatif: geride.
+
+        Returns: (offset_seconds, delay_seconds) veya None
+        """
+        import ntplib
+        servers = servers or [
+            "time.google.com",      # Google — Cloud Run ile aynı altyapı
+            "time.cloudflare.com",  # Cloudflare — düşük RTT
+            "pool.ntp.org",         # Global NTP havuzu
+        ]
+
+        best_result = None
+        for server in servers:
+            try:
+                client = ntplib.NTPClient()
+                resp = client.request(server, version=3, timeout=3)
+                # En düşük delay = en doğru ölçüm
+                if best_result is None or resp.delay < best_result[1]:
+                    best_result = (resp.offset, resp.delay)
+            except Exception:
+                continue
+
+        return best_result
 
     def _ntp_offset(self) -> float:
-        if sys.platform == "win32":
-            try:
-                result = subprocess.run(
-                    ["w32tm", "/stripchart", "/computer:time.windows.com",
-                     "/dataonly", "/samples:3"],
-                    capture_output=True, text=True, timeout=15,
-                )
-                offsets = []
-                for line in result.stdout.strip().split("\n"):
-                    if "," in line and "s" in line:
-                        try:
-                            val = line.split(",")[1].strip().rstrip("s").strip()
-                            offsets.append(float(val))
-                        except (ValueError, IndexError):
-                            continue
-                if offsets:
-                    offsets.sort()
-                    return offsets[len(offsets) // 2]
-            except Exception:
-                pass
-        try:
-            import ntplib
-            c = ntplib.NTPClient()
-            resp = c.request("pool.ntp.org", version=3, timeout=5)
-            return resp.offset
-        except Exception:
-            pass
-        return 0.0
+        """Geriye uyumluluk: sadece offset döner."""
+        result = self._ntp_calibrate()
+        return result[0] if result else 0.0
 
-    # ── Sunucu Offset Ölçümü (Date Header Geçişi) ──
+    # ── Sunucu Offset Ölçümü (NTP birincil + Date doğrulama) ──
+
+    def _measure_date_offset(self) -> float | None:
+        """Date header geçişi ile offset ölç (sadece cross-validation için).
+
+        Date header 1sn hassasiyetinde → ±500ms gürültü içerir.
+        Bu yüzden sadece NTP sonucunu doğrulamak için kullanılır.
+        """
+        try:
+            medyan_rtt = self._rtt_olc(3)
+            poll_aralik = max(0.002, min(medyan_rtt / 2, 0.050))
+            max_poll = int(2.0 / poll_aralik)
+
+            r = self.session.head(OBS_BASE, timeout=5, allow_redirects=False)
+            son_date = r.headers.get("Date", "")
+            if not son_date:
+                return None
+
+            self._log(f"Sunucu: {son_date}")
+
+            for _ in range(max_poll):
+                if self._cancelled.is_set():
+                    return None
+                t0_pc = time.perf_counter()
+                t_utc = time.time()
+                try:
+                    r = self.session.head(OBS_BASE, timeout=5, allow_redirects=False)
+                except Exception:
+                    time.sleep(poll_aralik)
+                    continue
+                rtt = time.perf_counter() - t0_pc
+
+                yeni = r.headers.get("Date", "")
+                if yeni and yeni != son_date:
+                    server_ts = parsedate_to_datetime(yeni).timestamp()
+                    offset = (t_utc + rtt / 2) - server_ts
+                    self._log(f"Date geçişi: RTT={rtt*1000:.0f}ms, offset={offset*1000:+.0f}ms (±500ms hassasiyet)")
+                    return offset
+                time.sleep(poll_aralik)
+
+            return None
+        except Exception:
+            return None
 
     def calibrate(self, source: str = "manual") -> CalibrationData:
+        """NTP birincil offset kaynağı, Date header cross-validation."""
         self._set_phase("calibrating")
         self._log("Sunucu saati ölçülüyor...")
 
-        # Bağlantıyı ısıt - POST ile ısıtma (TCP yollarını doğru ısıtmak için)
+        # 1. Bağlantıyı ısıt
         try:
             self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
         except Exception as e:
@@ -507,95 +566,77 @@ class RegistrationEngine:
                 self.session.head(OBS_BASE, timeout=10, allow_redirects=False)
             except Exception as e2:
                 self._log(f"HEAD bağlantısı da başarısız: {e2}", "error")
-                ntp = self._ntp_offset()
-                self._calibration = CalibrationData(server_offset=ntp, rtt_one_way=0.010, ntp_offset=ntp)
+                ntp_off = self._ntp_offset()
+                self._calibration = CalibrationData(server_offset=-ntp_off, rtt_one_way=0.010, ntp_offset=ntp_off)
                 return self._calibration
 
+        # 2. RTT ölçümü (OBS'ye gerçek POST ile)
         medyan_rtt = self._rtt_olc(5)
-        poll_aralik = max(0.002, min(medyan_rtt / 2, 0.050))
-        max_poll = int(2.0 / poll_aralik)
+        self._log(f"RTT: {medyan_rtt*1000:.0f}ms → tek yön: {medyan_rtt*500:.0f}ms")
 
-        self._log(f"RTT: {medyan_rtt*1000:.0f}ms → poll: {poll_aralik*1000:.0f}ms")
+        # 3. NTP ile hassas offset ölçümü (birincil)
+        ntp_result = self._ntp_calibrate()
+        ntp_offset_raw = ntp_result[0] if ntp_result else None
+        ntp_delay = ntp_result[1] if ntp_result else None
 
-        offsets = []
-        for gecis_no in range(3):
-            if self._cancelled.is_set():
-                break
-            # HEAD isteği ile Date header geçişi (daha hafif, daha az server-side işlem)
-            try:
-                r = self.session.head(OBS_BASE, timeout=10, allow_redirects=False)
-            except Exception:
-                break
+        # 4. Date header ile cross-validation
+        date_offset = self._measure_date_offset()
 
-            son_date = r.headers.get("Date", "")
-            if not son_date:
-                self._log("Date header yok!", "warning")
-                break
+        # 5. Offset seçimi
+        if ntp_offset_raw is not None:
+            # NTP offset: sunucu_saati - yerel_saat (pozitif = sunucu ileride)
+            # Biz yerel - sunucu istiyoruz → işareti çevir
+            server_offset = -ntp_offset_raw
+            accuracy = ntp_delay / 2 if ntp_delay else medyan_rtt / 2
 
-            if gecis_no == 0:
-                self._log(f"Sunucu: {son_date}")
-
-            for _ in range(max_poll):
-                t0_pc = time.perf_counter()
-                t_utc = time.time()
-                try:
-                    # HEAD isteği ile Date header geçişi (daha hafif)
-                    r = self.session.head(OBS_BASE, timeout=5, allow_redirects=False)
-                except Exception:
-                    time.sleep(poll_aralik)
-                    continue
-                rtt = time.perf_counter() - t0_pc
-
-                yeni = r.headers.get("Date", "")
-                if yeni and yeni != son_date:
-                    server_ts = parsedate_to_datetime(yeni).timestamp()
-                    offset = (t_utc + rtt / 2) - server_ts
-                    offsets.append((offset, rtt))
-                    self._log(f"Geçiş #{gecis_no+1}: RTT={rtt*1000:.0f}ms, offset={offset*1000:+.0f}ms")
-                    break
-                time.sleep(poll_aralik)
-
-            if offsets:
-                en_iyi = min(o[1] for o in offsets)
-                if en_iyi < medyan_rtt * 0.8 and gecis_no >= 1:
-                    break
-
-        # NTP (bilgilendirme)
-        ntp_off = self._ntp_offset()
-
-        if offsets:
-            # Tüm geçişleri havuza ekle
-            for off, rtt in offsets:
-                self._add_sample(off, rtt, source)
-
-            offsets.sort(key=lambda x: x[1])
-            best_offset, best_rtt = offsets[0]
-            tek_yon = best_rtt / 2
-            self._calibration = CalibrationData(
-                server_offset=best_offset,
-                rtt_one_way=tek_yon,
-                ntp_offset=ntp_off,
+            yon = "İLERİDE" if server_offset > 0 else "GERİDE"
+            self._log(
+                f"🎯 NTP offset: {abs(server_offset*1000):.1f}ms {yon} "
+                f"(delay: {(ntp_delay or 0)*1000:.0f}ms, hassasiyet: ±{accuracy*1000:.0f}ms)"
             )
-            yon = "İLERİDE" if best_offset > 0 else "GERİDE"
-            self._log(f"Sonuç: {abs(best_offset*1000):.0f}ms {yon} (±{tek_yon*1000:.0f}ms) [havuz: {len(self._cal_samples)} ölçüm]")
+
+            # Date header ile karşılaştır (sanity check)
+            if date_offset is not None:
+                diff = abs(server_offset - date_offset)
+                if diff > 0.500:
+                    self._log(f"⚠️ NTP-Date farkı büyük: {diff*1000:.0f}ms (Date ±500ms hassasiyet)", "warning")
+                else:
+                    self._log(f"✅ NTP-Date tutarlı (fark: {diff*1000:.0f}ms)")
+        elif date_offset is not None:
+            # NTP başarısız → Date header fallback
+            server_offset = date_offset
+            accuracy = medyan_rtt / 2
+            self._log(f"⚠️ NTP başarısız, Date header kullanılıyor (±500ms hassasiyet)", "warning")
+            ntp_offset_raw = 0.0
         else:
-            self._log("Date geçişi yakalanamadı → NTP fallback", "warning")
-            self._calibration = CalibrationData(
-                server_offset=ntp_off,
-                rtt_one_way=medyan_rtt / 2,
-                ntp_offset=ntp_off,
-            )
+            # Her ikisi de başarısız
+            server_offset = 0.0
+            accuracy = medyan_rtt / 2
+            ntp_offset_raw = 0.0
+            self._log("❌ Kalibrasyon başarısız! Offset=0 varsayılıyor", "error")
 
-        # Trend analizini güncelle
+        self._calibration = CalibrationData(
+            server_offset=server_offset,
+            rtt_one_way=medyan_rtt / 2,
+            ntp_offset=ntp_offset_raw,
+        )
+        self._add_sample(server_offset, medyan_rtt, source)
+
+        yon = "İLERİDE" if server_offset > 0 else "GERİDE"
+        self._log(
+            f"Sonuç: {abs(server_offset*1000):.1f}ms {yon} "
+            f"(±{accuracy*1000:.0f}ms) [havuz: {len(self._cal_samples)} ölçüm]"
+        )
+
         self._update_trend_analysis()
-        
+
         self._emit("calibration", {
             "server_offset_ms": self._calibration.server_offset * 1000,
             "rtt_one_way_ms": self._calibration.rtt_one_way * 1000,
             "rtt_full_ms": self._calibration.rtt_one_way * 2000,
-            "ntp_offset_ms": ntp_off * 1000,
-            "server_ntp_diff_ms": (self._calibration.server_offset - ntp_off) * 1000,
-            "accuracy_ms": self._calibration.rtt_one_way * 1000,
+            "ntp_offset_ms": (ntp_offset_raw or 0.0) * 1000,
+            "server_ntp_diff_ms": (self._calibration.server_offset - (ntp_offset_raw or 0.0)) * 1000,
+            "accuracy_ms": accuracy * 1000,
             "source": source,
         })
         return self._calibration
@@ -603,64 +644,46 @@ class RegistrationEngine:
     # ── Hafif Kalibrasyon (bekleme sırasında periyodik) ──
 
     def _quick_calibrate(self, source: str = "auto") -> CalibrationData | None:
-        """Hafif kalibrasyon: 1 Date geçişi + 3 RTT örneği. ~2-3 saniye sürer."""
+        """NTP tabanlı hafif kalibrasyon + RTT ölçümü. ~1-2 saniye sürer."""
         try:
-            medyan_rtt = self._rtt_olc(3)
-            poll_aralik = max(0.002, min(medyan_rtt / 2, 0.050))
-            max_poll = int(2.0 / poll_aralik)
-
-            # HEAD isteği ile Date header geçişi (daha hafif)
-            r = self.session.head(OBS_BASE, timeout=5, allow_redirects=False)
-            son_date = r.headers.get("Date", "")
-            if not son_date:
+            # 1. NTP ile hassas offset ölçümü
+            ntp_result = self._ntp_calibrate()
+            if ntp_result is None:
+                self._log("⚡ Hızlı kal: NTP başarısız, atlanıyor", "warning")
                 return None
 
-            for _ in range(max_poll):
-                if self._cancelled.is_set():
-                    return None
-                t0_pc = time.perf_counter()
-                t_utc = time.time()
-                try:
-                    # HEAD isteği ile Date header geçişi (daha hafif)
-                    r = self.session.head(OBS_BASE, timeout=5, allow_redirects=False)
-                except Exception:
-                    time.sleep(poll_aralik)
-                    continue
-                rtt = time.perf_counter() - t0_pc
+            ntp_offset_raw, ntp_delay = ntp_result
+            server_offset = -ntp_offset_raw  # işareti çevir: yerel - sunucu
 
-                yeni = r.headers.get("Date", "")
-                if yeni and yeni != son_date:
-                    server_ts = parsedate_to_datetime(yeni).timestamp()
-                    offset = (t_utc + rtt / 2) - server_ts
-                    tek_yon = rtt / 2
+            # 2. RTT ölçümü (OBS'ye POST ile)
+            medyan_rtt = self._rtt_olc(3)
 
-                    # Havuza ekle
-                    self._add_sample(offset, rtt, source)
+            # 3. Havuza ekle (outlier filtresi _add_sample içinde)
+            self._add_sample(server_offset, medyan_rtt, source)
 
-                    # En iyi ölçümü havuzdan seç
-                    best = self._best_calibration()
-                    if best:
-                        self._calibration = best
+            # 4. En iyi ölçümü havuzdan seç
+            best = self._best_calibration()
+            if best:
+                self._calibration = best
 
-                    prev_ntp = self._calibration.ntp_offset if self._calibration else 0.0
+            # Trend analizini güncelle
+            self._update_trend_analysis()
 
-                    # Trend analizini güncelle
-                    self._update_trend_analysis()
-                    
-                    self._emit("calibration", {
-                        "server_offset_ms": self._calibration.server_offset * 1000,
-                        "rtt_one_way_ms": self._calibration.rtt_one_way * 1000,
-                        "rtt_full_ms": self._calibration.rtt_one_way * 2000,
-                        "ntp_offset_ms": prev_ntp * 1000,
-                        "server_ntp_diff_ms": (self._calibration.server_offset - prev_ntp) * 1000,
-                        "accuracy_ms": self._calibration.rtt_one_way * 1000,
-                        "source": source,
-                    })
-                    self._log(f"⚡ Hızlı kal: ölçüm={offset*1000:+.0f}ms/{rtt*1000:.0f}ms → en iyi: {self._calibration.server_offset*1000:+.0f}ms/{self._calibration.rtt_one_way*1000:.0f}ms [havuz:{len(self._cal_samples)}]")
-                    return self._calibration
-                time.sleep(poll_aralik)
-
-            return None
+            self._emit("calibration", {
+                "server_offset_ms": self._calibration.server_offset * 1000,
+                "rtt_one_way_ms": self._calibration.rtt_one_way * 1000,
+                "rtt_full_ms": self._calibration.rtt_one_way * 2000,
+                "ntp_offset_ms": ntp_offset_raw * 1000,
+                "server_ntp_diff_ms": (self._calibration.server_offset - ntp_offset_raw) * 1000,
+                "accuracy_ms": ntp_delay / 2 * 1000,
+                "source": source,
+            })
+            self._log(
+                f"⚡ Hızlı kal: NTP={server_offset*1000:+.0f}ms/delay={ntp_delay*1000:.0f}ms "
+                f"→ en iyi: {self._calibration.server_offset*1000:+.0f}ms/"
+                f"{self._calibration.rtt_one_way*1000:.0f}ms [havuz:{len(self._cal_samples)}]"
+            )
+            return self._calibration
         except Exception as e:
             self._log(f"Hızlı kalibrasyon hatası: {e}", "warning")
             return None
@@ -910,6 +933,10 @@ class RegistrationEngine:
                         desc = HATA_KODLARI.get(rc, rc)
                         self._log(f"❌ {crn} → {desc}", "error")
                         self._crn_results[crn] = {"status": "error", "message": desc}
+                        if crn in kalan:
+                            kalan.remove(crn)
+                            basarisiz[crn] = desc
+                            crn_degisti = True
 
                 self._emit("crn_update", {"results": dict(self._crn_results)})
             else:
@@ -1051,11 +1078,10 @@ class RegistrationEngine:
             
             best = self._best_calibration()
             
-            # ADVANCED TREND ANALYSIS: Hedef zamanda ofseti tahmin et
-            predicted_offset = self._predict_offset_at_target_time(hedef)
-            
+            # En iyi ölçümün offset'ini kullan (TrendAnalyzer devre dışı — Date header
+            # gürültüsü ±500ms olduğu için regresyon anlamsız sonuçlar üretiyordu)
             # Temel tetik zamanı hesapla
-            base_trigger = hedef + predicted_offset - best.rtt_one_way + self.gecikme_buffer
+            base_trigger = hedef + best.server_offset - best.rtt_one_way + self.gecikme_buffer
             
             # GELIŞMIŞ KORUMA MEKANIZMALARI UYGULA
             final_trigger = self._apply_advanced_protection(base_trigger, hedef)

@@ -47,6 +47,11 @@ export function useWebSocket() {
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    // CONNECTING durumda kalmış eski bağlantıyı kapat
+    if (wsRef.current?.readyState === WebSocket.CONNECTING) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
 
     try {
       const ws = createWebSocket();
