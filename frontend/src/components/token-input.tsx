@@ -149,7 +149,7 @@ export function TokenInput({
           <div>
             <h3 className="text-sm font-semibold">Bearer Token</h3>
             <p className="text-[11px] text-muted-foreground">
-              OBS → F12 → Network → Authorization
+              OBS → F12 → Network → jwt ara → Response
             </p>
           </div>
         </div>
