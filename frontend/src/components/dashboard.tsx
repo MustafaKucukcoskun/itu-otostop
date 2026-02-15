@@ -97,7 +97,7 @@ function DashboardContent() {
         if (key?.startsWith("otostop-cal-")) calKeys.push(key);
       }
       calKeys.forEach((k) => localStorage.removeItem(k));
-      sessionStorage.removeItem("otostop_session_id");
+      localStorage.removeItem("otostop_session_id");
     }
     localStorage.setItem("otostop-last-user", clerkUserId);
   }, [clerkUserId]);

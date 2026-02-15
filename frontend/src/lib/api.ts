@@ -1,13 +1,13 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-// ── Session ID (per-tab, sessionStorage persist) ──
+// ── Session ID (localStorage persist — tarayıcı kapatılsa bile korunur) ──
 
 function getSessionId(): string {
   if (typeof window === "undefined") return "ssr";
-  let sid = sessionStorage.getItem("otostop_session_id");
+  let sid = localStorage.getItem("otostop_session_id");
   if (!sid) {
     sid = crypto.randomUUID();
-    sessionStorage.setItem("otostop_session_id", sid);
+    localStorage.setItem("otostop_session_id", sid);
   }
   return sid;
 }
