@@ -23,7 +23,6 @@ export class PresetService {
           kayit_saati: string;
           max_deneme: number;
           retry_aralik: number;
-          gecikme_buffer: number;
           created_at: string;
         }) => ({
           id: row.id,
@@ -33,7 +32,6 @@ export class PresetService {
           kayit_saati: row.kayit_saati ?? "",
           max_deneme: row.max_deneme ?? 60,
           retry_aralik: row.retry_aralik ?? 3.0,
-          gecikme_buffer: row.gecikme_buffer ?? 0.025,
           created_at: new Date(row.created_at).getTime(),
         }),
       );
@@ -58,7 +56,6 @@ export class PresetService {
         p_kayit_saati: preset.kayit_saati,
         p_max_deneme: preset.max_deneme,
         p_retry_aralik: preset.retry_aralik,
-        p_gecikme_buffer: preset.gecikme_buffer,
       });
       if (error) {
         console.error("[PresetService] save error:", error.message);

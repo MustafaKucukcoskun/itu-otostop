@@ -21,7 +21,6 @@ interface PresetManagerProps {
     kayit_saati: string;
     max_deneme: number;
     retry_aralik: number;
-    gecikme_buffer: number;
   };
   onLoadPreset: (preset: Preset) => void;
   courseLabels?: Record<string, string>; // crn → course_code map

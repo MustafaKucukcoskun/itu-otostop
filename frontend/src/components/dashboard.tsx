@@ -52,7 +52,6 @@ function DashboardContent() {
   const [kayitSaati, setKayitSaati] = useState("");
   const [maxDeneme, setMaxDeneme] = useState(60);
   const [retryAralik, setRetryAralik] = useState(3.0);
-  const [gecikmeBuffer, setGecikmeBuffer] = useState(0.025);
   const [dryRun, setDryRun] = useState(false);
 
   // UI state
@@ -114,9 +113,7 @@ function DashboardContent() {
         if (config.scrn_list?.length) { setScrnList(config.scrn_list); loaded = true; }
         if (config.kayit_saati) { setKayitSaati(config.kayit_saati); loaded = true; }
         if (config.max_deneme) setMaxDeneme(config.max_deneme);
-        if (config.retry_aralik)
           setRetryAralik(Math.max(3, config.retry_aralik));
-        if (config.gecikme_buffer) setGecikmeBuffer(config.gecikme_buffer);
         if (config.dry_run) setDryRun(config.dry_run);
         if (config.token_set) setTokenValid(true);
       } catch {
@@ -132,9 +129,7 @@ function DashboardContent() {
             if (cloud.scrn_list?.length) setScrnList(cloud.scrn_list);
             if (cloud.kayit_saati) setKayitSaati(cloud.kayit_saati);
             if (cloud.max_deneme) setMaxDeneme(cloud.max_deneme);
-            if (cloud.retry_aralik)
               setRetryAralik(Math.max(3, cloud.retry_aralik));
-            if (cloud.gecikme_buffer) setGecikmeBuffer(cloud.gecikme_buffer);
             if (cloud.dry_run) setDryRun(cloud.dry_run);
           }
         } catch {
@@ -181,7 +176,6 @@ function DashboardContent() {
         kayit_saati: kayitSaati,
         max_deneme: maxDeneme,
         retry_aralik: retryAralik,
-        gecikme_buffer: gecikmeBuffer,
         dry_run: dryRun,
       });
     } catch {
@@ -195,7 +189,6 @@ function DashboardContent() {
     kayitSaati,
     maxDeneme,
     retryAralik,
-    gecikmeBuffer,
     dryRun,
   ]);
 
@@ -213,7 +206,6 @@ function DashboardContent() {
           kayit_saati: kayitSaati,
           max_deneme: maxDeneme,
           retry_aralik: retryAralik,
-          gecikme_buffer: gecikmeBuffer,
           dry_run: dryRun,
         });
       }
@@ -226,7 +218,6 @@ function DashboardContent() {
     kayitSaati,
     maxDeneme,
     retryAralik,
-    gecikmeBuffer,
     dryRun,
     saveConfig,
     clerkUserId,
@@ -460,14 +451,12 @@ function DashboardContent() {
       kayit_saati: string;
       max_deneme: number;
       retry_aralik: number;
-      gecikme_buffer: number;
     }) => {
       setCrnList(preset.ecrn_list);
       setScrnList(preset.scrn_list);
       setKayitSaati(preset.kayit_saati);
       setMaxDeneme(preset.max_deneme);
       setRetryAralik(Math.max(3, preset.retry_aralik));
-      setGecikmeBuffer(preset.gecikme_buffer);
       setDryRun(false); // Preset yüklendiğinde dry_run kapalı
     },
     [],
@@ -726,8 +715,6 @@ function DashboardContent() {
                   onMaxDenemeChange={setMaxDeneme}
                   retryAralik={retryAralik}
                   onRetryAralikChange={setRetryAralik}
-                  gecikmeBuffer={gecikmeBuffer}
-                  onGecikmeBufferChange={setGecikmeBuffer}
                   dryRun={dryRun}
                   onDryRunChange={setDryRun}
                   disabled={isRunning}
@@ -753,7 +740,6 @@ function DashboardContent() {
                     kayit_saati: kayitSaati,
                     max_deneme: maxDeneme,
                     retry_aralik: retryAralik,
-                    gecikme_buffer: gecikmeBuffer,
                   }}
                   onLoadPreset={handleLoadPreset}
                   courseLabels={Object.fromEntries(

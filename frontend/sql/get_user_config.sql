@@ -10,14 +10,13 @@ RETURNS TABLE (
   kayit_saati TEXT,
   max_deneme INTEGER,
   retry_aralik DOUBLE PRECISION,
-  gecikme_buffer DOUBLE PRECISION,
   dry_run BOOLEAN,
   updated_at TIMESTAMPTZ
 )
 LANGUAGE sql
 SECURITY DEFINER
 AS $$
-  SELECT ecrn_list, scrn_list, kayit_saati, max_deneme, retry_aralik, gecikme_buffer, dry_run, updated_at
+  SELECT ecrn_list, scrn_list, kayit_saati, max_deneme, retry_aralik, dry_run, updated_at
   FROM user_configs
   WHERE clerk_user_id = p_clerk_user_id
   LIMIT 1;

@@ -12,7 +12,6 @@ export interface Preset {
   kayit_saati: string;
   max_deneme: number;
   retry_aralik: number;
-  gecikme_buffer: number;
   created_at: number;
 }
 
@@ -68,7 +67,6 @@ export function usePresets() {
                 kayit_saati: p.kayit_saati,
                 max_deneme: p.max_deneme,
                 retry_aralik: p.retry_aralik,
-                gecikme_buffer: p.gecikme_buffer,
               }),
             );
           } else {
@@ -111,7 +109,6 @@ export function usePresets() {
           kayit_saati: preset.kayit_saati,
           max_deneme: preset.max_deneme,
           retry_aralik: preset.retry_aralik,
-          gecikme_buffer: preset.gecikme_buffer,
         }).then((cloudId) => {
           if (cloudId) {
             // Update local preset with cloud UUID
@@ -182,7 +179,6 @@ export function usePresets() {
               kayit_saati: p.kayit_saati || "",
               max_deneme: p.max_deneme || 60,
               retry_aralik: p.retry_aralik || 3.0,
-              gecikme_buffer: p.gecikme_buffer || 0.025,
               created_at: p.created_at || Date.now(),
             };
             newPresets.push(preset);
@@ -196,7 +192,6 @@ export function usePresets() {
                 kayit_saati: preset.kayit_saati,
                 max_deneme: preset.max_deneme,
                 retry_aralik: preset.retry_aralik,
-                gecikme_buffer: preset.gecikme_buffer,
               });
             }
           }

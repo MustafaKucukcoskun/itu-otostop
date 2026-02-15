@@ -40,7 +40,6 @@ class SessionState:
     kayit_saati: str = ""
     max_deneme: int = 60
     retry_aralik: float = 3.0
-    gecikme_buffer: float = 0.005
     dry_run: bool = False
     engine: Optional[RegistrationEngine] = None
     engine_thread: Optional[threading.Thread] = None
@@ -250,7 +249,6 @@ async def set_config(req: ConfigRequest, request: Request):
     session.kayit_saati = req.kayit_saati
     session.max_deneme = req.max_deneme
     session.retry_aralik = req.retry_aralik
-    session.gecikme_buffer = req.gecikme_buffer
     session.dry_run = req.dry_run
     return _config_response(session)
 
@@ -269,7 +267,6 @@ def _config_response(session: SessionState) -> ConfigResponse:
         kayit_saati=session.kayit_saati,
         max_deneme=session.max_deneme,
         retry_aralik=session.retry_aralik,
-        gecikme_buffer=session.gecikme_buffer,
         token_set=bool(session.token),
         token_preview="",
         dry_run=session.dry_run,
@@ -346,7 +343,6 @@ async def start_registration(request: Request):
         kayit_saati=session.kayit_saati,
         max_deneme=session.max_deneme,
         retry_aralik=session.retry_aralik,
-        gecikme_buffer=session.gecikme_buffer,
         dry_run=session.dry_run,
     )
 

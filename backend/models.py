@@ -26,7 +26,6 @@ class ConfigRequest(BaseModel):
     kayit_saati: str = Field(default="", pattern=r"^(\d{2}:\d{2}:\d{2})?$")
     max_deneme: int = Field(default=60, ge=1, le=300)
     retry_aralik: float = Field(default=3.0, ge=3.0, le=10.0)
-    gecikme_buffer: float = Field(default=0.005, ge=0.0, le=0.1)
     dry_run: bool = Field(default=False, description="Test modu — gerçek kayıt yapmaz")
 
     @field_validator('ecrn_list', 'scrn_list')
@@ -44,7 +43,6 @@ class ConfigResponse(BaseModel):
     kayit_saati: str
     max_deneme: int
     retry_aralik: float
-    gecikme_buffer: float
     token_set: bool
     token_preview: str = ""
     dry_run: bool = False

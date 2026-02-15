@@ -6,7 +6,6 @@ export interface CloudConfig {
   kayit_saati: string;
   max_deneme: number;
   retry_aralik: number;
-  gecikme_buffer: number;
   dry_run: boolean;
   updated_at: string;
 }
@@ -46,7 +45,6 @@ export class ConfigService {
         p_kayit_saati: config.kayit_saati,
         p_max_deneme: config.max_deneme,
         p_retry_aralik: config.retry_aralik,
-        p_gecikme_buffer: config.gecikme_buffer,
         p_dry_run: config.dry_run,
       });
       if (error) {

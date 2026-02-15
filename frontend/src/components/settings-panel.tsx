@@ -7,7 +7,6 @@ import {
   Clock,
   RefreshCcw,
   Hash,
-  Shield,
   ChevronDown,
   FlaskConical,
   Zap,
@@ -26,7 +25,6 @@ const QUICK_TIMES = [
 const DEFAULTS = {
   maxDeneme: 60,
   retryAralik: 3,
-  gecikmeBuffer: 0.025,
   dryRun: false,
 } as const;
 
@@ -37,8 +35,6 @@ interface SettingsPanelProps {
   onMaxDenemeChange: (v: number) => void;
   retryAralik: number;
   onRetryAralikChange: (v: number) => void;
-  gecikmeBuffer: number;
-  onGecikmeBufferChange: (v: number) => void;
   dryRun: boolean;
   onDryRunChange: (v: boolean) => void;
   disabled?: boolean;
@@ -70,8 +66,6 @@ export function SettingsPanel({
   onMaxDenemeChange,
   retryAralik,
   onRetryAralikChange,
-  gecikmeBuffer,
-  onGecikmeBufferChange,
   dryRun,
   onDryRunChange,
   disabled,
@@ -204,26 +198,11 @@ export function SettingsPanel({
               />
             </FieldGroup>
 
-            <FieldGroup icon={Shield} label="Buffer (ms)">
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step={1}
-                value={gecikmeBuffer * 1000}
-                onChange={(e) =>
-                  onGecikmeBufferChange(Number(e.target.value) / 1000)
-                }
-                disabled={disabled}
-                className="w-full h-9 rounded-xl bg-background/60 ring-1 ring-border/30 px-3 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 transition-shadow"
-              />
-            </FieldGroup>
           </div>
           <div className="flex items-center justify-between">
             <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
               Retry Aralığı: Sunucu 3sn&apos;den sık istekleri yok sayar
-              (VAL16). Buffer: Otomatik hesaplanır (0-50ms pencere hedefi). Manuel
-              değer küçükse sistem otomatik artırır.
+              (VAL16). Buffer: Ölçüm tabanlı olarak otomatik hesaplanır.
             </p>
             {!disabled && (
               <button
@@ -232,7 +211,6 @@ export function SettingsPanel({
                   onKayitSaatiChange("");
                   onMaxDenemeChange(DEFAULTS.maxDeneme);
                   onRetryAralikChange(DEFAULTS.retryAralik);
-                  onGecikmeBufferChange(DEFAULTS.gecikmeBuffer);
                   onDryRunChange(DEFAULTS.dryRun);
                 }}
                 className="shrink-0 ml-3 flex items-center gap-1 text-[10px] text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors"

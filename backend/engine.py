@@ -60,6 +60,8 @@ class CalibrationData:
     server_offset: float = 0.0
     rtt_one_way: float = 0.003
     ntp_offset: float = 0.0
+    obs_clock_offset: float = 0.0       # OBS-NTP saat farkı (sn)
+    obs_clock_uncertainty: float = 0.025 # OBS saat belirsizliği (sn)
 
 
 class TrendAnalyzer:
@@ -146,7 +148,6 @@ class RegistrationEngine:
         kayit_saati: str = "",
         max_deneme: int = 60,
         retry_aralik: float = 3.0,
-        gecikme_buffer: float = 0.025,
         dry_run: bool = False,
     ):
         self.token = token
@@ -155,7 +156,7 @@ class RegistrationEngine:
         self.kayit_saati = kayit_saati
         self.max_deneme = max_deneme
         self.retry_aralik = retry_aralik
-        self.gecikme_buffer = gecikme_buffer
+        self._measurement_buffer = 0.025  # ölçüm tabanlı buffer (başlangıç)
         self.dry_run = dry_run
 
         self._events: queue.Queue = queue.Queue()
@@ -167,6 +168,13 @@ class RegistrationEngine:
         self._cal_samples: list[tuple[float, float, float, str]] = []  # (offset, rtt, timestamp, source)
         self._crn_results: dict[str, dict] = {}
         self._trigger_time: Optional[float] = None
+
+        # Ölçüm tabanlı zamanlama
+        self._last_ntp_delay: Optional[float] = None  # Son NTP delay (sn)
+        # Cloud Run kalibrasyon sonuçları (2026-02-15, 500 ölçüm, europe-west1)
+        # OBS saati NTP'ye göre +10.6ms ileri, σ=13.2ms (95% CI: ±25.8ms)
+        self._obs_clock_offset: float = 0.0106   # OBS-NTP saat farkı (sn) [+ileri]
+        self._obs_clock_uncertainty: float = 0.0132  # OBS saat belirsizliği σ (sn)
 
         # Yeni geliştirme özellikleri
         self._trend_analyzer = TrendAnalyzer(window_size=10)
@@ -375,71 +383,51 @@ class RegistrationEngine:
 
     # ── Hassas Zamanlama ──
 
-    def _calculate_precision_buffer(self, cal: CalibrationData, rtt_jitter: float) -> float:
-        """0-50ms varış penceresi için optimal gecikme buffer'ı hesapla.
+    def _calculate_measurement_based_buffer(self, cal: CalibrationData, rtt_jitter: float) -> float:
+        """Tamamen ölçüme dayalı buffer hesaplama.
 
         Formül:
-          server_arrival = hedef + buffer + error
-          error = offset_error + rtt_error
+          buffer = N × √(σ_ntp² + σ_rtt² + σ_obs² + σ_asimetri²)
 
-        Offset ölçüm hatası analizi:
-          offset = (t_local + RTT/2) - server_ts
-          error = RTT/2 - gerçek_send_latency
-          Worst case: ±RTT/2 (tam asimetrik yol — pratikte olmuyor)
-          Best-of-N ile: en düşük RTT = en simetrik ölçüm → hata << RTT/2
-          Araştırma: tipik asimetri %10-30 → hata ≈ RTT * 0.15
-
-        Strateji: buffer'ı pencere merkezine (25ms) yerleştir.
-        σ büyükse alt sınırdan (0ms) uzaklaş → buffer = max(25ms, 2σ)
+        Her σ gerçek ölçüm verisinden hesaplanır.
+        N = güven seviyesi (2 = %97.7 güvenilirlik)
         """
-        PENCERE_MERKEZ = 0.025  # 25ms — [0,50ms] penceresinin merkezi
+        GUVEN_SEVIYESI = 2.0  # N: 2=%97.7, 3=%99.9
 
-        # Gerçekçi offset belirsizliği: best-of-N seçimi asimetriyi minimize eder
-        # Tam worst-case (rtt_one_way) yerine %30 asimetri faktörü kullan
-        offset_uncertainty = cal.rtt_one_way * 0.3
+        # σ_ntp: NTP ölçüm hassasiyeti (delay/2)
+        ntp_delay = self._last_ntp_delay or 0.008
+        sigma_ntp = ntp_delay / 2  # tipik: ~4ms
 
-        # Toplam belirsizlik (karekök toplam — bağımsız hata kaynakları)
-        sigma = (offset_uncertainty ** 2 + rtt_jitter ** 2) ** 0.5
+        # σ_rtt: Ağ RTT değişkenliği (ölçülen jitter)
+        sigma_rtt = rtt_jitter  # tipik: ~1-3ms
 
-        # Buffer = pencere merkezi VEYA 2σ (hangisi büyükse)
-        # Pencere merkezi: varışı [0,50ms] ortasına hedefler
-        # 2σ güvenlik: alt sınırdan (0ms) 2σ uzaklık → %97.7 üstünde kalma
-        buffer = max(PENCERE_MERKEZ, 2 * sigma)
+        # σ_obs: OBS sunucu saat farkı belirsizliği
+        sigma_obs = self._obs_clock_uncertainty  # kalibrasyon yoksa 25ms
 
-        # Sınırlar: [15ms, 40ms] — üst sınırdan 10ms güvenlik payı
-        base_buffer = max(0.015, min(buffer, 0.040))
-        
-        # ADAPTIF BUFFER: RTT trend analizi ve güven aralığı ekleyelim
-        adaptive_buffer = self._calculate_adaptive_buffer(base_buffer, rtt_jitter)
-        
-        return adaptive_buffer
-    
-    def _calculate_adaptive_buffer(self, base_buffer: float, rtt_jitter: float) -> float:
-        """Ağ koşullarına göre adaptif buffer hesapla.
+        # σ_asimetri: RTT gidiş-dönüş asimetrisi
+        # Araştırma: tipik asimetri %10-30, min RTT en simetrik
+        sigma_asimetri = cal.rtt_one_way * 0.15  # tipik: ~3-4ms
 
-        Kronolojik sıralı sample listesini kullanır (_cal_samples_chrono)
-        çünkü _cal_samples RTT'ye göre sıralanıyor ve temporal sıra bozuluyor.
-        """
-        # RTT trend analizi (son 5 kronolojik ölçüm üzerinden)
-        if len(self._cal_samples_chrono) >= 5:
-            recent_samples = self._cal_samples_chrono[-5:]
-            recent_rtts = [sample[1] for sample in recent_samples]
+        # Toplam belirsizlik (bağımsız hata kaynakları → karekök toplam)
+        sigma_total = (sigma_ntp**2 + sigma_rtt**2 + sigma_obs**2 + sigma_asimetri**2) ** 0.5
 
-            # Son iki kronolojik ölçüm arasındaki RTT farkı
-            if len(recent_rtts) >= 2:
-                rtt_change = recent_rtts[-1] - recent_rtts[-2]
+        # Buffer = N × σ_total
+        buffer = GUVEN_SEVIYESI * sigma_total
 
-                # Pozitif trend varsa (RTT artıyorsa) buffer'ı artır
-                if rtt_change > 0.010:  # 10ms artış
-                    base_buffer += 0.005  # 5ms artır
+        # Minimum: 5ms (kesinlikle sıfır olmasın)
+        buffer = max(buffer, 0.005)
 
-        # Jitter yüksekse buffer'ı artır
-        if rtt_jitter > 0.020:  # 20ms üzerindeyse
-            base_buffer += 0.005  # 5ms artır
+        self._log(
+            f"⚖️ Buffer hesabı: "
+            f"σ_ntp={sigma_ntp*1000:.1f}ms, "
+            f"σ_rtt={sigma_rtt*1000:.1f}ms, "
+            f"σ_obs={sigma_obs*1000:.1f}ms, "
+            f"σ_asim={sigma_asimetri*1000:.1f}ms "
+            f"→ σ_total={sigma_total*1000:.1f}ms "
+            f"→ buffer={buffer*1000:.1f}ms (N={GUVEN_SEVIYESI})"
+        )
 
-        # Minimum güvenli buffer (VAL02 riskini azaltmak için)
-        MIN_SAFE_BUFFER = 0.020  # 20ms minimum
-        return max(base_buffer, MIN_SAFE_BUFFER)
+        return buffer
 
     def _last_second_probe(self) -> tuple[float, float]:
         """Son saniye RTT probe'u — tetik düzeltmesi hesapla.
@@ -500,7 +488,8 @@ class RegistrationEngine:
                     best_result = (resp.offset, resp.delay)
             except Exception:
                 continue
-
+        if best_result:
+            self._last_ntp_delay = best_result[1]
         return best_result
 
     def _ntp_offset(self) -> float:
@@ -1057,17 +1046,13 @@ class RegistrationEngine:
             if self._cancelled.is_set():
                 return
 
-            # 2b. RTT jitter ölçümü + hassas buffer hesaplama
+            # 2b. RTT jitter ölçümü + ölçüm tabanlı buffer hesaplama
             rtt_stats = self._rtt_stats(10)
             self._log(f"📊 RTT: median={rtt_stats['median']*1000:.0f}ms, jitter(σ)={rtt_stats['jitter']*1000:.1f}ms, min={rtt_stats['min']*1000:.0f}ms, max={rtt_stats['max']*1000:.0f}ms ({rtt_stats['count']} örnek)")
 
             best = self._best_calibration()
-            optimal_buffer = self._calculate_precision_buffer(best, rtt_stats['jitter'])
-            if self.gecikme_buffer < optimal_buffer:
-                self._log(f"⚡ Buffer: {self.gecikme_buffer*1000:.0f}ms → {optimal_buffer*1000:.0f}ms (hedef pencere: 0-50ms)", "warning")
-                self.gecikme_buffer = optimal_buffer
-            else:
-                self._log(f"⚡ Buffer: {self.gecikme_buffer*1000:.0f}ms ≥ minimum {optimal_buffer*1000:.0f}ms ✓")
+            self._measurement_buffer = self._calculate_measurement_based_buffer(best, rtt_stats['jitter'])
+            self._log(f"⚡ Ölçüm tabanlı buffer: {self._measurement_buffer*1000:.1f}ms")
 
             if self._cancelled.is_set():
                 return
@@ -1078,10 +1063,9 @@ class RegistrationEngine:
             
             best = self._best_calibration()
             
-            # En iyi ölçümün offset'ini kullan (TrendAnalyzer devre dışı — Date header
-            # gürültüsü ±500ms olduğu için regresyon anlamsız sonuçlar üretiyordu)
             # Temel tetik zamanı hesapla
-            base_trigger = hedef + best.server_offset - best.rtt_one_way + self.gecikme_buffer
+            # OBS ileri → kayıt erken açılır → daha erken tetikle (offset'i çıkar)
+            base_trigger = hedef + best.server_offset - best.rtt_one_way - self._obs_clock_offset + self._measurement_buffer
             
             # GELIŞMIŞ KORUMA MEKANIZMALARI UYGULA
             final_trigger = self._apply_advanced_protection(base_trigger, hedef)
@@ -1089,7 +1073,7 @@ class RegistrationEngine:
             self._trigger_time = final_trigger
 
             kalan_sn = final_trigger - time.time()
-            self._log(f"Tetik: {self.kayit_saati} +{self.gecikme_buffer*1000:.0f}ms | {kalan_sn:.1f}s kaldı")
+            self._log(f"Tetik: {self.kayit_saati} +{self._measurement_buffer*1000:.0f}ms buffer | {kalan_sn:.1f}s kaldı")
 
             self._emit("countdown", {"trigger_time": final_trigger, "remaining": kalan_sn})
 
@@ -1123,7 +1107,8 @@ class RegistrationEngine:
                     predicted_offset = self._predict_offset_at_target_time(hedef)
                     
                     # Temel tetik zamanı hesapla
-                    base_trigger = hedef + predicted_offset - best.rtt_one_way + self.gecikme_buffer
+                    # OBS ileri → kayıt erken açılır → daha erken tetikle (offset'i çıkar)
+                    base_trigger = hedef + predicted_offset - best.rtt_one_way - self._obs_clock_offset + self._measurement_buffer
                     
                     # GELIŞMIŞ KORUMA MEKANIZMALARI UYGULA
                     new_trigger = self._apply_advanced_protection(base_trigger, hedef)
@@ -1246,7 +1231,7 @@ class RegistrationEngine:
             fark_ms = (time.time() - hedef) * 1000
             actual_trigger_fark = (time.time() - self._trigger_time) * 1000
             best = self._best_calibration()
-            self._log(f"🚀 BAŞLIYOR! (hedef farkı: {fark_ms:+.0f}ms, tetik farkı: {actual_trigger_fark:+.0f}ms) [buffer={self.gecikme_buffer*1000:.0f}ms offset={best.server_offset*1000:+.0f}ms RTT={best.rtt_one_way*1000:.0f}ms havuz:{len(self._cal_samples)}]")
+            self._log(f"🚀 BAŞLIYOR! (hedef farkı: {fark_ms:+.0f}ms, tetik farkı: {actual_trigger_fark:+.0f}ms) [buffer={self._measurement_buffer*1000:.0f}ms offset={best.server_offset*1000:+.0f}ms RTT={best.rtt_one_way*1000:.0f}ms havuz:{len(self._cal_samples)}]")
             if self.dry_run:
                 self._kayit_yap_dry_run()
             else:

@@ -21,7 +21,6 @@ export interface ConfigData {
   kayit_saati: string;
   max_deneme: number;
   retry_aralik: number;
-  gecikme_buffer: number;
   dry_run: boolean;
 }
 
@@ -31,7 +30,6 @@ export interface ConfigResponse {
   kayit_saati: string;
   max_deneme: number;
   retry_aralik: number;
-  gecikme_buffer: number;
   token_set: boolean;
   token_preview: string;
   dry_run: boolean;
