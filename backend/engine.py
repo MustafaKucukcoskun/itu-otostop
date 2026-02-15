@@ -180,6 +180,7 @@ class RegistrationEngine:
         self._trend_analyzer = TrendAnalyzer(window_size=10)
         self._change_detector = ChangeDetector(threshold=0.050)  # 50ms eşik
         self._target_time: Optional[float] = None  # Hedef zamanı sakla
+        self._last_val02_delay: float = 0.0  # VAL02 log spam önleyici
         self._cal_samples_chrono: list[tuple[float, float, float, str]] = []  # Kronolojik sıralı kopya
 
         # Session
@@ -270,7 +271,10 @@ class RegistrationEngine:
         # 5ms güvenlik payı ile VAL02 riskini minimize et.
         min_safe_time = target_time + 0.005
         if protected_trigger < min_safe_time:
-            self._log(f"🔒 VAL02 koruma: tetik {(min_safe_time - protected_trigger)*1000:+.0f}ms geciktirildi (hard floor: hedef+5ms)", "info")
+            delay_ms = (min_safe_time - protected_trigger) * 1000
+            if abs(delay_ms - self._last_val02_delay) > 1:  # Sadece değişince logla
+                self._log(f"🔒 VAL02 koruma: tetik {delay_ms:+.0f}ms geciktirildi (hard floor: hedef+5ms)", "info")
+                self._last_val02_delay = delay_ms
             protected_trigger = min_safe_time
 
         # ÜST SINIR: 200ms sonra kontenjan dolmuş olabilir.
@@ -728,6 +732,11 @@ class RegistrationEngine:
             varis_fark_ms = (varis_tahmini - hedef) * 1000
 
             self._log(f"📊 HTTP {resp.status_code} | RTT: {rtt_ms:.0f}ms")
+            if self._calibration:
+                cal_rtt_ms = self._calibration.rtt_one_way * 2000
+                rtt_diff = rtt_ms - cal_rtt_ms
+                if rtt_diff > 10:
+                    self._log(f"⚠️ RTT spike: test={rtt_ms:.0f}ms vs kalibrasyon={cal_rtt_ms:.0f}ms (+{rtt_diff:.0f}ms)", "warning")
             self._log("─────────────────────────────────")
             self._log(f"📤 İstek gönderim (yerel saat): hedef {hedef_fark_ms:+.0f}ms")
             self._log(f"📥 Tahmini varış (yerel saat): hedef {varis_fark_ms:+.0f}ms")
@@ -741,15 +750,7 @@ class RegistrationEngine:
             else:
                 sunucu_varis_ms = varis_fark_ms
 
-            # Sunucu Date header'ından gerçek sunucu saati doğrulaması
-            server_date = resp.headers.get("Date", "")
-            if server_date:
-                try:
-                    server_ts = parsedate_to_datetime(server_date).timestamp()
-                    server_hedef_fark = (server_ts - hedef) * 1000
-                    self._log(f"🕐 Sunucu Date header: hedef {server_hedef_fark:+.0f}ms (1sn granülarite)")
-                except Exception:
-                    pass
+            # Date header 1sn granülarite — ms seviyesinde bilgi vermez, loglamaya gerek yok
 
             # Değerlendirme (sunucu perspektifinden — hedef pencere: 0-50ms)
             if 0 <= sunucu_varis_ms <= 50:
