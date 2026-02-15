@@ -270,7 +270,7 @@ class RegistrationEngine:
         # 5ms güvenlik payı ile VAL02 riskini minimize et.
         min_safe_time = target_time + 0.005
         if protected_trigger < min_safe_time:
-            self._log(f"🔒 VAL02 koruma: {(min_safe_time - protected_trigger)*1000:+.0f}ms geciktirildi", "info")
+            self._log(f"🔒 VAL02 koruma: tetik {(min_safe_time - protected_trigger)*1000:+.0f}ms geciktirildi (hard floor: hedef+5ms)", "info")
             protected_trigger = min_safe_time
 
         # ÜST SINIR: 200ms sonra kontenjan dolmuş olabilir.
@@ -588,7 +588,7 @@ class RegistrationEngine:
             if date_offset is not None:
                 diff = abs(server_offset - date_offset)
                 if diff > 0.500:
-                    self._log(f"⚠️ NTP-Date farkı büyük: {diff*1000:.0f}ms (Date ±500ms hassasiyet)", "warning")
+                    self._log(f"ℹ️ NTP-Date farkı: {diff*1000:.0f}ms (beklenen — Date header 1sn granülarite)")
                 else:
                     self._log(f"✅ NTP-Date tutarlı (fark: {diff*1000:.0f}ms)")
         elif date_offset is not None:
@@ -1018,7 +1018,7 @@ class RegistrationEngine:
         try:
             if self.dry_run:
                 self._log("═══════════════════════════════════", "warning")
-                self._log("🧪 DRY RUN MODU — Gerçek kayıt yapılMAyacak", "warning")
+                self._log("🧪 DRY RUN MODU — Gerçek kayıt yapılmayacak", "warning")
                 self._log("═══════════════════════════════════", "warning")
 
             # 0. Token geçerlilik kontrolü
@@ -1231,7 +1231,7 @@ class RegistrationEngine:
             fark_ms = (time.time() - hedef) * 1000
             actual_trigger_fark = (time.time() - self._trigger_time) * 1000
             best = self._best_calibration()
-            self._log(f"🚀 BAŞLIYOR! (hedef farkı: {fark_ms:+.0f}ms, tetik farkı: {actual_trigger_fark:+.0f}ms) [buffer={self._measurement_buffer*1000:.0f}ms offset={best.server_offset*1000:+.0f}ms RTT={best.rtt_one_way*1000:.0f}ms havuz:{len(self._cal_samples)}]")
+            self._log(f"🚀 BAŞLIYOR! (hedef farkı: {fark_ms:+.0f}ms, tetik farkı: {actual_trigger_fark:+.0f}ms) [buffer={self._measurement_buffer*1000:.0f}ms offset={best.server_offset*1000:+.0f}ms obs_offset={self._obs_clock_offset*1000:+.1f}ms RTT={best.rtt_one_way*1000:.0f}ms havuz:{len(self._cal_samples)}]")
             if self.dry_run:
                 self._kayit_yap_dry_run()
             else:
