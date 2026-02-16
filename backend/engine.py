@@ -268,12 +268,13 @@ class RegistrationEngine:
 
         # ALT SINIR: En erken gönderim zamanı.
         # Paket sunucuya RTT/2 sonra ulaşır; offset ölçüm hatası ±RTT/2 olabilir.
-        # 5ms güvenlik payı ile VAL02 riskini minimize et.
-        min_safe_time = target_time + 0.005
+        # 1ms güvenlik payı ile VAL02 riskini minimize et.
+        # RTT tek yön (~24ms) zaten doğal güvenlik tamponu sağlar.
+        min_safe_time = target_time + 0.001
         if protected_trigger < min_safe_time:
             delay_ms = (min_safe_time - protected_trigger) * 1000
             if abs(delay_ms - self._last_val02_delay) > 1:  # Sadece değişince logla
-                self._log(f"🔒 VAL02 koruma: tetik {delay_ms:+.0f}ms geciktirildi (hard floor: hedef+5ms)", "info")
+                self._log(f"🔒 VAL02 koruma: tetik {delay_ms:+.0f}ms geciktirildi (hard floor: hedef+1ms)", "info")
                 self._last_val02_delay = delay_ms
             protected_trigger = min_safe_time
 
