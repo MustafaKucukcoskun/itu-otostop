@@ -123,9 +123,17 @@ export function CRNManager({
   const activeList = tab === "add" ? ecrnList : scrnList;
   const setActiveList = tab === "add" ? onEcrnListChange : onScrnListChange;
 
+  const MAX_ECRN = 12;
+
   const addCRN = useCallback(() => {
     const trimmed = input.trim();
     if (!trimmed) return;
+
+    // ECRN tab'ında max 12 sınırı (OBS limiti)
+    if (tab === "add" && ecrnList.length >= MAX_ECRN) {
+      toast.error(`Maksimum ${MAX_ECRN} ECRN eklenebilir (OBS limiti)`);
+      return;
+    }
 
     // Parse "12345 Ders Adı" format
     const match = trimmed.match(/^(\d{5})\s*(.*)$/);
@@ -150,7 +158,7 @@ export function CRNManager({
       setLabels((prev) => ({ ...prev, [crn]: label }));
     }
     setInput("");
-  }, [input, activeList, setActiveList]);
+  }, [input, activeList, setActiveList, tab, ecrnList.length]);
 
   const removeCRN = (crn: string) => {
     setActiveList(activeList.filter((c) => c !== crn));

@@ -12,6 +12,7 @@ import sys
 import ctypes
 import os
 import socket
+import gc
 from collections import deque
 from email.utils import parsedate_to_datetime
 from dataclasses import dataclass, field
@@ -1090,6 +1091,8 @@ class RegistrationEngine:
 
             # 4. Bekleme döngüsü (sürekli kalibrasyon ile)
             self._set_phase("waiting")
+            gc.disable()  # GC pause'u engelle (tetik hassasiyeti için)
+            self._log("🗑️ GC devre dışı (tetik hassasiyeti)", "info")
             prewarm2 = False
             keepalive_5s = False
             keepalive_3s = False
@@ -1156,22 +1159,22 @@ class RegistrationEngine:
                     self._prewarm(head_only=True)
                     prewarm2 = True
 
-                # ── Bağlantı canlı tutma (10s, 5s, 3.5s kala — cwnd sıcak tutar) ──
+                # ── Bağlantı canlı tutma (10s, 5s, 3.5s kala — HEAD ile, debounce riski sıfır) ──
                 if not prewarm2 and 0 < kalan <= 10:
                     self._prewarm(head_only=True)
                     prewarm2 = True
                 elif prewarm2 and not keepalive_5s and 4.5 < kalan <= 5.5:
                     keepalive_5s = True
                     try:
-                        # POST isteği ile bağlantı canlı tutma (gerçek kayıt isteği gibi)
-                        self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
+                        # HEAD isteği ile bağlantı canlı tutma (POST debounce tetikler!)
+                        self.session.head(OBS_URL, timeout=10)
                     except Exception:
                         pass
                 elif keepalive_5s and not keepalive_3s and 3.0 < kalan <= 4.0:
                     keepalive_3s = True
                     try:
-                        # POST isteği ile bağlantı canlı tutma (gerçek kayıt isteği gibi)
-                        self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
+                        # HEAD isteği ile bağlantı canlı tutma (POST debounce tetikler!)
+                        self.session.head(OBS_URL, timeout=10)
                     except Exception:
                         pass
 
@@ -1190,25 +1193,17 @@ class RegistrationEngine:
                     
                     last_recal_time = now
 
-                # ── Son saniye RTT probe'u (2s kala — mikro düzeltme) ──
+                # ── Son saniye bağlantı kontrolü (2s kala — HEAD ile, debounce riski sıfır) ──
                 if not probe_done and 1.5 < kalan <= 2.5:
                     probe_done = True
-                    correction, probe_rtt = self._last_second_probe()
-                    if abs(correction) > 0.001:  # >1ms fark
-                        # ADVANCED PROTECTION: Düzeltme sonucu tetik zamanını değerlendir
-                        raw_new_trigger = final_trigger + correction
-                        hedef = self._saat_to_epoch(self.kayit_saati)
-                        
-                        # Gelişmiş koruma mekanizmalarını uygula
-                        new_trigger = self._apply_advanced_protection(raw_new_trigger, hedef)
-                        
-                        final_trigger = new_trigger
-                        self._trigger_time = final_trigger
-                        kalan = final_trigger - time.time()
-                        self._log(f"🎯 Probe düzeltme: {correction*1000:+.1f}ms → yeni tetik: {((final_trigger - hedef) * 1000):+.0f}ms (probe RTT: {probe_rtt*1000:.0f}ms, kal. RTT: {self._calibration.rtt_one_way*2000:.0f}ms)")
-                        self._emit("countdown", {"trigger_time": final_trigger, "remaining": kalan})
-                    else:
-                        self._log(f"🎯 Probe: RTT={probe_rtt*1000:.0f}ms — düzeltme gerekmedi")
+                    # HEAD ile bağlantı kontrol (POST debounce tetikler, tehlikeli!)
+                    try:
+                        t0 = time.perf_counter()
+                        self.session.head(OBS_URL, timeout=5)
+                        head_rtt = (time.perf_counter() - t0) * 1000
+                        self._log(f"🎯 Bağlantı kontrol (HEAD): {head_rtt:.0f}ms — POST probe kaldırıldı (debounce riski)")
+                    except Exception:
+                        self._log("⚠️ Bağlantı kontrol başarısız (HEAD)", "warning")
 
                 # ── Busy-wait (son 50ms — perf_counter ile yüksek çözünürlük) ──
                 if kalan <= 0.05:
@@ -1242,6 +1237,7 @@ class RegistrationEngine:
         except Exception as e:
             self._log(f"Beklenmeyen hata: {e}", "error")
         finally:
+            gc.enable()  # GC'yi tekrar aç
             self._set_timer_resolution(False)
             self._set_phase("done")
             self._emit("done", {"results": dict(self._crn_results)})
