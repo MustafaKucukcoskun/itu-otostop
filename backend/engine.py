@@ -435,38 +435,6 @@ class RegistrationEngine:
 
         return buffer
 
-    def _last_second_probe(self) -> tuple[float, float]:
-        """Son saniye RTT probe'u — tetik düzeltmesi hesapla.
-
-        3 hızlı POST isteği ile mevcut RTT'yi ölçer. Kalibrasyon RTT'sinden
-        anlamlı sapma varsa (>3ms), tetik zamanını mikro-düzeltir.
-
-        Returns: (correction_seconds, probe_rtt_seconds)
-        """
-        rtts = []
-        for _ in range(3):
-            t0 = time.perf_counter()
-            try:
-                # POST isteği ile RTT ölçümü (gerçek kayıt isteği gibi)
-                self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
-            except Exception:
-                continue
-            rtts.append(time.perf_counter() - t0)
-
-        if not rtts or not self._calibration:
-            return 0.0, 0.0
-
-        probe_rtt = min(rtts)  # Minimum = en güvenilir (jitter ekleme yok)
-        probe_one_way = probe_rtt / 2
-        cal_one_way = self._calibration.rtt_one_way
-
-        drift = probe_one_way - cal_one_way
-
-        # >3ms fark varsa düzelt (gürültüyü filtrele)
-        if abs(drift) > 0.003:
-            return -drift, probe_rtt
-        return 0.0, probe_rtt
-
     # ── NTP Kalibrasyon (birincil offset kaynağı) ──
 
     def _ntp_calibrate(self, servers: list[str] | None = None) -> tuple[float, float] | None:

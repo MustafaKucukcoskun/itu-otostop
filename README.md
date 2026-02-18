@@ -1,19 +1,25 @@
-# 🎓 İTÜ OBS Ders Kayıt Otomasyonu
+# 🎓 İTÜ OBS Ders Kayıt Otomasyonu (Otostop)
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 İTÜ Öğrenci Bilgi Sistemi (OBS) üzerinden ders kayıt işlemini otomatikleştiren full-stack uygulama. Milisaniye düzeyinde zamanlama hassasiyeti ile kayıt saati geldiğinde derslere anında kayıt olmanızı sağlar.
 
+> **⚠️ Sorumluluk Reddi:** Bu araç eğitim ve öğretim amaçlıdır.
+
 ## ✨ Özellikler
 
-- **🎯 Hassas Zamanlama** — Sunucu saati HTTP `Date` header geçişi ile ±3ms doğrulukta ölçülür
-- **⚡ Sıfır Gecikme** — TCP+TLS bağlantı ısıtma + PreparedRequest ile ilk istek ~6ms
-- **📡 Gerçek Zamanlı UI** — WebSocket üzerinden canlı log akışı, geri sayım ve CRN durum takibi
-- **🔄 Akıllı Retry** — 3 saniyelik sunucu debounce'una uygun VAL02/VAL16 retry stratejisi
-- **➕ Ders Ekleme (ECRN)** — Birden fazla CRN'yi tek istekte kayıt
-- **➖ Ders Bırakma (SCRN)** — Mevcut dersleri bırakıp yerine yenisini alma
-- **🌙 Karanlık/Aydınlık Tema** — next-themes ile otomatik tema desteği
-- **📊 Kalibrasyon Paneli** — Sunucu offset, RTT ve NTP karşılaştırması
+| Özellik | Açıklama |
+|---------|----------|
+| 🎯 **Hassas Zamanlama** | HTTP `Date` header geçişi ile sunucu saati ±3ms doğrulukta ölçülür |
+| ⚡ **Sıfır Gecikme** | TCP+TLS bağlantı ısıtma + PreparedRequest ile ilk istek ~6ms |
+| 📡 **Gerçek Zamanlı UI** | WebSocket üzerinden canlı log, geri sayım ve CRN durum takibi |
+| 🔄 **Akıllı Retry** | 3sn debounce'a uygun VAL02/VAL16 retry stratejisi |
+| ➕ **Toplu Kayıt** | Birden fazla CRN'yi tek istekte kayıt (maks. 12) |
+| ➖ **Ders Değiştirme** | Mevcut dersleri bırakıp yerine yenisini alma (SCRN) |
+| 📊 **Kalibrasyon Paneli** | Sunucu offset, RTT metrikleri ve NTP karşılaştırması |
+| 🌙 **Tema Desteği** | Karanlık/aydınlık tema (next-themes) |
+| 🔐 **Bulut Senkronizasyon** | Clerk auth + Supabase ile ayar/preset yedekleme |
+| 🔔 **Bildirimler** | Tarayıcı bildirimi + ses efekti ile tamamlanma uyarısı |
 
 ## 🏗️ Mimari
 
@@ -22,7 +28,6 @@
 │   Next.js 16     │◄──────────────────►│   FastAPI         │
 │   React 19       │     REST API       │   Uvicorn         │
 │   shadcn/ui      │◄──────────────────►│   Pydantic v2     │
-│   Bun            │                    │   Requests        │
 └──────────────────┘                    └────────┬─────────┘
      :3000                                       │
                                                  │ HTTPS POST
@@ -33,34 +38,58 @@
                                     └──────────────────────┘
 ```
 
+## 🛠️ Teknoloji Yığını
+
+| Katman | Teknoloji |
+|--------|-----------|
+| **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS v4 |
+| **UI** | shadcn/ui, Radix UI, Lucide Icons, Motion (Framer Motion v12) |
+| **Backend** | FastAPI, Uvicorn, Pydantic v2, Requests |
+| **Gerçek Zamanlı** | WebSocket (FastAPI ↔ React) |
+| **Auth** | Clerk (frontend) |
+| **Veritabanı** | Supabase (PostgreSQL — config/preset RPC) |
+| **Deploy** | Google Cloud Run (backend), Vercel (frontend) |
+| **Paket Yönetimi** | Bun (frontend), pip (backend) |
+
 ## 📂 Proje Yapısı
 
 ```
-├── backend/                 # FastAPI backend
-│   ├── main.py              # REST + WebSocket endpoints
-│   ├── engine.py            # Kayıt motoru (zamanlama, retry, kalibrasyon)
-│   ├── models.py            # Pydantic veri modelleri
-│   └── requirements.txt     # Python bağımlılıkları
-├── frontend/                # Next.js frontend
+├── backend/                      # FastAPI backend
+│   ├── main.py                   # REST + WebSocket endpoints
+│   ├── engine.py                 # Kayıt motoru (kalibrasyon, zamanlama, retry)
+│   ├── models.py                 # Pydantic veri modelleri
+│   ├── obs_course_service.py     # OBS ders arama proxy (LRU cache + HTML parser)
+│   ├── Dockerfile                # Cloud Run container
+│   └── requirements.txt          # Python bağımlılıkları
+├── frontend/                     # Next.js frontend
 │   ├── src/
-│   │   ├── app/             # App Router (layout, page)
-│   │   ├── components/      # React bileşenleri
-│   │   │   ├── dashboard.tsx         # Ana orkestratör
-│   │   │   ├── crn-manager.tsx       # CRN ekleme/bırakma yöneticisi
-│   │   │   ├── token-input.tsx       # JWT token girişi
+│   │   ├── app/                  # App Router + Clerk auth
+│   │   ├── components/
+│   │   │   ├── dashboard.tsx     # Ana orkestratör (~900 satır)
+│   │   │   ├── crn-manager.tsx   # CRN ekleme/bırakma yöneticisi
+│   │   │   ├── token-input.tsx   # JWT token girişi + rehber
 │   │   │   ├── calibration-card.tsx  # Kalibrasyon metrikleri
 │   │   │   ├── countdown-timer.tsx   # Animasyonlu geri sayım
-│   │   │   ├── live-logs.tsx         # Terminal tarzı log görüntüleyici
+│   │   │   ├── live-logs.tsx     # Terminal tarzı log görüntüleyici
 │   │   │   ├── settings-panel.tsx    # Kayıt ayarları
-│   │   │   ├── connection-status.tsx # WebSocket durum göstergesi
-│   │   │   └── theme-toggle.tsx      # Tema değiştirici
+│   │   │   ├── preset-manager.tsx    # Preset kaydetme/yükleme
+│   │   │   └── ...               # Diğer UI bileşenleri
 │   │   ├── hooks/
-│   │   │   └── use-websocket.ts      # WebSocket hook
-│   │   └── lib/
-│   │       ├── api.ts                # Typed API client
-│   │       └── utils.ts              # Yardımcı fonksiyonlar
-│   └── package.json
-└── claudeai2-optimal.py     # Standalone CLI versiyonu
+│   │   │   ├── use-websocket.ts  # WebSocket + auto-reconnect
+│   │   │   ├── use-notification.ts   # Bildirim + ses
+│   │   │   └── use-presets.ts    # Supabase preset yönetimi
+│   │   ├── lib/
+│   │   │   ├── api.ts            # Typed API client
+│   │   │   ├── config-service.ts # Supabase config RPC
+│   │   │   ├── preset-service.ts # Supabase preset RPC
+│   │   │   ├── supabase.ts       # Supabase client
+│   │   │   └── utils.ts          # Yardımcı fonksiyonlar
+│   │   └── proxy.ts             # Clerk auth proxy (Next.js 16)
+│   ├── sql/                      # Supabase tablo + RPC tanımları
+│   └── public/guide/             # Token rehberi görselleri
+└── calibration/                  # Sunucu saat kalibrasyon aracı
+    ├── obs_clock_calibration.py  # Cloud Run üzerinde kalibrasyon
+    └── Dockerfile
 ```
 
 ## 🚀 Hızlı Başlangıç
@@ -77,62 +106,91 @@
 cd backend
 pip install -r requirements.txt
 python main.py
-# → http://localhost:8000
+# → http://localhost:8000  (API docs: /docs)
 ```
 
 ### 2. Frontend
 
 ```bash
 cd frontend
+cp .env.example .env.local
+# .env.local içine Clerk ve Supabase anahtarlarını ekleyin
+
 bun install          # veya: npm install
 bun run dev          # veya: npm run dev
 # → http://localhost:3000
 ```
 
-### 3. Kullanım
+### 3. Ortam Değişkenleri
+
+| Değişken | Konum | Açıklama |
+|----------|-------|----------|
+| `NEXT_PUBLIC_API_URL` | `frontend/.env` | Backend API URL |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | `frontend/.env.local` | Clerk public key |
+| `CLERK_SECRET_KEY` | `frontend/.env.local` | Clerk secret key |
+| `NEXT_PUBLIC_SUPABASE_URL` | `frontend/.env.local` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `frontend/.env.local` | Supabase anon key |
+
+## 📖 Kullanım
 
 1. Tarayıcıda `http://localhost:3000` adresini açın
-2. OBS web arayüzünden JWT token'ı kopyalayıp yapıştırın
-3. Eklemek istediğiniz CRN'leri **Eklenecek Dersler** bölümüne ekleyin
-4. Bırakmak istediğiniz CRN'leri **Bırakılacak Dersler** bölümüne ekleyin
-5. Kayıt saatini ayarlayın (varsayılan: 14:00:00)
-6. **"Kayıt Başlat"** butonuna basın (kayıt saatinden 2-5 dakika önce)
-7. Sistem otomatik kalibre olacak ve tam saatte isteği gönderecektir
+2. OBS web arayüzünden JWT token'ı kopyalayın *(DevTools → Network → Authorization header)*
+3. Token'ı yapıştırın (uygulama geçerliliği otomatik kontrol eder)
+4. **Eklenecek Dersler** bölümüne CRN'leri ekleyin (maks. 12)
+5. Gerekirse **Bırakılacak Dersler** bölümüne bırakılacak CRN'leri ekleyin
+6. Kayıt saatini ayarlayın (varsayılan: `14:00:00`)
+7. **"Kayıt Başlat"** butonuna basın *(kayıt saatinden 2-5 dakika önce)*
+8. Sistem otomatik kalibre olacak ve tam saatte isteği gönderecektir
 
-## ⏱️ Zamanlama Formülü
+## ⏱️ Zamanlama Mekanizması
 
 ```
 tetik = hedef_epoch + server_offset - rtt_tek_yon + buffer
 ```
 
-Bu formül, isteğin sunucuya tam hedef saatte (ör: 14:00:00.000) ulaşmasını sağlar.
+| Bileşen | Açıklama |
+|---------|----------|
+| `server_offset` | OBS sunucu saati ile local saat farkı (HTTP Date header ile ölçülür) |
+| `rtt_tek_yon` | Tek yön ağ gecikmesi (RTT/2) |
+| `buffer` | Güvenlik tamponu (varsayılan: 5ms) |
 
-## 🔑 Token Alma
+**Motor fazları:** `idle` → `token_check` → `calibrating` → `waiting` → `registering` → `done`
 
-1. [obs.itu.edu.tr](https://obs.itu.edu.tr) adresine giriş yapın
-2. Tarayıcı DevTools → Network sekmesini açın
-3. Herhangi bir API isteğinin `Authorization: Bearer ...` header'ından token'ı kopyalayın
-4. Token geçerlilik süresi: ~6 saat
+## 🔑 OBS API Yanıt Kodları
 
-## ⚠️ Önemli Notlar
+| Kod | Anlamı |
+|-----|--------|
+| `statusCode: 0` | ✅ Başarılı |
+| `VAL02` | ⏳ Kayıt dönemi henüz açılmadı |
+| `VAL03` | ℹ️ Ders zaten alınmış |
+| `VAL06` | 🔴 Kontenjan dolu |
+| `VAL09` | ⚠️ Ders çakışması |
+| `VAL16` | 🔄 Debounce (3sn içinde tekrar istek) |
+| `VAL22` | ⬆️ Yükseltmeye alınan ders çakışması |
 
-- **Sunucu NTP'den ~2 saniye geride** — NTP kullanmak 2s erken tetikleme → VAL02 hatası verir
-- **3 saniye debounce** — Sunucu aynı oturumdan <3s aralıkla gelen istekleri yok sayar (VAL16)
-- **Token yenileme** — Her kayıt oturumundan önce taze token gerekir
-- Bu araç sadece eğitim amaçlıdır
+## ☁️ Deployment
 
-## 🛠️ Teknoloji Yığını
+### Backend (Google Cloud Run)
 
-| Katman         | Teknoloji                                           |
-| -------------- | --------------------------------------------------- |
-| Frontend       | Next.js 16, React 19, TypeScript, Tailwind CSS v4   |
-| UI             | shadcn/ui, Lucide Icons, motion (Framer Motion v12) |
-| Backend        | FastAPI, Uvicorn, Pydantic v2, Requests             |
-| Gerçek Zamanlı | WebSocket (FastAPI ↔ React)                         |
-| Paket Yönetimi | Bun (frontend), pip (backend)                       |
-| Tema           | next-themes (karanlık/aydınlık)                     |
-| Bildirimler    | Sonner (toast)                                      |
+```bash
+gcloud run deploy itu-otostop-api \
+  --source backend/ \
+  --platform managed \
+  --region europe-west1 \
+  --allow-unauthenticated \
+  --port 8080 \
+  --memory 1Gi --cpu 2 \
+  --timeout 3600 \
+  --min-instances 1 --max-instances 2 \
+  --no-cpu-throttling --cpu-boost \
+  --session-affinity \
+  --set-env-vars "ENV=production,CORS_ORIGINS=https://itu-otostop.vercel.app"
+```
+
+### Frontend (Vercel)
+
+Frontend, `main` branch'e push edildiğinde Vercel üzerinden otomatik deploy edilir.
 
 ## 📄 Lisans
 
-Bu proje [Apache License 2.0](LICENSE) altında lisanslanmıştır. Türev çalışmalarda değişikliklerin belirtilmesi zorunludur.
+Bu proje [Apache License 2.0](LICENSE) altında lisanslanmıştır.
