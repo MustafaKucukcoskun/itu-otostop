@@ -144,7 +144,7 @@ export function TokenInput({
       <div className="flex items-center justify-between px-5 pt-5 pb-3">
         <div className="flex items-center gap-2.5">
           <div className="h-8 w-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-            <ShieldCheck className="h-4 w-4 text-blue-400" />
+            <ShieldCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
           </div>
           <div>
             <h3 className="text-sm font-semibold">Bearer Token</h3>
@@ -160,7 +160,7 @@ export function TokenInput({
               initial={{ scale: 0, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0, opacity: 0 }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[11px] font-medium"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-medium"
             >
               <CheckCircle2 className="h-3 w-3" /> Geçerli
             </m.div>
@@ -171,7 +171,7 @@ export function TokenInput({
               initial={{ scale: 0, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0, opacity: 0 }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 text-[11px] font-medium"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 text-[11px] font-medium"
             >
               <XCircle className="h-3 w-3" /> Geçersiz
             </m.div>
@@ -215,12 +215,12 @@ export function TokenInput({
               exit={{ opacity: 0, height: 0 }}
               className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium ${
                 expiryStatus.level === "expired"
-                  ? "bg-red-500/10 text-red-400"
+                  ? "bg-red-500/10 text-red-600 dark:text-red-400"
                   : expiryStatus.level === "critical"
-                    ? "bg-red-500/10 text-red-400"
+                    ? "bg-red-500/10 text-red-600 dark:text-red-400"
                     : expiryStatus.level === "warning"
-                      ? "bg-yellow-500/10 text-yellow-400"
-                      : "bg-emerald-500/10 text-emerald-400"
+                      ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"
+                      : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
               }`}
             >
               {expiryStatus.level === "expired" ? (

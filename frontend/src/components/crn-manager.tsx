@@ -59,31 +59,43 @@ const statusStyles: Record<string, { bg: string; text: string; dot: string }> =
     },
     success: {
       bg: "bg-emerald-500/8",
-      text: "text-emerald-400",
-      dot: "bg-emerald-400",
+      text: "text-emerald-600 dark:text-emerald-400",
+      dot: "bg-emerald-500 dark:bg-emerald-400",
     },
-    already: { bg: "bg-blue-500/8", text: "text-blue-400", dot: "bg-blue-400" },
-    full: { bg: "bg-red-500/8", text: "text-red-400", dot: "bg-red-400" },
+    already: {
+      bg: "bg-blue-500/8",
+      text: "text-blue-600 dark:text-blue-400",
+      dot: "bg-blue-500 dark:bg-blue-400",
+    },
+    full: {
+      bg: "bg-red-500/8",
+      text: "text-red-600 dark:text-red-400",
+      dot: "bg-red-500 dark:bg-red-400",
+    },
     conflict: {
       bg: "bg-orange-500/8",
-      text: "text-orange-400",
-      dot: "bg-orange-400",
+      text: "text-orange-600 dark:text-orange-400",
+      dot: "bg-orange-500 dark:bg-orange-400",
     },
     upgrade: {
       bg: "bg-purple-500/8",
-      text: "text-purple-400",
-      dot: "bg-purple-400",
+      text: "text-purple-600 dark:text-purple-400",
+      dot: "bg-purple-500 dark:bg-purple-400",
     },
     debounce: {
       bg: "bg-yellow-500/8",
-      text: "text-yellow-400",
-      dot: "bg-yellow-400",
+      text: "text-yellow-600 dark:text-yellow-400",
+      dot: "bg-yellow-500 dark:bg-yellow-400",
     },
-    error: { bg: "bg-red-500/8", text: "text-red-400", dot: "bg-red-400" },
+    error: {
+      bg: "bg-red-500/8",
+      text: "text-red-600 dark:text-red-400",
+      dot: "bg-red-500 dark:bg-red-400",
+    },
     dropped: {
       bg: "bg-emerald-500/8",
-      text: "text-emerald-400",
-      dot: "bg-emerald-400",
+      text: "text-emerald-600 dark:text-emerald-400",
+      dot: "bg-emerald-500 dark:bg-emerald-400",
     },
   };
 

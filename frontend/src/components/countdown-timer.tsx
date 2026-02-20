@@ -1,23 +1,35 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { m } from "motion/react";
+import { m, AnimatePresence } from "motion/react";
+import { Clock, Pencil, Zap } from "lucide-react";
+
+// Common ITU registration times
+const QUICK_TIMES = [
+  { label: "10:00", value: "10:00:00" },
+  { label: "14:00", value: "14:00:00" },
+];
 
 interface CountdownTimerProps {
   targetTime: string;
+  onTargetTimeChange: (v: string) => void;
   countdown: number | null;
   phase: string;
   dryRun?: boolean;
+  disabled?: boolean;
 }
 
 export function CountdownTimer({
   targetTime,
+  onTargetTimeChange,
   countdown,
   phase,
   dryRun,
+  disabled,
 }: CountdownTimerProps) {
   const [currentTime, setCurrentTime] = useState("");
   const [localCountdown, setLocalCountdown] = useState<number | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const hasTarget = !!targetTime && /^\d{2}:\d{2}/.test(targetTime);
 
@@ -50,7 +62,7 @@ export function CountdownTimer({
       });
     }, 100);
     return () => clearInterval(interval);
-  }, [localCountdown, phase]);
+  }, [localCountdown !== null, phase]); // eslint-disable-line react-hooks/exhaustive-deps -- only re-run when countdown starts or phase changes
 
   const displayTime = useMemo(() => {
     if (localCountdown === null || localCountdown <= 0) {
@@ -75,6 +87,9 @@ export function CountdownTimer({
   const isRegistering = phase === "registering";
   const isDone = phase === "done";
 
+  // Show time editor when: idle AND (no target yet OR user clicked edit)
+  const showTimeEditor = isIdle && (!hasTarget || editing) && !disabled;
+
   const phaseLabel = isActive
     ? "Kayıt saatine kalan"
     : isRegistering
@@ -83,14 +98,29 @@ export function CountdownTimer({
         ? "Tamamlandı"
         : hasTarget
           ? "Hazır"
-          : "Canlı Saat";
+          : "Kayıt Saatini Ayarla";
+
+  const handleTimeChange = (v: string) => {
+    // Normalize HH:MM → HH:MM:00 for backend compat
+    onTargetTimeChange(v && v.length === 5 ? v + ":00" : v);
+  };
+
+  const handleQuickTime = (value: string) => {
+    onTargetTimeChange(value);
+    setEditing(false);
+  };
 
   return (
-    <div className="relative overflow-hidden" role="timer" aria-live="assertive" aria-label="Geri sayım sayacı">
+    <div
+      className="relative"
+      role="timer"
+      aria-live="assertive"
+      aria-label="Geri sayım sayacı"
+    >
       {/* Active state animated gradient */}
       {isActive && (
         <m.div
-          className="absolute inset-0 opacity-20"
+          className="absolute inset-0 opacity-20 overflow-hidden"
           style={{
             background:
               "conic-gradient(from 0deg, oklch(0.70 0.18 195 / 20%), oklch(0.60 0.15 280 / 15%), oklch(0.65 0.18 165 / 20%), oklch(0.70 0.18 195 / 20%))",
@@ -175,11 +205,91 @@ export function CountdownTimer({
             : displayTime}
         </m.div>
 
+        {/* Idle + has target → edit button */}
+        {isIdle && hasTarget && !editing && !disabled && (
+          <m.button
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            onClick={() => setEditing(true)}
+            className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-colors"
+          >
+            <Pencil className="h-3 w-3" />
+            Değiştir
+          </m.button>
+        )}
+
+        {/* ═══ INLINE TIME PICKER ═══ */}
+        <AnimatePresence>
+          {showTimeEditor && (
+            <m.div
+              initial={{ opacity: 0, y: 10, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: "auto" }}
+              exit={{ opacity: 0, y: 6, height: 0 }}
+              transition={{
+                type: "tween",
+                duration: 0.25,
+                ease: [0.4, 0, 0.2, 1],
+              }}
+              className="mt-6 overflow-hidden"
+            >
+              <div className="max-w-xs mx-auto space-y-3">
+                {/* Time input */}
+                <div className="relative">
+                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 pointer-events-none" />
+                  <input
+                    type="time"
+                    step="1"
+                    value={targetTime}
+                    onChange={(e) => handleTimeChange(e.target.value)}
+                    className={`w-full h-11 rounded-xl bg-background/60 ring-1 ring-inset pl-10 pr-4 font-mono text-base text-center focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/40 transition-shadow ${
+                      !targetTime
+                        ? "ring-primary/40 text-muted-foreground"
+                        : "ring-border/30"
+                    }`}
+                    autoFocus={editing}
+                  />
+                </div>
+
+                {/* Quick time buttons */}
+                <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                  {QUICK_TIMES.map((t) => (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => handleQuickTime(t.value)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-medium transition-all ${
+                        targetTime === t.value
+                          ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                          : "bg-background/40 text-muted-foreground hover:bg-muted/50 ring-1 ring-border/20 hover:ring-border/40"
+                      }`}
+                    >
+                      <Zap className="h-2.5 w-2.5 inline mr-0.5 -mt-px" />
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Done editing button (only when editing existing target) */}
+                {editing && hasTarget && (
+                  <button
+                    onClick={() => setEditing(false)}
+                    className="text-[10px] text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors"
+                  >
+                    Kapat
+                  </button>
+                )}
+              </div>
+            </m.div>
+          )}
+        </AnimatePresence>
+
         {/* Bottom info bar — context depends on state */}
-        <div className="mt-5 flex items-center justify-center gap-6 text-xs font-mono text-muted-foreground/50">
-          {isIdle && !hasTarget ? (
+        <div
+          className={`${showTimeEditor ? "mt-3" : "mt-5"} flex items-center justify-center gap-6 text-xs font-mono text-muted-foreground/50`}
+        >
+          {isIdle && !hasTarget && !showTimeEditor ? (
             <span className="text-muted-foreground/30 text-[10px]">
-              Aşağıdan kayıt saatini belirle
+              Yukarıdan kayıt saatini belirle
             </span>
           ) : isIdle && hasTarget ? (
             <span className="flex items-center gap-1.5">
@@ -189,7 +299,7 @@ export function CountdownTimer({
               </span>
               <span className="text-foreground/60">{currentTime}</span>
             </span>
-          ) : (
+          ) : !isIdle ? (
             <>
               <span className="flex items-center gap-1.5">
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse" />
@@ -211,7 +321,7 @@ export function CountdownTimer({
                 </>
               )}
             </>
-          )}
+          ) : null}
         </div>
 
         {/* Progress bar */}

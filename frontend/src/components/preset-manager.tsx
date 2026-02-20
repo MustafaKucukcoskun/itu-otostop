@@ -123,7 +123,7 @@ export function PresetManager({
       <div className="flex items-center justify-between px-5 pt-5 pb-3">
         <div className="flex items-center gap-2.5">
           <div className="h-8 w-8 rounded-lg bg-orange-500/10 flex items-center justify-center">
-            <BookmarkPlus className="h-4 w-4 text-orange-400" />
+            <BookmarkPlus className="h-4 w-4 text-orange-600 dark:text-orange-400" />
           </div>
           <div>
             <h3 className="text-sm font-semibold">Ders Şablonları</h3>
@@ -240,7 +240,7 @@ export function PresetManager({
                 </div>
                 <button
                   onClick={(e) => handleDelete(e, preset)}
-                  className="h-6 w-6 rounded-lg flex items-center justify-center text-muted-foreground/40 hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                  className="h-6 w-6 rounded-lg flex items-center justify-center text-muted-foreground/40 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 transition-all shrink-0"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -280,7 +280,7 @@ export function PresetManager({
             >
               <div className="flex items-start gap-3">
                 <div className="h-9 w-9 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0 mt-0.5">
-                  <AlertTriangle className="h-4.5 w-4.5 text-amber-400" />
+                  <AlertTriangle className="h-4.5 w-4.5 text-amber-600 dark:text-amber-400" />
                 </div>
                 <div>
                   <p className="text-sm font-semibold">Şablon Yükle</p>

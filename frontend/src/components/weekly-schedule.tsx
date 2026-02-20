@@ -230,7 +230,7 @@ export function WeeklySchedule({
             <Loader2 className="h-3 w-3 text-muted-foreground animate-spin" />
           )}
           {conflicts.size > 0 && (
-            <span className="flex items-center gap-1 text-[10px] text-red-400 font-medium">
+            <span className="flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400 font-medium">
               <AlertTriangle className="h-3 w-3" />
               çakışma
             </span>
@@ -329,7 +329,7 @@ export function WeeklySchedule({
                             }}
                             className={`absolute left-0.5 right-0.5 rounded-lg overflow-hidden cursor-default transition-shadow ${
                               isConflict
-                                ? "ring-1 ring-red-400/60 shadow-[0_0_8px_-2px_rgba(248,113,113,0.3)]"
+                                ? "ring-1 ring-red-500/60 dark:ring-red-400/60 shadow-[0_0_8px_-2px_rgba(248,113,113,0.3)]"
                                 : ""
                             } ${isHovered ? "shadow-lg" : ""}`}
                             style={{
@@ -377,7 +377,7 @@ export function WeeklySchedule({
                             </div>
                             {isConflict && (
                               <div className="absolute top-0.5 right-0.5">
-                                <AlertTriangle className="h-2.5 w-2.5 text-red-400" />
+                                <AlertTriangle className="h-2.5 w-2.5 text-red-600 dark:text-red-400" />
                               </div>
                             )}
                           </m.div>

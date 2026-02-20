@@ -2,7 +2,15 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { m, AnimatePresence } from "motion/react";
-import { Play, Square, Gauge, Zap, Volume2, VolumeX, RotateCcw } from "lucide-react";
+import {
+  Play,
+  Square,
+  Gauge,
+  Zap,
+  Volume2,
+  VolumeX,
+  RotateCcw,
+} from "lucide-react";
 import { toast } from "sonner";
 import { UserButton, useUser } from "@clerk/nextjs";
 import { api, type CalibrationResult, type CourseInfo } from "@/lib/api";
@@ -109,11 +117,20 @@ function DashboardContent() {
       let loaded = false;
       try {
         const config = await api.getConfig();
-        if (config.ecrn_list?.length) { setCrnList(config.ecrn_list); loaded = true; }
-        if (config.scrn_list?.length) { setScrnList(config.scrn_list); loaded = true; }
-        if (config.kayit_saati) { setKayitSaati(config.kayit_saati); loaded = true; }
+        if (config.ecrn_list?.length) {
+          setCrnList(config.ecrn_list);
+          loaded = true;
+        }
+        if (config.scrn_list?.length) {
+          setScrnList(config.scrn_list);
+          loaded = true;
+        }
+        if (config.kayit_saati) {
+          setKayitSaati(config.kayit_saati);
+          loaded = true;
+        }
         if (config.max_deneme) setMaxDeneme(config.max_deneme);
-          setRetryAralik(Math.max(3, config.retry_aralik));
+        setRetryAralik(Math.max(3, config.retry_aralik));
         if (config.dry_run) setDryRun(config.dry_run);
         if (config.token_set) setTokenValid(true);
       } catch {
@@ -129,7 +146,7 @@ function DashboardContent() {
             if (cloud.scrn_list?.length) setScrnList(cloud.scrn_list);
             if (cloud.kayit_saati) setKayitSaati(cloud.kayit_saati);
             if (cloud.max_deneme) setMaxDeneme(cloud.max_deneme);
-              setRetryAralik(Math.max(3, cloud.retry_aralik));
+            setRetryAralik(Math.max(3, cloud.retry_aralik));
             if (cloud.dry_run) setDryRun(cloud.dry_run);
           }
         } catch {
@@ -367,7 +384,11 @@ function DashboardContent() {
 
     // Done/stuck state'den yeniden başlatıyorsak önce temizle
     if (ws.phase === "done" || ws.done) {
-      try { await api.resetRegistration(); } catch { /* temiz olabilir */ }
+      try {
+        await api.resetRegistration();
+      } catch {
+        /* temiz olabilir */
+      }
       ws.softReset();
     }
 
@@ -403,7 +424,11 @@ function DashboardContent() {
 
   // Reset — done state'den idle'a dön (logları koru)
   const handleReset = async () => {
-    try { await api.resetRegistration(); } catch { /* temiz olabilir */ }
+    try {
+      await api.resetRegistration();
+    } catch {
+      /* temiz olabilir */
+    }
     ws.softReset();
   };
 
@@ -466,7 +491,13 @@ function DashboardContent() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Ctrl+Enter → start registration
-      if (e.ctrlKey && e.key === "Enter" && !isRunning && token && crnList.length > 0) {
+      if (
+        e.ctrlKey &&
+        e.key === "Enter" &&
+        !isRunning &&
+        token &&
+        crnList.length > 0
+      ) {
         e.preventDefault();
         handleStart();
       }
@@ -511,7 +542,7 @@ function DashboardContent() {
                   initial={{ opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.8 }}
-                  className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-[10px] font-bold tracking-wider ring-1 ring-amber-500/20"
+                  className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-bold tracking-wider ring-1 ring-amber-500/20"
                 >
                   DRY RUN
                 </m.span>
@@ -565,9 +596,11 @@ function DashboardContent() {
           >
             <CountdownTimer
               targetTime={kayitSaati}
+              onTargetTimeChange={(t) => setKayitSaati(t)}
               countdown={ws.countdown}
               phase={ws.phase}
               dryRun={dryRun}
+              disabled={isRunning}
             />
 
             {/* Action buttons — inside hero card */}
@@ -639,14 +672,14 @@ function DashboardContent() {
         {/* ═══ 2-COLUMN LAYOUT: Config (left) + Monitor (right) ═══ */}
         <div className="flex flex-col lg:grid lg:grid-cols-12 gap-5 lg:gap-6">
           {/* ── Left Column: Yapılandırma ── */}
-          <div className="lg:col-span-5 space-y-5">
+          <div className="lg:col-span-6 space-y-5">
             <m.div
               className="flex items-center gap-2 px-1"
               initial={{ opacity: 0, x: -12 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ ...springIn, delay: 0.1 }}
             >
-              <div className="h-1 w-6 rounded-full bg-gradient-to-r from-amber-400 to-orange-400" />
+              <div className="h-1 w-6 rounded-full bg-gradient-to-r from-amber-500 dark:from-amber-400 to-orange-500 dark:to-orange-400" />
               <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                 Yapılandırma
               </span>
@@ -709,8 +742,6 @@ function DashboardContent() {
                 accent="oklch(0.7 0.18 30)"
               >
                 <SettingsPanel
-                  kayitSaati={kayitSaati}
-                  onKayitSaatiChange={setKayitSaati}
                   maxDeneme={maxDeneme}
                   onMaxDenemeChange={setMaxDeneme}
                   retryAralik={retryAralik}
@@ -721,48 +752,17 @@ function DashboardContent() {
                 />
               </SpotlightCard>
             </m.div>
-
-            {/* Presets */}
-            <m.div
-              initial={{ opacity: 0, y: 20, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ ...springIn, delay: 0.22 }}
-            >
-              <SpotlightCard
-                className="glass h-full"
-                spotlightColor="oklch(0.65 0.15 30 / 0.08)"
-                accent="oklch(0.65 0.18 50)"
-              >
-                <PresetManager
-                  currentConfig={{
-                    ecrn_list: crnList,
-                    scrn_list: scrnList,
-                    kayit_saati: kayitSaati,
-                    max_deneme: maxDeneme,
-                    retry_aralik: retryAralik,
-                  }}
-                  onLoadPreset={handleLoadPreset}
-                  courseLabels={Object.fromEntries(
-                    Object.entries(courseInfo).map(([crn, info]) => [
-                      crn,
-                      info.course_code,
-                    ]),
-                  )}
-                  disabled={isRunning}
-                />
-              </SpotlightCard>
-            </m.div>
           </div>
 
           {/* ── Right Column: İzleme ── */}
-          <div className="lg:col-span-7 space-y-5">
+          <div className="lg:col-span-6 space-y-5">
             <m.div
               className="flex items-center gap-2 px-1"
               initial={{ opacity: 0, x: -12 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ ...springIn, delay: 0.1 }}
             >
-              <div className="h-1 w-6 rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-400" />
+              <div className="h-1 w-6 rounded-full bg-gradient-to-r from-violet-500 dark:from-violet-400 to-fuchsia-500 dark:to-fuchsia-400" />
               <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                 İzleme
               </span>
@@ -799,6 +799,37 @@ function DashboardContent() {
                 accent="oklch(0.65 0.2 165)"
               >
                 <LiveLogs logs={ws.logs} onClear={ws.clearLogs} />
+              </SpotlightCard>
+            </m.div>
+
+            {/* Presets */}
+            <m.div
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ ...springIn, delay: 0.19 }}
+            >
+              <SpotlightCard
+                className="glass h-full"
+                spotlightColor="oklch(0.65 0.15 30 / 0.08)"
+                accent="oklch(0.65 0.18 50)"
+              >
+                <PresetManager
+                  currentConfig={{
+                    ecrn_list: crnList,
+                    scrn_list: scrnList,
+                    kayit_saati: kayitSaati,
+                    max_deneme: maxDeneme,
+                    retry_aralik: retryAralik,
+                  }}
+                  onLoadPreset={handleLoadPreset}
+                  courseLabels={Object.fromEntries(
+                    Object.entries(courseInfo).map(([crn, info]) => [
+                      crn,
+                      info.course_code,
+                    ]),
+                  )}
+                  disabled={isRunning}
+                />
               </SpotlightCard>
             </m.div>
           </div>

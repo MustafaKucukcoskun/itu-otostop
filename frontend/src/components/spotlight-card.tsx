@@ -34,7 +34,7 @@ export function SpotlightCard({
       onMouseMove={handleMouseMove}
       onMouseEnter={() => setOpacity(1)}
       onMouseLeave={() => setOpacity(0)}
-      className={`spotlight-card relative rounded-2xl overflow-hidden ${className}`}
+      className={`spotlight-card relative rounded-2xl ${className}`}
     >
       {/* Accent gradient top border */}
       {accent && (
@@ -48,7 +48,7 @@ export function SpotlightCard({
 
       {/* Mouse-tracking spotlight */}
       <div
-        className="pointer-events-none absolute inset-0 z-[1] transition-opacity duration-500"
+        className="pointer-events-none absolute inset-0 z-[1] transition-opacity duration-500 rounded-2xl overflow-hidden"
         style={{
           opacity,
           background: `radial-gradient(${spotlightSize}px circle at ${position.x}px ${position.y}px, ${spotlightColor}, transparent 70%)`,

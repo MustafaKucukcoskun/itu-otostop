@@ -32,7 +32,7 @@ export function PrivacyBanner() {
         >
           <div className="pointer-events-auto glass rounded-2xl ring-1 ring-border/20 shadow-2xl px-5 py-4 max-w-lg w-full flex items-start gap-3.5">
             <div className="h-9 w-9 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0 mt-0.5">
-              <ShieldCheck className="h-4.5 w-4.5 text-emerald-400" />
+              <ShieldCheck className="h-4.5 w-4.5 text-emerald-600 dark:text-emerald-400" />
             </div>
             <div className="flex-1 min-w-0 space-y-2">
               <p className="text-sm font-semibold">Gizlilik Bildirimi</p>
@@ -44,7 +44,7 @@ export function PrivacyBanner() {
               </p>
               <button
                 onClick={dismiss}
-                className="h-8 px-4 rounded-xl bg-emerald-500/15 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/25 transition-colors"
+                className="h-8 px-4 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-xs font-semibold hover:bg-emerald-500/25 transition-colors"
               >
                 Anladım
               </button>

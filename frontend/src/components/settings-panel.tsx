@@ -4,23 +4,12 @@ import { useState, useEffect } from "react";
 import { m } from "motion/react";
 import {
   Settings,
-  Clock,
   RefreshCcw,
   Hash,
   ChevronDown,
   FlaskConical,
-  Zap,
   RotateCcw,
 } from "lucide-react";
-
-// Common ITU registration times
-const QUICK_TIMES = [
-  { label: "09:30", value: "09:30:00" },
-  { label: "10:00", value: "10:00:00" },
-  { label: "13:00", value: "13:00:00" },
-  { label: "13:30", value: "13:30:00" },
-  { label: "14:00", value: "14:00:00" },
-];
 
 const DEFAULTS = {
   maxDeneme: 60,
@@ -29,8 +18,6 @@ const DEFAULTS = {
 } as const;
 
 interface SettingsPanelProps {
-  kayitSaati: string;
-  onKayitSaatiChange: (v: string) => void;
   maxDeneme: number;
   onMaxDenemeChange: (v: number) => void;
   retryAralik: number;
@@ -60,8 +47,6 @@ function FieldGroup({
 }
 
 export function SettingsPanel({
-  kayitSaati,
-  onKayitSaatiChange,
   maxDeneme,
   onMaxDenemeChange,
   retryAralik,
@@ -86,7 +71,7 @@ export function SettingsPanel({
       >
         <div className="flex items-center gap-2.5">
           <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
-            <Settings className="h-4 w-4 text-amber-400" />
+            <Settings className="h-4 w-4 text-amber-600 dark:text-amber-400" />
           </div>
           <h3 className="text-sm font-semibold">Ayarlar</h3>
         </div>
@@ -107,44 +92,6 @@ export function SettingsPanel({
       >
         <div className="px-5 pb-5 space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <FieldGroup icon={Clock} label="Kayıt Saati">
-              <input
-                type="time"
-                step="1"
-                value={kayitSaati}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  // Normalize HH:MM → HH:MM:00 for backend compat
-                  onKayitSaatiChange(v && v.length === 5 ? v + ":00" : v);
-                }}
-                disabled={disabled}
-                className={`w-full h-9 rounded-xl bg-background/60 ring-1 px-3 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 transition-shadow ${
-                  !kayitSaati
-                    ? "ring-amber-500/40 text-muted-foreground"
-                    : "ring-border/30"
-                }`}
-              />
-              {/* Quick time buttons */}
-              <div className="flex gap-1 flex-wrap">
-                {QUICK_TIMES.map((t) => (
-                  <button
-                    key={t.value}
-                    type="button"
-                    onClick={() => onKayitSaatiChange(t.value)}
-                    disabled={disabled}
-                    className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-medium transition-all disabled:opacity-40 ${
-                      kayitSaati === t.value
-                        ? "bg-primary/15 text-primary ring-1 ring-primary/30"
-                        : "bg-background/40 text-muted-foreground hover:bg-muted/50 ring-1 ring-border/20"
-                    }`}
-                  >
-                    <Zap className="h-2.5 w-2.5 inline mr-0.5 -mt-px" />
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-            </FieldGroup>
-
             <FieldGroup icon={Hash} label="Maks Deneme">
               <input
                 type="number"
@@ -197,7 +144,6 @@ export function SettingsPanel({
                 className="w-full h-9 rounded-xl bg-background/60 ring-1 ring-border/30 px-3 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 transition-shadow"
               />
             </FieldGroup>
-
           </div>
           <div className="flex items-center justify-between">
             <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
@@ -208,7 +154,6 @@ export function SettingsPanel({
               <button
                 type="button"
                 onClick={() => {
-                  onKayitSaatiChange("");
                   onMaxDenemeChange(DEFAULTS.maxDeneme);
                   onRetryAralikChange(DEFAULTS.retryAralik);
                   onDryRunChange(DEFAULTS.dryRun);
@@ -226,7 +171,7 @@ export function SettingsPanel({
           <div className="flex items-center justify-between py-3 px-3 rounded-xl bg-background/40 ring-1 ring-border/20">
             <div className="flex items-center gap-2.5">
               <div className="h-7 w-7 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                <FlaskConical className="h-3.5 w-3.5 text-amber-400" />
+                <FlaskConical className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
               </div>
               <div>
                 <p className="text-sm font-medium">Test Modu (Dry Run)</p>

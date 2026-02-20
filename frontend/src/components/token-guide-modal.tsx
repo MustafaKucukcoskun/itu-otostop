@@ -25,7 +25,7 @@ const STEPS = [
     detail:
       "Hangi sayfada olduğunun önemi yok, OBS'e giriş yapmış olman yeterli. Fotoğraftaki kırmızı kutular kullanıcı adı ve şifre alanlarını, yeşil kutu ise giriş butonunu gösteriyor.",
     icon: ExternalLink,
-    color: "text-blue-400 bg-blue-500/10",
+    color: "text-blue-600 dark:text-blue-400 bg-blue-500/10",
     image: "/guide/step1-obs-login.png",
   },
   {
@@ -34,7 +34,7 @@ const STEPS = [
     detail:
       'Mac kullanıyorsan Cmd+Option+I kısayolunu kullanabilirsin. Chrome, Firefox ve Edge\'de çalışır. Fotoğrafta "Network" sekmesinin yerini görebilirsin.',
     icon: MonitorSmartphone,
-    color: "text-purple-400 bg-purple-500/10",
+    color: "text-purple-600 dark:text-purple-400 bg-purple-500/10",
     image: "/guide/step2-devtools.png",
   },
   {
@@ -43,7 +43,7 @@ const STEPS = [
     detail:
       'Fotoğrafta kırmızı kutuyla işaretli filtre alanına "jwt" yazdığında, alttaki sonuç satırı görünecek. O satıra tıklaman gerekiyor. Liste boşsa sayfayı F5 ile yenileyi dene.',
     icon: Search,
-    color: "text-amber-400 bg-amber-500/10",
+    color: "text-amber-600 dark:text-amber-400 bg-amber-500/10",
     image: "/guide/step3a-jwt-filter.png",
   },
   {
@@ -52,7 +52,7 @@ const STEPS = [
     detail:
       "Fotoğraftaki kırmızı kutuyla işaretli Response sekmesine tıkla. Açılan token metnini Ctrl+A ile tümünü seç, ardından Ctrl+C ile kopyala.",
     icon: Copy,
-    color: "text-orange-400 bg-orange-500/10",
+    color: "text-orange-600 dark:text-orange-400 bg-orange-500/10",
     image: "/guide/step3b-response-copy.png",
   },
   {
@@ -61,7 +61,7 @@ const STEPS = [
     detail:
       '"Bearer " ön eki otomatik olarak kaldırılır. Yapıştırdıktan sonra "Token Test Et" butonuyla doğruluğunu kontrol edebilirsin.',
     icon: ClipboardPaste,
-    color: "text-cyan-400 bg-cyan-500/10",
+    color: "text-cyan-600 dark:text-cyan-400 bg-cyan-500/10",
     image: "/guide/step4-paste-token.png",
   },
 ];
@@ -103,7 +103,7 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 dark:bg-black/50 backdrop-blur-sm"
             onClick={onClose}
           >
             <m.div
@@ -112,7 +112,7 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
               exit={{ scale: 0.92, opacity: 0, y: 12 }}
               transition={{ type: "spring", damping: 26, stiffness: 300 }}
               onClick={(e) => e.stopPropagation()}
-              className="glass rounded-2xl ring-1 ring-border/20 shadow-2xl mx-4 max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col"
+              className="bg-card rounded-2xl ring-1 ring-border shadow-2xl mx-4 max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col"
             >
               {/* Header */}
               <div className="flex items-center justify-between px-5 pt-5 pb-2 shrink-0">
@@ -139,7 +139,7 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
                         ? "bg-primary"
                         : i < step
                           ? "bg-primary/30"
-                          : "bg-border/20"
+                          : "bg-muted"
                     }`}
                   />
                 ))}
@@ -202,7 +202,7 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
                     )}
 
                     {/* Tip */}
-                    <div className="bg-muted/20 rounded-xl p-3.5 text-xs text-muted-foreground/70 leading-relaxed">
+                    <div className="bg-muted/50 dark:bg-muted/20 rounded-xl p-3.5 text-xs text-muted-foreground leading-relaxed">
                       💡 {current.detail}
                     </div>
                   </m.div>
@@ -230,7 +230,7 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
                 ) : (
                   <button
                     onClick={onClose}
-                    className="h-9 px-4 rounded-xl bg-emerald-500/15 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/25 transition-colors"
+                    className="h-9 px-4 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-xs font-semibold hover:bg-emerald-500/25 transition-colors"
                   >
                     Anladım, Kapat
                   </button>

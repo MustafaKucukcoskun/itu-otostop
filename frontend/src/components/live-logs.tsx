@@ -12,14 +12,14 @@ interface LiveLogsProps {
 
 const levelColors: Record<string, string> = {
   info: "text-foreground",
-  warning: "text-yellow-400",
-  error: "text-red-400",
+  warning: "text-amber-600 dark:text-yellow-400",
+  error: "text-red-600 dark:text-red-400",
 };
 
 const levelDots: Record<string, string> = {
-  info: "bg-blue-400",
-  warning: "bg-yellow-400",
-  error: "bg-red-400",
+  info: "bg-blue-500 dark:bg-blue-400",
+  warning: "bg-amber-500 dark:bg-yellow-400",
+  error: "bg-red-500 dark:bg-red-400",
 };
 
 export function LiveLogs({ logs, onClear }: LiveLogsProps) {
@@ -36,8 +36,8 @@ export function LiveLogs({ logs, onClear }: LiveLogsProps) {
       {/* header */}
       <div className="flex items-center justify-between px-5 pt-5 pb-3">
         <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-            <Terminal className="h-4 w-4 text-emerald-400" />
+          <div className="h-8 w-8 rounded-lg bg-emerald-500/10 dark:bg-emerald-500/10 flex items-center justify-center">
+            <Terminal className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
           </div>
           <h3 className="text-sm font-semibold">Canlı Log</h3>
           {logs.length > 0 && (

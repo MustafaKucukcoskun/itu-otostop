@@ -47,41 +47,57 @@
   --radius-4xl: calc(var(--radius) + 16px);
 }
 
+/* ──────────────────────────────────────────────────────
+   LIGHT THEME — Warm Sand + Deep Teal
+   Unique palette: ivory-sand backgrounds, slate-ink text,
+   teal-petrol primary, warm stone borders
+   ────────────────────────────────────────────────────── */
 :root {
   --radius: 0.75rem;
-  --background: oklch(0.98 0.005 240);
-  --foreground: oklch(0.15 0.015 260);
-  --card: oklch(0.97 0.005 240);
-  --card-foreground: oklch(0.15 0.015 260);
-  --popover: oklch(0.98 0.005 240);
-  --popover-foreground: oklch(0.15 0.015 260);
-  --primary: oklch(0.55 0.2 195);
+  /* Backgrounds: warm ivory with subtle sand undertone */
+  --background: oklch(0.975 0.008 75);
+  --foreground: oklch(0.18 0.02 260);
+  --card: oklch(0.965 0.006 70);
+  --card-foreground: oklch(0.18 0.02 260);
+  --popover: oklch(0.97 0.007 75);
+  --popover-foreground: oklch(0.18 0.02 260);
+  /* Primary: deep teal-petrol — distinctive, not generic blue/cyan */
+  --primary: oklch(0.45 0.12 195);
   --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.94 0.01 240);
-  --secondary-foreground: oklch(0.25 0.015 260);
-  --muted: oklch(0.94 0.01 240);
-  --muted-foreground: oklch(0.5 0.02 260);
-  --accent: oklch(0.55 0.2 195);
+  /* Secondary: warm stone */
+  --secondary: oklch(0.92 0.012 70);
+  --secondary-foreground: oklch(0.3 0.02 260);
+  /* Muted: visible warm gray */
+  --muted: oklch(0.93 0.01 75);
+  --muted-foreground: oklch(0.45 0.02 260);
+  /* Accent: same teal family */
+  --accent: oklch(0.45 0.12 195);
   --accent-foreground: oklch(0.98 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.88 0.01 240);
-  --input: oklch(0.88 0.01 240);
-  --ring: oklch(0.55 0.2 195);
-  --chart-1: oklch(0.55 0.2 195);
-  --chart-2: oklch(0.65 0.18 165);
-  --chart-3: oklch(0.5 0.15 280);
-  --chart-4: oklch(0.7 0.15 80);
-  --chart-5: oklch(0.6 0.2 30);
-  --sidebar: oklch(0.96 0.005 240);
-  --sidebar-foreground: oklch(0.15 0.015 260);
-  --sidebar-primary: oklch(0.55 0.2 195);
+  --destructive: oklch(0.5 0.22 25);
+  /* Borders: clearly visible warm stone */
+  --border: oklch(0.85 0.015 70);
+  --input: oklch(0.87 0.012 70);
+  --ring: oklch(0.45 0.12 195);
+  /* Charts */
+  --chart-1: oklch(0.45 0.12 195);
+  --chart-2: oklch(0.5 0.14 155);
+  --chart-3: oklch(0.45 0.12 280);
+  --chart-4: oklch(0.55 0.14 80);
+  --chart-5: oklch(0.5 0.18 25);
+  /* Sidebar */
+  --sidebar: oklch(0.955 0.008 70);
+  --sidebar-foreground: oklch(0.18 0.02 260);
+  --sidebar-primary: oklch(0.45 0.12 195);
   --sidebar-primary-foreground: oklch(0.98 0 0);
-  --sidebar-accent: oklch(0.94 0.01 240);
-  --sidebar-accent-foreground: oklch(0.25 0.015 260);
-  --sidebar-border: oklch(0.88 0.01 240);
-  --sidebar-ring: oklch(0.55 0.2 195);
+  --sidebar-accent: oklch(0.92 0.012 70);
+  --sidebar-accent-foreground: oklch(0.3 0.02 260);
+  --sidebar-border: oklch(0.85 0.015 70);
+  --sidebar-ring: oklch(0.45 0.12 195);
 }
 
+/* ──────────────────────────────────────────────────────
+   DARK THEME — Deep Ocean (unchanged)
+   ────────────────────────────────────────────────────── */
 .dark {
   --background: oklch(0.11 0.015 260);
   --foreground: oklch(0.93 0.01 240);
@@ -158,11 +174,14 @@
   }
 }
 
-/* Glass panel */
+/* ──────────────────────────────────────────────────────
+   Glass panel — light uses solid white-alpha + dark border
+   ────────────────────────────────────────────────────── */
 .glass {
-  background: oklch(1 0 0 / 3%);
-  backdrop-filter: blur(20px) saturate(1.3);
-  border: 1px solid oklch(1 0 0 / 5%);
+  background: oklch(1 0 0 / 55%);
+  backdrop-filter: blur(20px) saturate(1.2);
+  border: 1px solid oklch(0 0 0 / 8%);
+  box-shadow: 0 1px 3px oklch(0 0 0 / 4%);
   transition:
     border-color 0.3s,
     box-shadow 0.3s;
@@ -170,23 +189,36 @@
 .dark .glass {
   background: oklch(1 0 0 / 4%);
   border-color: oklch(1 0 0 / 7%);
+  box-shadow: none;
 }
 
 /* Spotlight card hover lift */
 .spotlight-card.glass:hover {
-  border-color: oklch(1 0 0 / 12%);
-  box-shadow: 0 8px 32px oklch(0 0 0 / 8%);
+  border-color: oklch(0 0 0 / 14%);
+  box-shadow:
+    0 4px 16px oklch(0 0 0 / 6%),
+    0 1px 4px oklch(0 0 0 / 4%);
 }
 .dark .spotlight-card.glass:hover {
   border-color: oklch(1 0 0 / 14%);
   box-shadow: 0 8px 40px oklch(0 0 0 / 30%);
 }
 
-/* Glow */
+/* ──────────────────────────────────────────────────────
+   Glow effects — light uses tighter, subtler glow
+   ────────────────────────────────────────────────────── */
 .glow-sm {
+  box-shadow: 0 0 12px oklch(0.45 0.12 195 / 10%);
+}
+.dark .glow-sm {
   box-shadow: 0 0 15px oklch(0.7 0.18 195 / 12%);
 }
 .glow-md {
+  box-shadow:
+    0 0 20px oklch(0.45 0.12 195 / 12%),
+    0 0 40px oklch(0.45 0.12 195 / 4%);
+}
+.dark .glow-md {
   box-shadow:
     0 0 30px oklch(0.7 0.18 195 / 18%),
     0 0 60px oklch(0.7 0.18 195 / 6%);
@@ -195,13 +227,13 @@
 /* Pulse ring */
 @keyframes pulse-ring {
   0% {
-    box-shadow: 0 0 0 0 oklch(0.7 0.18 195 / 40%);
+    box-shadow: 0 0 0 0 oklch(0.45 0.12 195 / 30%);
   }
   70% {
-    box-shadow: 0 0 0 8px oklch(0.7 0.18 195 / 0%);
+    box-shadow: 0 0 0 8px oklch(0.45 0.12 195 / 0%);
   }
   100% {
-    box-shadow: 0 0 0 0 oklch(0.7 0.18 195 / 0%);
+    box-shadow: 0 0 0 0 oklch(0.45 0.12 195 / 0%);
   }
 }
 .pulse-ring {
@@ -218,6 +250,16 @@
   }
 }
 .shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 25%,
+    oklch(0 0 0 / 4%) 50%,
+    transparent 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+}
+.dark .shimmer {
   background: linear-gradient(
     90deg,
     transparent 25%,
@@ -265,7 +307,9 @@
   }
 }
 
-/* Mesh gradient bg — richer with animated orbs */
+/* ──────────────────────────────────────────────────────
+   Mesh gradient bg — light uses warm tones, dark uses cool
+   ────────────────────────────────────────────────────── */
 .mesh-bg {
   background-color: var(--background);
   position: relative;
@@ -279,12 +323,13 @@
   filter: blur(80px);
   z-index: 0;
 }
+/* Light: subtle warm teal + lavender orbs */
 .mesh-bg::before {
   width: 600px;
   height: 600px;
   top: -10%;
   left: -5%;
-  background: oklch(0.55 0.2 195 / 8%);
+  background: oklch(0.45 0.12 195 / 5%);
   animation: float-slow 25s ease-in-out infinite;
 }
 .mesh-bg::after {
@@ -292,9 +337,10 @@
   height: 500px;
   bottom: -5%;
   right: -5%;
-  background: oklch(0.55 0.15 280 / 6%);
+  background: oklch(0.5 0.1 280 / 4%);
   animation: float-slower 30s ease-in-out infinite;
 }
+/* Dark: brighter, more vivid orbs */
 .dark .mesh-bg::before {
   background: oklch(0.7 0.18 195 / 10%);
 }
@@ -313,18 +359,20 @@
   z-index: 0;
   top: 40%;
   right: 20%;
-  background: oklch(0.6 0.15 30 / 4%);
+  background: oklch(0.55 0.1 35 / 3%);
   animation: float-slow 35s ease-in-out infinite reverse;
 }
 .dark .mesh-orb-accent {
   background: oklch(0.65 0.18 30 / 6%);
 }
 
-/* Dot grid pattern */
+/* ──────────────────────────────────────────────────────
+   Dot grid pattern — visible in both themes
+   ────────────────────────────────────────────────────── */
 .dot-grid {
   background-image: radial-gradient(
     circle,
-    oklch(0.5 0 0 / 6%) 1px,
+    oklch(0.35 0.02 260 / 8%) 1px,
     transparent 1px
   );
   background-size: 28px 28px;
@@ -343,14 +391,32 @@
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.03;
+  opacity: 0.025;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-repeat: repeat;
   background-size: 256px 256px;
 }
+.dark .grain-overlay {
+  opacity: 0.03;
+}
 
-/* Gradient text utility */
+/* ──────────────────────────────────────────────────────
+   Gradient text — light uses deeper tones for readability
+   ────────────────────────────────────────────────────── */
 .text-gradient-primary {
+  background: linear-gradient(
+    135deg,
+    oklch(0.4 0.12 195),
+    oklch(0.35 0.14 250),
+    oklch(0.4 0.12 195)
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  background-size: 200% 200%;
+  animation: border-flow 6s ease infinite;
+}
+.dark .text-gradient-primary {
   background: linear-gradient(
     135deg,
     oklch(0.7 0.18 195),
@@ -370,12 +436,20 @@
   background: linear-gradient(
     90deg,
     transparent,
+    oklch(0 0 0 / 8%),
+    transparent
+  );
+}
+.dark .section-line {
+  background: linear-gradient(
+    90deg,
+    transparent,
     oklch(1 0 0 / 10%),
     transparent
   );
 }
 
-/* Log entry slide-in animation (replaces AnimatePresence per-log) */
+/* Log entry slide-in animation */
 @keyframes log-enter {
   from {
     opacity: 0;
