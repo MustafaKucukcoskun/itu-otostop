@@ -30,6 +30,12 @@ export function CountdownTimer({
   const [currentTime, setCurrentTime] = useState("");
   const [localCountdown, setLocalCountdown] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Prevent time editor flash during initial hydration
+  useEffect(() => {
+    setMounted(true); // eslint-disable-line react-hooks/set-state-in-effect -- one-time mount flag
+  }, []);
 
   const hasTarget = !!targetTime && /^\d{2}:\d{2}/.test(targetTime);
 
@@ -87,8 +93,9 @@ export function CountdownTimer({
   const isRegistering = phase === "registering";
   const isDone = phase === "done";
 
-  // Show time editor when: idle AND (no target yet OR user clicked edit)
-  const showTimeEditor = isIdle && (!hasTarget || editing) && !disabled;
+  // Show time editor when: mounted AND idle AND (no target yet OR user clicked edit)
+  const showTimeEditor =
+    mounted && isIdle && (!hasTarget || editing) && !disabled;
 
   const phaseLabel = isActive
     ? "Kayıt saatine kalan"
