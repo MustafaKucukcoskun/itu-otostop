@@ -149,12 +149,49 @@ function stdDev(values: number[]): number {
   return Math.sqrt(sq.reduce((a, b) => a + b, 0) / values.length);
 }
 
+/** Kalite seviyesi renkleri */
+const QUALITY = {
+  excellent: {
+    label: "Mükemmel",
+    class: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10",
+  },
+  good: {
+    label: "İyi",
+    class: "text-blue-600 dark:text-blue-400 bg-blue-500/10",
+  },
+  normal: {
+    label: "Normal",
+    class: "text-amber-600 dark:text-amber-400 bg-amber-500/10",
+  },
+  poor: {
+    label: "Yüksek",
+    class: "text-red-600 dark:text-red-400 bg-red-500/10",
+  },
+} as const;
+
+type QualityLevel = keyof typeof QUALITY;
+
+function rttQuality(ms: number): QualityLevel {
+  if (ms < 30) return "excellent";
+  if (ms < 80) return "good";
+  if (ms < 200) return "normal";
+  return "poor";
+}
+
+function accuracyQuality(ms: number): QualityLevel {
+  if (ms < 5) return "excellent";
+  if (ms < 15) return "good";
+  if (ms < 40) return "normal";
+  return "poor";
+}
+
 function Metric({
   icon: Icon,
   label,
   value,
   unit,
   color,
+  quality,
   delay = 0,
 }: {
   icon: React.ElementType;
@@ -162,6 +199,7 @@ function Metric({
   value: string;
   unit: string;
   color: string;
+  quality?: QualityLevel;
   delay?: number;
 }) {
   return (
@@ -179,9 +217,18 @@ function Metric({
         </div>
         <span className="text-[13px] text-muted-foreground">{label}</span>
       </div>
-      <div className="flex items-baseline gap-1">
-        <span className="font-mono font-semibold text-sm">{value}</span>
-        <span className="text-[10px] text-muted-foreground">{unit}</span>
+      <div className="flex items-center gap-2">
+        {quality && (
+          <span
+            className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${QUALITY[quality].class}`}
+          >
+            {QUALITY[quality].label}
+          </span>
+        )}
+        <div className="flex items-baseline gap-1">
+          <span className="font-mono font-semibold text-sm">{value}</span>
+          <span className="text-[10px] text-muted-foreground">{unit}</span>
+        </div>
       </div>
     </m.div>
   );
@@ -300,6 +347,11 @@ export function CalibrationCard({
                 value={calibration.rtt_full_ms?.toFixed(0) || "—"}
                 unit="ms"
                 color="text-emerald-400"
+                quality={
+                  calibration.rtt_full_ms != null
+                    ? rttQuality(calibration.rtt_full_ms)
+                    : undefined
+                }
                 delay={0.05}
               />
               <Metric
@@ -308,6 +360,11 @@ export function CalibrationCard({
                 value={calibration.rtt_one_way_ms?.toFixed(1) || "—"}
                 unit="ms"
                 color="text-teal-400"
+                quality={
+                  calibration.rtt_one_way_ms != null
+                    ? rttQuality(calibration.rtt_one_way_ms)
+                    : undefined
+                }
                 delay={0.1}
               />
               <Metric
@@ -332,6 +389,11 @@ export function CalibrationCard({
                 value={`±${calibration.accuracy_ms?.toFixed(1)}`}
                 unit="ms"
                 color="text-violet-400"
+                quality={
+                  calibration.accuracy_ms != null
+                    ? accuracyQuality(calibration.accuracy_ms)
+                    : undefined
+                }
                 delay={0.25}
               />
             </div>

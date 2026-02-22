@@ -139,6 +139,9 @@
   body {
     @apply bg-background text-foreground;
   }
+  .font-mono {
+    font-variant-numeric: tabular-nums slashed-zero;
+  }
 }
 
 /* Custom scrollbar */

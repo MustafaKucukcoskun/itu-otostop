@@ -93,6 +93,14 @@ export function CountdownTimer({
   const isRegistering = phase === "registering";
   const isDone = phase === "done";
 
+  // Last 5 seconds of waiting phase — dramatic effect
+  const isLastFive =
+    isActive &&
+    localCountdown !== null &&
+    localCountdown > 0 &&
+    localCountdown <= 5;
+  const urgencyScale = isLastFive ? 1 + (1 - localCountdown / 5) * 0.15 : 1; // 1.0 → 1.15
+
   // Show time editor when: mounted AND idle AND (no target yet OR user clicked edit)
   const showTimeEditor =
     mounted && isIdle && (!hasTarget || editing) && !disabled;
@@ -147,7 +155,20 @@ export function CountdownTimer({
               "radial-gradient(ellipse at center, oklch(0.70 0.20 30 / 12%), transparent 70%)",
           }}
           animate={{ opacity: [0.2, 0.5, 0.2], scale: [1, 1.05, 1] }}
-          transition={{ duration: 1.5, repeat: Infinity }}
+          transition={{ duration: isLastFive ? 0.5 : 1.5, repeat: Infinity }}
+        />
+      )}
+
+      {/* Last 5 seconds urgency glow */}
+      {isLastFive && (
+        <m.div
+          className="absolute inset-0 rounded-2xl"
+          style={{
+            background:
+              "radial-gradient(ellipse at center, oklch(0.65 0.22 30 / 15%), transparent 60%)",
+          }}
+          animate={{ opacity: [0.3, 0.7, 0.3] }}
+          transition={{ duration: 0.4, repeat: Infinity }}
         />
       )}
 
@@ -189,20 +210,30 @@ export function CountdownTimer({
         <m.div
           key={`${phase}-${isIdle ? "live" : displayTime.length > 12 ? "text" : "num"}`}
           initial={{ opacity: 0, scale: 0.9, filter: "blur(8px)" }}
-          animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-          transition={{ type: "spring", stiffness: 200, damping: 20 }}
+          animate={{
+            opacity: 1,
+            scale: urgencyScale,
+            filter: "blur(0px)",
+          }}
+          transition={
+            isLastFive
+              ? { type: "tween", duration: 0.15 }
+              : { type: "spring", stiffness: 200, damping: 20 }
+          }
           className={`font-mono font-black tracking-[0.06em] leading-none ${
             isRegistering
               ? "text-4xl sm:text-5xl bg-gradient-to-r from-orange-400 to-amber-300 bg-clip-text text-transparent"
               : isDone
                 ? "text-4xl sm:text-5xl bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent"
-                : isActive
-                  ? "text-6xl sm:text-7xl text-gradient-primary"
-                  : isIdle && !hasTarget
-                    ? "text-5xl sm:text-6xl text-foreground/70"
-                    : isIdle && hasTarget
-                      ? "text-5xl sm:text-6xl text-gradient-primary"
-                      : "text-5xl sm:text-6xl text-muted-foreground/40"
+                : isLastFive
+                  ? "text-6xl sm:text-7xl bg-gradient-to-r from-red-400 to-orange-400 bg-clip-text text-transparent"
+                  : isActive
+                    ? "text-6xl sm:text-7xl text-gradient-primary"
+                    : isIdle && !hasTarget
+                      ? "text-5xl sm:text-6xl text-foreground/70"
+                      : isIdle && hasTarget
+                        ? "text-5xl sm:text-6xl text-gradient-primary"
+                        : "text-5xl sm:text-6xl text-muted-foreground/40"
           }`}
         >
           {isIdle

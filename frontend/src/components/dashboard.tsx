@@ -28,6 +28,7 @@ import { ConnectionStatus } from "@/components/connection-status";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { WeeklySchedule } from "@/components/weekly-schedule";
 import { SpotlightCard } from "@/components/spotlight-card";
+import { SuccessOverlay } from "@/components/success-overlay";
 
 // ── Wrapper: kullanıcı değiştiğinde key ile tam remount sağlar ──
 // Bu, tüm useState/useEffect/useRef'leri sıfırdan başlatır.
@@ -86,6 +87,12 @@ function DashboardContent() {
     ws.phase === "registering";
 
   const isDone = ws.phase === "done";
+
+  // Success overlay: auto-show on done, user can dismiss
+  const [successDismissed, setSuccessDismissed] = useState(false);
+  useEffect(() => {
+    if (isDone) setSuccessDismissed(false);
+  }, [isDone]);
 
   // Guard: auto-save'in config load bitmeden cloud'u ezmesini engelle
   const initialLoadDone = useRef(false);
@@ -511,6 +518,46 @@ function DashboardContent() {
     return () => window.removeEventListener("keydown", handler);
   }, [isRunning, token, crnList.length]); // eslint-disable-line react-hooks/exhaustive-deps -- handlers use latest state via closure
 
+  // Dynamic page title based on engine phase
+  useEffect(() => {
+    const base = "İTÜ Otostop";
+    switch (ws.phase) {
+      case "token_check":
+        document.title = `🔑 Token kontrol — ${base}`;
+        break;
+      case "calibrating":
+        document.title = `📡 Kalibrasyon... — ${base}`;
+        break;
+      case "waiting": {
+        if (ws.countdown !== null && ws.countdown > 0) {
+          const total = Math.max(0, ws.countdown);
+          const h = Math.floor(total / 3600);
+          const m = Math.floor((total % 3600) / 60);
+          const s = Math.floor(total % 60);
+          const timeStr =
+            h > 0
+              ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+              : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+          document.title = `⏳ ${timeStr} — ${base}`;
+        } else {
+          document.title = `⏳ Bekleniyor... — ${base}`;
+        }
+        break;
+      }
+      case "registering":
+        document.title = `⚡ KAYIT YAPILIYOR — ${base}`;
+        break;
+      case "done":
+        document.title = `✅ TAMAMLANDI — ${base}`;
+        break;
+      default:
+        document.title = base;
+    }
+    return () => {
+      document.title = "İTÜ Otostop";
+    };
+  }, [ws.phase, ws.countdown]);
+
   // Staggered entrance spring config
   const springIn = { type: "spring" as const, stiffness: 300, damping: 30 };
 
@@ -879,6 +926,19 @@ function DashboardContent() {
           </div>
         </div>
       </footer>
+
+      {/* Success overlay with confetti */}
+      <SuccessOverlay
+        show={isDone && !successDismissed}
+        results={Object.entries(ws.crnResults).map(([crn, r]) => ({
+          crn,
+          status: r.status,
+          label: courseInfo[crn]?.course_name
+            ? `${crn} — ${courseInfo[crn].course_name}`
+            : crn,
+        }))}
+        onDismiss={() => setSuccessDismissed(true)}
+      />
     </div>
   );
 }

@@ -22,6 +22,12 @@ const levelDots: Record<string, string> = {
   error: "bg-red-500 dark:bg-red-400",
 };
 
+const levelBg: Record<string, string> = {
+  info: "",
+  warning: "bg-amber-500/5 dark:bg-yellow-500/5",
+  error: "bg-red-500/8 dark:bg-red-500/8",
+};
+
 export function LiveLogs({ logs, onClear }: LiveLogsProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -77,7 +83,7 @@ export function LiveLogs({ logs, onClear }: LiveLogsProps) {
             logs.map((log) => (
               <div
                 key={log.id}
-                className={`log-entry flex items-start gap-2 py-0.5 ${levelColors[log.level]}`}
+                className={`log-entry flex items-start gap-2 py-0.5 px-1.5 -mx-1.5 rounded-md ${levelColors[log.level]} ${levelBg[log.level]}`}
               >
                 <span
                   className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${levelDots[log.level]}`}
