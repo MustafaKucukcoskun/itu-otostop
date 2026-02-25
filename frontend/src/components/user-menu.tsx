@@ -1,0 +1,147 @@
+"use client";
+
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useUser, useClerk } from "@clerk/nextjs";
+import { m, AnimatePresence } from "motion/react";
+import { Settings, LogOut, ChevronDown } from "lucide-react";
+import Image from "next/image";
+
+export function UserMenu() {
+  const { user } = useUser();
+  const { signOut, openUserProfile } = useClerk();
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  const handleManageAccount = useCallback(() => {
+    setOpen(false);
+    openUserProfile();
+  }, [openUserProfile]);
+
+  const handleSignOut = useCallback(() => {
+    setOpen(false);
+    signOut();
+  }, [signOut]);
+
+  if (!user) return null;
+
+  const initials =
+    ((user.firstName?.[0] ?? "") + (user.lastName?.[0] ?? "")).toUpperCase() ||
+    user.emailAddresses?.[0]?.emailAddress?.[0]?.toUpperCase() ||
+    "?";
+
+  const displayName =
+    user.fullName ||
+    user.emailAddresses?.[0]?.emailAddress?.split("@")[0] ||
+    "Kullanıcı";
+
+  const email = user.primaryEmailAddress?.emailAddress || "";
+
+  return (
+    <div className="relative" ref={menuRef}>
+      {/* Trigger */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 rounded-xl px-1 py-1 transition-all duration-200 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        aria-expanded={open}
+        aria-haspopup="true"
+      >
+        {user.imageUrl ? (
+          <Image
+            src={user.imageUrl}
+            alt={displayName}
+            width={32}
+            height={32}
+            className="h-8 w-8 rounded-lg object-cover ring-1 ring-border/30"
+          />
+        ) : (
+          <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-xs font-bold ring-1 ring-primary/20">
+            {initials}
+          </div>
+        )}
+        <ChevronDown
+          className={`h-3 w-3 text-muted-foreground transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {/* Dropdown */}
+      <AnimatePresence>
+        {open && (
+          <m.div
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="absolute right-0 top-full mt-2 w-64 origin-top-right rounded-xl glass border border-border/40 shadow-xl z-[200]"
+          >
+            {/* User Info Section */}
+            <div className="p-3 border-b border-border/20">
+              <div className="flex items-center gap-3">
+                {user.imageUrl ? (
+                  <Image
+                    src={user.imageUrl}
+                    alt={displayName}
+                    width={40}
+                    height={40}
+                    className="h-10 w-10 rounded-lg object-cover ring-1 ring-border/30"
+                  />
+                ) : (
+                  <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-sm font-bold ring-1 ring-primary/20">
+                    {initials}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-foreground truncate">
+                    {displayName}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {email}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="p-1.5">
+              <button
+                onClick={handleManageAccount}
+                className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-muted/50 transition-colors duration-150"
+              >
+                <Settings className="h-4 w-4 text-muted-foreground" />
+                Hesabı Yönet
+              </button>
+
+              <div className="my-1 h-px bg-border/15" />
+
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-red-600 dark:text-red-400 hover:bg-red-500/8 transition-colors duration-150"
+              >
+                <LogOut className="h-4 w-4" />
+                Çıkış Yap
+              </button>
+            </div>
+          </m.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

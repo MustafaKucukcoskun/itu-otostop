@@ -11,7 +11,7 @@ const QUICK_TIMES = [
 ];
 
 interface CountdownTimerProps {
-  targetTime: string;
+  targetTime: string | null;
   onTargetTimeChange: (v: string) => void;
   countdown: number | null;
   phase: string;
@@ -37,6 +37,8 @@ export function CountdownTimer({
     setMounted(true); // eslint-disable-line react-hooks/set-state-in-effect -- one-time mount flag
   }, []);
 
+  // null = config not loaded yet, "" = no time set, "HH:MM:SS" = time set
+  const configLoaded = targetTime !== null;
   const hasTarget = !!targetTime && /^\d{2}:\d{2}/.test(targetTime);
 
   // Live clock — updates every 100ms
@@ -75,7 +77,7 @@ export function CountdownTimer({
       if (phase === "registering") return "KAYIT YAPILIYOR";
       if (phase === "done") return "TAMAMLANDI";
       if (phase === "idle") return ""; // idle = live clock shown separately
-      return targetTime || "--:--:--";
+      return targetTime ?? "--:--:--";
     }
     const total = Math.max(0, localCountdown);
     const h = Math.floor(total / 3600);
@@ -101,9 +103,10 @@ export function CountdownTimer({
     localCountdown <= 5;
   const urgencyScale = isLastFive ? 1 + (1 - localCountdown / 5) * 0.15 : 1; // 1.0 → 1.15
 
-  // Show time editor when: mounted AND idle AND (no target yet OR user clicked edit)
+  // Show time editor when: config loaded AND mounted AND idle AND (no target yet OR user clicked edit)
+  // configLoaded check prevents editor flash: null means "config hasn't arrived yet"
   const showTimeEditor =
-    mounted && isIdle && (!hasTarget || editing) && !disabled;
+    configLoaded && mounted && isIdle && (!hasTarget || editing) && !disabled;
 
   const phaseLabel = isActive
     ? "Kayıt saatine kalan"
@@ -111,9 +114,11 @@ export function CountdownTimer({
       ? "Kayıt devam ediyor"
       : isDone
         ? "Tamamlandı"
-        : hasTarget
-          ? "Hazır"
-          : "Kayıt Saatini Ayarla";
+        : !configLoaded
+          ? "Yükleniyor..."
+          : hasTarget
+            ? "Hazır"
+            : "Kayıt Saatini Ayarla";
 
   const handleTimeChange = (v: string) => {
     // Normalize HH:MM → HH:MM:00 for backend compat
