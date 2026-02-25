@@ -12,7 +12,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
-import { UserButton, useUser } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import { api, type CalibrationResult, type CourseInfo } from "@/lib/api";
 import { ConfigService } from "@/lib/config-service";
 import { useWebSocket } from "@/hooks/use-websocket";
@@ -29,6 +29,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { WeeklySchedule } from "@/components/weekly-schedule";
 import { SpotlightCard } from "@/components/spotlight-card";
 import { SuccessOverlay } from "@/components/success-overlay";
+import { UserMenu } from "@/components/user-menu";
+import { DashboardSkeleton } from "@/components/dashboard-skeleton";
 
 // ── Wrapper: kullanıcı değiştiğinde key ile tam remount sağlar ──
 // Bu, tüm useState/useEffect/useRef'leri sıfırdan başlatır.
@@ -58,7 +60,7 @@ function DashboardContent() {
   const [tokenChanged, setTokenChanged] = useState(false);
   const [crnList, setCrnList] = useState<string[]>([]);
   const [scrnList, setScrnList] = useState<string[]>([]);
-  const [kayitSaati, setKayitSaati] = useState("");
+  const [kayitSaati, setKayitSaati] = useState<string | null>(null);
   const [maxDeneme, setMaxDeneme] = useState(60);
   const [retryAralik, setRetryAralik] = useState(3.0);
   const [dryRun, setDryRun] = useState(false);
@@ -96,6 +98,25 @@ function DashboardContent() {
 
   // Guard: auto-save'in config load bitmeden cloud'u ezmesini engelle
   const initialLoadDone = useRef(false);
+  const configReadyRef = useRef(false);
+  const [configReady, setConfigReady] = useState(false);
+
+  // Delayed skeleton: only show after 300ms, then keep for min 1 shimmer cycle
+  const [showSkeleton, setShowSkeleton] = useState(false);
+  const [minSkeletonDone, setMinSkeletonDone] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!configReadyRef.current) setShowSkeleton(true);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!showSkeleton) return;
+    const timer = setTimeout(() => setMinSkeletonDone(true), 1800);
+    return () => clearTimeout(timer);
+  }, [showSkeleton]);
 
   // Kullanıcı değişiminde localStorage temizliği (defense-in-depth)
   // NOT: State sıfırlama artık gerekli değil — key prop ile tam remount oluyor
@@ -162,6 +183,10 @@ function DashboardContent() {
       }
 
       initialLoadDone.current = true; // Auto-save kilidini aç
+      configReadyRef.current = true;
+      setConfigReady(true);
+      // null → "" : config loaded but no time was saved by user
+      setKayitSaati((prev) => prev ?? "");
     })();
   }, [clerkUserId]);
 
@@ -197,7 +222,7 @@ function DashboardContent() {
         ...(tokenChanged && token ? { token } : {}),
         ecrn_list: crnList,
         scrn_list: scrnList,
-        kayit_saati: kayitSaati,
+        kayit_saati: kayitSaati ?? "",
         max_deneme: maxDeneme,
         retry_aralik: retryAralik,
         dry_run: dryRun,
@@ -227,7 +252,7 @@ function DashboardContent() {
         ConfigService.saveUserConfig(clerkUserId, {
           ecrn_list: crnList,
           scrn_list: scrnList,
-          kayit_saati: kayitSaati,
+          kayit_saati: kayitSaati ?? "",
           max_deneme: maxDeneme,
           retry_aralik: retryAralik,
           dry_run: dryRun,
@@ -561,6 +586,23 @@ function DashboardContent() {
   // Staggered entrance spring config
   const springIn = { type: "spring" as const, stiffness: 300, damping: 30 };
 
+  // Skeleton display logic:
+  // - Config loads fast (<300ms): no skeleton, dashboard appears directly
+  // - Config loads slow (>300ms): skeleton appears, stays for min 1 shimmer cycle
+  const shouldShowContent = configReady && (!showSkeleton || minSkeletonDone);
+
+  if (!shouldShowContent) {
+    if (showSkeleton) return <DashboardSkeleton />;
+    // Before 300ms: show just the mesh background (no flash, no skeleton)
+    return (
+      <div className="min-h-screen mesh-bg relative">
+        <div className="dot-grid fixed inset-0 pointer-events-none z-0" />
+        <div className="mesh-orb-accent" />
+        <div className="grain-overlay" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen mesh-bg relative">
       {/* Background layers */}
@@ -616,13 +658,7 @@ function DashboardContent() {
               )}
             </button>
             <ThemeToggle />
-            <UserButton
-              appearance={{
-                elements: {
-                  avatarBox: "h-8 w-8",
-                },
-              }}
-            />
+            <UserMenu />
           </m.div>
         </div>
       </header>
@@ -864,7 +900,7 @@ function DashboardContent() {
                   currentConfig={{
                     ecrn_list: crnList,
                     scrn_list: scrnList,
-                    kayit_saati: kayitSaati,
+                    kayit_saati: kayitSaati ?? "",
                     max_deneme: maxDeneme,
                     retry_aralik: retryAralik,
                   }}

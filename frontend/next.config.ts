@@ -12,6 +12,12 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  images: {
+    remotePatterns: [
+      { hostname: "img.clerk.com" },
+      { hostname: "images.clerk.dev" },
+    ],
+  },
   async headers() {
     return [
       {

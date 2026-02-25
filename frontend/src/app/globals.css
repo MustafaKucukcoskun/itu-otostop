@@ -314,6 +314,40 @@
 }
 
 /* ──────────────────────────────────────────────────────
+   Skeleton shimmer — visible sweep animation
+   ────────────────────────────────────────────────────── */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    oklch(0.5 0 0 / 6%) 0%,
+    oklch(0.7 0 0 / 14%) 40%,
+    oklch(0.7 0 0 / 14%) 60%,
+    oklch(0.5 0 0 / 6%) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+  border-radius: 8px;
+}
+.dark .skeleton {
+  background: linear-gradient(
+    90deg,
+    oklch(0.3 0 0 / 12%) 0%,
+    oklch(0.45 0.02 195 / 20%) 40%,
+    oklch(0.45 0.02 195 / 20%) 60%,
+    oklch(0.3 0 0 / 12%) 100%
+  );
+  background-size: 200% 100%;
+}
+
+/* ──────────────────────────────────────────────────────
    Mesh gradient bg — light uses warm tones, dark uses cool
    ────────────────────────────────────────────────────── */
 .mesh-bg {
