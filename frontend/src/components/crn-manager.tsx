@@ -50,54 +50,30 @@ interface CRNManagerProps {
   disabled?: boolean;
 }
 
-const statusStyles: Record<string, { bg: string; text: string; dot: string }> =
-  {
-    pending: {
-      bg: "bg-zinc-500/8",
-      text: "text-muted-foreground",
-      dot: "bg-zinc-400",
-    },
-    success: {
-      bg: "bg-emerald-500/8",
-      text: "text-emerald-600 dark:text-emerald-400",
-      dot: "bg-emerald-500 dark:bg-emerald-400",
-    },
-    already: {
-      bg: "bg-blue-500/8",
-      text: "text-blue-600 dark:text-blue-400",
-      dot: "bg-blue-500 dark:bg-blue-400",
-    },
-    full: {
-      bg: "bg-red-500/8",
-      text: "text-red-600 dark:text-red-400",
-      dot: "bg-red-500 dark:bg-red-400",
-    },
-    conflict: {
-      bg: "bg-orange-500/8",
-      text: "text-orange-600 dark:text-orange-400",
-      dot: "bg-orange-500 dark:bg-orange-400",
-    },
-    upgrade: {
-      bg: "bg-purple-500/8",
-      text: "text-purple-600 dark:text-purple-400",
-      dot: "bg-purple-500 dark:bg-purple-400",
-    },
-    debounce: {
-      bg: "bg-yellow-500/8",
-      text: "text-yellow-600 dark:text-yellow-400",
-      dot: "bg-yellow-500 dark:bg-yellow-400",
-    },
-    error: {
-      bg: "bg-red-500/8",
-      text: "text-red-600 dark:text-red-400",
-      dot: "bg-red-500 dark:bg-red-400",
-    },
-    dropped: {
-      bg: "bg-emerald-500/8",
-      text: "text-emerald-600 dark:text-emerald-400",
-      dot: "bg-emerald-500 dark:bg-emerald-400",
-    },
-  };
+// Her durum → metin/nokta rengi (durum token'ları). Dolgu yok, hairline dil.
+const statusColor: Record<string, string> = {
+  pending: "text-muted-foreground",
+  success: "text-[--status-ok]",
+  already: "text-foreground",
+  full: "text-[--status-err]",
+  conflict: "text-[--status-wait]",
+  upgrade: "text-primary",
+  debounce: "text-[--status-wait]",
+  error: "text-[--status-err]",
+  dropped: "text-[--status-ok]",
+};
+
+const statusDot: Record<string, string> = {
+  pending: "bg-muted-foreground",
+  success: "bg-[--status-ok]",
+  already: "bg-foreground",
+  full: "bg-[--status-err]",
+  conflict: "bg-[--status-wait]",
+  upgrade: "bg-primary",
+  debounce: "bg-[--status-wait]",
+  error: "bg-[--status-err]",
+  dropped: "bg-[--status-ok]",
+};
 
 const statusLabels: Record<string, string> = {
   pending: "Bekliyor",
@@ -127,7 +103,6 @@ export function CRNManager({
   const [input, setInput] = useState("");
   const [labels, setLabels] = useState<Record<string, string>>({});
 
-  // Load labels on mount
   useEffect(() => {
     setLabels(loadLabels());
   }, []);
@@ -141,16 +116,13 @@ export function CRNManager({
     const trimmed = input.trim();
     if (!trimmed) return;
 
-    // ECRN tab'ında max 12 sınırı (OBS limiti)
     if (tab === "add" && ecrnList.length >= MAX_ECRN) {
       toast.error(`Maksimum ${MAX_ECRN} ECRN eklenebilir (OBS limiti)`);
       return;
     }
 
-    // Parse "12345 Ders Adı" format
     const match = trimmed.match(/^(\d{5})\s*(.*)$/);
     if (!match) {
-      // Try pure 5-digit
       if (!/^\d{5}$/.test(trimmed)) {
         toast.error(
           "CRN 5 haneli sayısal olmalı (ör: 12345 veya 12345 Mat Bilimi)",
@@ -177,9 +149,9 @@ export function CRNManager({
   };
 
   return (
-    <div className="overflow-hidden">
+    <div>
       {/* Tabs */}
-      <div className="flex border-b border-border/20">
+      <div className="flex border-b">
         {(["add", "drop"] as Tab[]).map((t) => {
           const isActive = tab === t;
           const count = t === "add" ? ecrnList.length : scrnList.length;
@@ -188,20 +160,20 @@ export function CRNManager({
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex-1 relative flex items-center justify-center gap-2 py-3.5 text-sm font-medium transition-colors ${
+              className={`relative flex flex-1 items-center justify-center gap-2 py-3.5 text-sm font-medium transition-colors ${
                 isActive
                   ? "text-foreground"
-                  : "text-muted-foreground hover:text-foreground/70"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               <Icon className="h-4 w-4" />
               <span>{t === "add" ? "Ekle" : "Bırak"}</span>
               {count > 0 && (
                 <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                  className={`border px-1.5 font-mono text-[10px] font-semibold ${
                     isActive
-                      ? "bg-primary/15 text-primary"
-                      : "bg-muted text-muted-foreground"
+                      ? "border-primary text-primary"
+                      : "text-muted-foreground"
                   }`}
                 >
                   {count}
@@ -210,7 +182,7 @@ export function CRNManager({
               {isActive && (
                 <m.div
                   layoutId="crn-tab-indicator"
-                  className="absolute bottom-0 left-4 right-4 h-0.5 bg-primary rounded-full"
+                  className="absolute inset-x-4 bottom-0 h-0.5 bg-primary"
                   transition={{ type: "spring", stiffness: 400, damping: 30 }}
                 />
               )}
@@ -220,7 +192,7 @@ export function CRNManager({
       </div>
 
       {/* Content */}
-      <div className="p-4 space-y-3">
+      <div className="space-y-3 p-4">
         {/* Input */}
         {!disabled && (
           <div className="flex gap-2">
@@ -238,12 +210,12 @@ export function CRNManager({
                   ? "CRN gir (ör: 24066 Mat Bilimi)"
                   : "CRN gir (ör: 20150)"
               }
-              className="font-mono bg-background/50 border-border/30 rounded-xl text-sm"
+              className="font-mono text-sm"
             />
             <button
               onClick={addCRN}
               disabled={!input.trim()}
-              className="h-9 w-9 shrink-0 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-30 flex items-center justify-center transition-colors"
+              className="flex h-9 w-9 shrink-0 items-center justify-center bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-30"
             >
               <Plus className="h-4 w-4" />
             </button>
@@ -251,67 +223,64 @@ export function CRNManager({
         )}
 
         {/* CRN List */}
-        <div className="space-y-1.5 min-h-15">
+        <div className="min-h-15 space-y-1.5">
           <AnimatePresence mode="popLayout">
             {activeList.map((crn, i) => {
               const result = crnResults[crn];
               const status = result?.status || "pending";
-              const style = statusStyles[status] || statusStyles.pending;
               return (
                 <m.div
                   key={`${tab}-${crn}`}
                   layout
-                  initial={{ opacity: 0, y: -8, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.94, x: 30 }}
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, x: 30 }}
                   transition={{
                     type: "spring",
                     stiffness: 500,
                     damping: 35,
                     delay: i * 0.02,
                   }}
-                  className={`flex items-center justify-between py-2.5 px-3.5 rounded-xl ${style.bg} group`}
+                  className="group flex items-center justify-between border px-3.5 py-2.5"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="font-mono font-bold text-[15px] tracking-wider shrink-0">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="shrink-0 font-mono text-[15px] font-bold tracking-wider">
                       {crn}
                     </span>
-                    {/* Course info from API */}
                     {courseInfo[crn] ? (
-                      <div className="flex items-center gap-2 min-w-0 truncate">
-                        <span className="text-[11px] font-medium text-muted-foreground truncate">
+                      <div className="flex min-w-0 items-center gap-2 truncate">
+                        <span className="truncate font-mono text-[11px] font-medium text-muted-foreground">
                           {courseInfo[crn].course_code}
                         </span>
-                        <span className="text-[10px] text-muted-foreground/60 truncate hidden sm:inline">
+                        <span className="hidden truncate text-[10px] text-muted-foreground/70 sm:inline">
                           {courseInfo[crn].course_name}
                         </span>
-                        <span className="flex items-center gap-0.5 text-[9px] text-muted-foreground/40 shrink-0">
+                        <span className="flex shrink-0 items-center gap-0.5 font-mono text-[9px] text-muted-foreground/60">
                           <Users className="h-2.5 w-2.5" />
                           {courseInfo[crn].enrolled}/{courseInfo[crn].capacity}
                         </span>
                       </div>
                     ) : lookingUp.has(crn) ? (
-                      <Loader2 className="h-3 w-3 text-muted-foreground/40 animate-spin" />
+                      <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                     ) : labels[crn] ? (
-                      <span className="text-[11px] text-muted-foreground truncate">
+                      <span className="truncate text-[11px] text-muted-foreground">
                         {labels[crn]}
                       </span>
                     ) : null}
                     {result && (
                       <span
-                        className={`flex items-center gap-1.5 text-[11px] font-medium shrink-0 ${style.text}`}
+                        className={`flex shrink-0 items-center gap-1.5 text-[11px] font-medium ${statusColor[status]}`}
                       >
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full ${style.dot}`}
-                        />
+                        <span className={`h-1.5 w-1.5 rounded-full ${statusDot[status]}`} />
                         {statusLabels[status] || status}
                       </span>
                     )}
                   </div>
                   {!disabled && (
                     <button
-                      className="h-7 w-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-red-400 hover:bg-red-400/10 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                      className="flex h-7 w-7 items-center justify-center text-muted-foreground transition-colors hover:text-[--status-err] sm:opacity-0 sm:group-hover:opacity-100"
                       onClick={() => removeCRN(crn)}
+                      aria-label="CRN kaldır"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -321,18 +290,18 @@ export function CRNManager({
             })}
           </AnimatePresence>
           {activeList.length === 0 && (
-            <div className="flex items-center justify-center py-8 text-muted-foreground/50 text-sm">
+            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
               {tab === "add" ? "Henüz CRN eklenmedi" : "Bırakılacak ders yok"}
             </div>
           )}
         </div>
 
-        {/* Clear all — subtle footer action */}
+        {/* Clear all */}
         {!disabled && activeList.length > 1 && (
-          <div className="px-4 pb-3 flex justify-end">
+          <div className="flex justify-end pb-1">
             <button
               onClick={() => setActiveList([])}
-              className="flex items-center gap-1 text-[10px] text-muted-foreground/35 hover:text-red-400/70 transition-colors"
+              className="flex items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-[--status-err]"
             >
               <Trash2 className="h-2.5 w-2.5" />
               Tümünü temizle

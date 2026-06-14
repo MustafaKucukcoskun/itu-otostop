@@ -63,18 +63,16 @@ export function SettingsPanel({
   }, [retryAralik]);
 
   return (
-    <div className="overflow-hidden">
+    <div>
       {/* Toggle header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-muted/20 transition-colors"
+        className="flex h-11 w-full items-center justify-between border-b px-4 text-left transition-colors hover:bg-accent/40"
       >
-        <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
-            <Settings className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-          </div>
-          <h3 className="text-sm font-semibold">Ayarlar</h3>
-        </div>
+        <span className="panel-label flex items-center gap-2">
+          <Settings className="h-3.5 w-3.5" />
+          Ayarlar
+        </span>
         <m.div
           animate={{ rotate: expanded ? 180 : 0 }}
           transition={{ duration: 0.2 }}
@@ -90,7 +88,7 @@ export function SettingsPanel({
         transition={{ duration: 0.25, ease: "easeInOut" }}
         className="overflow-hidden"
       >
-        <div className="px-5 pb-5 space-y-4">
+        <div className="space-y-4 p-4">
           <div className="grid grid-cols-2 gap-4">
             <FieldGroup icon={Hash} label="Maks Deneme">
               <input
@@ -100,7 +98,7 @@ export function SettingsPanel({
                 value={maxDeneme}
                 onChange={(e) => onMaxDenemeChange(Number(e.target.value))}
                 disabled={disabled}
-                className="w-full h-9 rounded-xl bg-background/60 ring-1 ring-border/30 px-3 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 transition-shadow"
+                className="h-9 w-full border bg-background px-3 font-mono text-sm transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-40"
               />
             </FieldGroup>
 
@@ -141,12 +139,12 @@ export function SettingsPanel({
                   }
                 }}
                 disabled={disabled}
-                className="w-full h-9 rounded-xl bg-background/60 ring-1 ring-border/30 px-3 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 transition-shadow"
+                className="h-9 w-full border bg-background px-3 font-mono text-sm transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-40"
               />
             </FieldGroup>
           </div>
           <div className="flex items-center justify-between">
-            <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
               Retry Aralığı: Sunucu 3sn&apos;den sık istekleri yok sayar
               (VAL16). Buffer: Ölçüm tabanlı olarak otomatik hesaplanır.
             </p>
@@ -158,7 +156,7 @@ export function SettingsPanel({
                   onRetryAralikChange(DEFAULTS.retryAralik);
                   onDryRunChange(DEFAULTS.dryRun);
                 }}
-                className="shrink-0 ml-3 flex items-center gap-1 text-[10px] text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors"
+                className="ml-3 flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
                 title="Varsayılan değerlere sıfırla"
               >
                 <RotateCcw className="h-3 w-3" />
@@ -168,11 +166,9 @@ export function SettingsPanel({
           </div>
 
           {/* Dry-Run Toggle */}
-          <div className="flex items-center justify-between py-3 px-3 rounded-xl bg-background/40 ring-1 ring-border/20">
+          <div className="flex items-center justify-between border px-3 py-3">
             <div className="flex items-center gap-2.5">
-              <div className="h-7 w-7 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                <FlaskConical className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-              </div>
+              <FlaskConical className="h-4 w-4 text-[--status-wait]" />
               <div>
                 <p className="text-sm font-medium">Test Modu (Dry Run)</p>
                 <p className="text-[10px] text-muted-foreground">
@@ -186,13 +182,13 @@ export function SettingsPanel({
               aria-checked={dryRun}
               onClick={() => onDryRunChange(!dryRun)}
               disabled={disabled}
-              className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-40 ${
-                dryRun ? "bg-amber-500" : "bg-muted"
+              className={`relative h-6 w-11 border transition-colors disabled:opacity-40 ${
+                dryRun ? "border-[--status-wait] bg-[--status-wait]" : "bg-muted"
               }`}
             >
               <span
-                className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-                  dryRun ? "translate-x-5" : "translate-x-0"
+                className={`absolute top-0.5 h-4 w-4 bg-background transition-all ${
+                  dryRun ? "left-[22px]" : "left-0.5"
                 }`}
               />
             </button>

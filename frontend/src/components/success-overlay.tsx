@@ -1,9 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
 import { m, AnimatePresence } from "motion/react";
-import { CheckCircle2, PartyPopper } from "lucide-react";
-import confetti from "canvas-confetti";
+import { Check, X } from "lucide-react";
 
 interface SuccessOverlayProps {
   show: boolean;
@@ -15,67 +13,36 @@ interface SuccessOverlayProps {
   onDismiss?: () => void;
 }
 
+const STATUS_TEXT: Record<string, string> = {
+  success: "Başarılı",
+  already: "Zaten kayıtlı",
+  full: "Kontenjan dolu",
+  conflict: "Çakışma",
+  pending: "Bekliyor",
+  error: "Hata",
+};
+
+function isOk(status: string) {
+  return status === "success" || status === "already";
+}
+
+/**
+ * Sonuç stempeli — kayıt bittiğinde tam ekran sonuç paneli.
+ * Konfeti yok: durum, dev mono başlık + kalın durum şeridi + CRN listesiyle anlatılır.
+ */
 export function SuccessOverlay({
   show,
   results = [],
   onDismiss,
 }: SuccessOverlayProps) {
-  const firedRef = useRef(false);
-
-  const fireConfetti = useCallback(() => {
-    // Burst from left and right
-    const defaults = {
-      startVelocity: 30,
-      spread: 360,
-      ticks: 60,
-      zIndex: 9999,
-    };
-
-    confetti({
-      ...defaults,
-      particleCount: 50,
-      origin: { x: 0.2, y: 0.6 },
-      colors: ["#10b981", "#06b6d4", "#3b82f6", "#8b5cf6"],
-    });
-
-    confetti({
-      ...defaults,
-      particleCount: 50,
-      origin: { x: 0.8, y: 0.6 },
-      colors: ["#10b981", "#06b6d4", "#3b82f6", "#8b5cf6"],
-    });
-
-    // Delayed center burst
-    setTimeout(() => {
-      confetti({
-        particleCount: 80,
-        spread: 100,
-        origin: { x: 0.5, y: 0.4 },
-        colors: ["#10b981", "#34d399", "#6ee7b7", "#a7f3d0"],
-        zIndex: 9999,
-      });
-    }, 300);
-  }, []);
-
-  useEffect(() => {
-    if (show && !firedRef.current) {
-      firedRef.current = true;
-      fireConfetti();
-    }
-    if (!show) {
-      firedRef.current = false;
-    }
-  }, [show, fireConfetti]);
-
-  const successCount = results.filter(
-    (r) => r.status === "success" || r.status === "already",
-  ).length;
+  const successCount = results.filter((r) => isOk(r.status)).length;
   const failCount = results.filter(
-    (r) =>
-      r.status !== "success" &&
-      r.status !== "already" &&
-      r.status !== "pending",
+    (r) => !isOk(r.status) && r.status !== "pending",
   ).length;
+  const allFailed = successCount === 0 && failCount > 0;
+
+  const accent = allFailed ? "var(--status-err)" : "var(--status-ok)";
+  const headline = allFailed ? "KAYIT BAŞARISIZ" : "KAYIT TAMAM";
 
   return (
     <AnimatePresence>
@@ -84,126 +51,89 @@ export function SuccessOverlay({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.4 }}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-background/60 backdrop-blur-sm"
+          transition={{ duration: 0.2 }}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-4"
           onClick={onDismiss}
         >
           <m.div
-            initial={{ opacity: 0, scale: 0.8, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: -10 }}
-            transition={{
-              type: "spring",
-              stiffness: 300,
-              damping: 25,
-              delay: 0.1,
-            }}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ type: "spring", stiffness: 320, damping: 28 }}
             onClick={(e) => e.stopPropagation()}
-            className="relative max-w-sm w-full mx-4 rounded-2xl bg-card border border-border/20 shadow-2xl overflow-hidden"
+            className="w-full max-w-sm border bg-card"
           >
-            {/* Success glow */}
+            {/* Status bar */}
             <div
-              className="absolute inset-0 opacity-20"
-              style={{
-                background:
-                  "radial-gradient(ellipse at center top, oklch(0.7 0.18 165 / 30%), transparent 70%)",
-              }}
+              className="h-1.5 w-full"
+              style={{ backgroundColor: accent }}
+              aria-hidden
             />
 
-            <div className="relative px-6 py-8 text-center">
-              {/* Animated checkmark */}
-              <m.div
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{
-                  type: "spring",
-                  stiffness: 200,
-                  damping: 15,
-                  delay: 0.2,
-                }}
-                className="mx-auto mb-4 h-16 w-16 rounded-full bg-emerald-500/10 flex items-center justify-center"
+            <div className="p-6 text-center">
+              <div
+                className="mx-auto mb-4 flex h-14 w-14 items-center justify-center border-2"
+                style={{ borderColor: accent, color: accent }}
               >
-                <CheckCircle2 className="h-8 w-8 text-emerald-500" />
-              </m.div>
+                {allFailed ? (
+                  <X className="h-7 w-7" strokeWidth={2.5} />
+                ) : (
+                  <Check className="h-7 w-7" strokeWidth={2.5} />
+                )}
+              </div>
 
-              <m.h2
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                className="text-xl font-bold mb-1"
-              >
-                Kayıt Tamamlandı!
-              </m.h2>
+              <h2 className="font-mono text-2xl font-semibold tracking-tight">
+                {headline}
+              </h2>
 
-              <m.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.4 }}
-                className="text-sm text-muted-foreground mb-5"
-              >
+              <p className="mt-2 font-mono text-sm text-muted-foreground tabular-nums">
                 {successCount > 0 && (
-                  <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                    {successCount} ders başarılı
+                  <span className="text-[--status-ok]">
+                    {successCount} başarılı
                   </span>
                 )}
                 {successCount > 0 && failCount > 0 && " · "}
                 {failCount > 0 && (
-                  <span className="text-red-600 dark:text-red-400 font-medium">
+                  <span className="text-[--status-err]">
                     {failCount} başarısız
                   </span>
                 )}
                 {successCount === 0 && failCount === 0 && "İşlem tamamlandı"}
-              </m.p>
+              </p>
 
               {/* CRN Results list */}
               {results.length > 0 && (
-                <m.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 }}
-                  className="space-y-1.5 mb-5 max-h-40 overflow-y-auto"
-                >
+                <div className="mt-5 max-h-40 space-y-px overflow-y-auto border">
                   {results.map((r, i) => (
                     <div
                       key={`${r.crn}-${i}`}
-                      className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs font-mono ${
-                        r.status === "success" || r.status === "already"
-                          ? "bg-emerald-500/8 text-emerald-700 dark:text-emerald-400"
-                          : r.status === "pending"
-                            ? "bg-muted/40 text-muted-foreground"
-                            : "bg-red-500/8 text-red-700 dark:text-red-400"
-                      }`}
+                      className="flex items-center justify-between gap-2 px-3 py-2 font-mono text-xs"
                     >
-                      <span>{r.label || r.crn}</span>
-                      <span className="text-[10px] font-medium uppercase">
-                        {r.status === "success"
-                          ? "✓ Başarılı"
-                          : r.status === "already"
-                            ? "✓ Zaten kayıtlı"
-                            : r.status === "full"
-                              ? "Kontenjan dolu"
-                              : r.status === "conflict"
-                                ? "Çakışma"
-                                : r.status === "pending"
-                                  ? "Bekliyor"
-                                  : "Hata"}
+                      <span className="truncate text-left">
+                        {r.label || r.crn}
+                      </span>
+                      <span
+                        className={`shrink-0 uppercase tracking-wider ${
+                          isOk(r.status)
+                            ? "text-[--status-ok]"
+                            : r.status === "pending"
+                              ? "text-muted-foreground"
+                              : "text-[--status-err]"
+                        }`}
+                      >
+                        {STATUS_TEXT[r.status] ?? r.status}
                       </span>
                     </div>
                   ))}
-                </m.div>
+                </div>
               )}
 
-              {/* Dismiss button */}
-              <m.button
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.6 }}
+              <button
                 onClick={onDismiss}
-                className="w-full h-10 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                className="mt-5 h-10 w-full bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
               >
-                <PartyPopper className="h-4 w-4" />
                 Tamam
-              </m.button>
+              </button>
             </div>
           </m.div>
         </m.div>

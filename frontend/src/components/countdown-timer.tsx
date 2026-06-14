@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { m, AnimatePresence } from "motion/react";
-import { Clock, Pencil, Zap } from "lucide-react";
+import { Clock, Pencil } from "lucide-react";
 
 // Common ITU registration times
 const QUICK_TIMES = [
@@ -72,21 +72,29 @@ export function CountdownTimer({
     return () => clearInterval(interval);
   }, [localCountdown !== null, phase]); // eslint-disable-line react-hooks/exhaustive-deps -- only re-run when countdown starts or phase changes
 
-  const displayTime = useMemo(() => {
+  // Split countdown into main part + fractional (ms) part — ms shown in primary
+  const display = useMemo(() => {
     if (localCountdown === null || localCountdown <= 0) {
-      if (phase === "registering") return "KAYIT YAPILIYOR";
-      if (phase === "done") return "TAMAMLANDI";
-      if (phase === "idle") return ""; // idle = live clock shown separately
-      return targetTime ?? "--:--:--";
+      if (phase === "registering") return { main: "KAYIT YAPILIYOR", ms: "" };
+      if (phase === "done") return { main: "TAMAMLANDI", ms: "" };
+      if (phase === "idle") return { main: "", ms: "" };
+      return { main: targetTime ?? "--:--:--", ms: "" };
     }
     const total = Math.max(0, localCountdown);
     const h = Math.floor(total / 3600);
     const m = Math.floor((total % 3600) / 60);
     const s = Math.floor(total % 60);
     const ms = Math.floor((total % 1) * 10);
-    return h > 0
-      ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
-      : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${ms}`;
+    if (h > 0) {
+      return {
+        main: `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`,
+        ms: "",
+      };
+    }
+    return {
+      main: `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`,
+      ms: `.${ms}`,
+    };
   }, [localCountdown, phase, targetTime]);
 
   const isIdle = phase === "idle";
@@ -95,33 +103,30 @@ export function CountdownTimer({
   const isRegistering = phase === "registering";
   const isDone = phase === "done";
 
-  // Last 5 seconds of waiting phase — dramatic effect
+  // Last 5 seconds of waiting phase — urgency via scale (not glow)
   const isLastFive =
     isActive &&
     localCountdown !== null &&
     localCountdown > 0 &&
     localCountdown <= 5;
-  const urgencyScale = isLastFive ? 1 + (1 - localCountdown / 5) * 0.15 : 1; // 1.0 → 1.15
+  const urgencyScale = isLastFive ? 1 + (1 - localCountdown / 5) * 0.12 : 1;
 
-  // Show time editor when: config loaded AND mounted AND idle AND (no target yet OR user clicked edit)
-  // configLoaded check prevents editor flash: null means "config hasn't arrived yet"
   const showTimeEditor =
     configLoaded && mounted && isIdle && (!hasTarget || editing) && !disabled;
 
   const phaseLabel = isActive
-    ? "Kayıt saatine kalan"
+    ? "Hedefe kalan"
     : isRegistering
       ? "Kayıt devam ediyor"
       : isDone
         ? "Tamamlandı"
         : !configLoaded
-          ? "Yükleniyor..."
+          ? "Yükleniyor"
           : hasTarget
             ? "Hazır"
-            : "Kayıt Saatini Ayarla";
+            : "Kayıt saatini ayarla";
 
   const handleTimeChange = (v: string) => {
-    // Normalize HH:MM → HH:MM:00 for backend compat
     onTargetTimeChange(v && v.length === 5 ? v + ":00" : v);
   };
 
@@ -130,257 +135,192 @@ export function CountdownTimer({
     setEditing(false);
   };
 
+  // Big number color: registering = primary, done = status-ok, otherwise foreground
+  const mainColor = isRegistering
+    ? "text-primary"
+    : isDone
+      ? "text-[--status-ok]"
+      : isIdle && !hasTarget
+        ? "text-muted-foreground"
+        : "text-foreground";
+
   return (
     <div
-      className="relative"
+      className="relative px-6 py-12 text-center sm:py-14"
       role="timer"
       aria-live="assertive"
       aria-label="Geri sayım sayacı"
     >
-      {/* Active state animated gradient */}
-      {isActive && (
-        <m.div
-          className="absolute inset-0 opacity-20 overflow-hidden"
-          style={{
-            background:
-              "conic-gradient(from 0deg, oklch(0.70 0.18 195 / 20%), oklch(0.60 0.15 280 / 15%), oklch(0.65 0.18 165 / 20%), oklch(0.70 0.18 195 / 20%))",
-            backgroundSize: "200% 200%",
-          }}
-          animate={{ rotate: [0, 360] }}
-          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-        />
+      {/* Dry-run marker */}
+      {dryRun && (
+        <div className="mb-4 inline-flex items-center gap-2 border border-[--status-wait] px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[--status-wait]">
+          <span className="h-1.5 w-1.5 bg-[--status-wait]" />
+          Dry Run
+        </div>
       )}
 
-      {/* Registering pulse */}
-      {isRegistering && (
-        <m.div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(ellipse at center, oklch(0.70 0.20 30 / 12%), transparent 70%)",
-          }}
-          animate={{ opacity: [0.2, 0.5, 0.2], scale: [1, 1.05, 1] }}
-          transition={{ duration: isLastFive ? 0.5 : 1.5, repeat: Infinity }}
-        />
+      {/* Phase label */}
+      <m.p
+        className="panel-label mb-5"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        key={phaseLabel}
+      >
+        {phaseLabel}
+      </m.p>
+
+      {/* Main timer display */}
+      <m.div
+        key={`${phase}-${isIdle ? "live" : display.main.length > 12 ? "text" : "num"}`}
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0, scale: urgencyScale }}
+        transition={
+          isLastFive
+            ? { type: "tween", duration: 0.15 }
+            : { type: "spring", stiffness: 220, damping: 24 }
+        }
+        className={`font-mono font-semibold leading-none tracking-tight ${
+          display.main.length > 12
+            ? "text-2xl sm:text-4xl"
+            : "text-[2.6rem] sm:text-7xl"
+        } ${isLastFive ? "text-primary" : mainColor}`}
+      >
+        {isIdle ? (
+          hasTarget ? (
+            targetTime
+          ) : (
+            currentTime || "--:--:--"
+          )
+        ) : (
+          <>
+            {display.main}
+            {display.ms && <span className="text-primary">{display.ms}</span>}
+          </>
+        )}
+      </m.div>
+
+      {/* Idle + has target → edit button */}
+      {isIdle && hasTarget && !editing && !disabled && (
+        <m.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          onClick={() => setEditing(true)}
+          className="mt-4 inline-flex items-center gap-1.5 border px-3 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Pencil className="h-3 w-3" />
+          Değiştir
+        </m.button>
       )}
 
-      {/* Last 5 seconds urgency glow */}
-      {isLastFive && (
-        <m.div
-          className="absolute inset-0 rounded-2xl"
-          style={{
-            background:
-              "radial-gradient(ellipse at center, oklch(0.65 0.22 30 / 15%), transparent 60%)",
-          }}
-          animate={{ opacity: [0.3, 0.7, 0.3] }}
-          transition={{ duration: 0.4, repeat: Infinity }}
-        />
-      )}
-
-      {/* Done glow */}
-      {isDone && (
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(ellipse at center, oklch(0.70 0.18 165 / 10%), transparent 70%)",
-          }}
-        />
-      )}
-
-      <div className="relative px-6 py-12 sm:py-14 text-center">
-        {/* Dry-run badge */}
-        {dryRun && (
+      {/* ═══ INLINE TIME PICKER ═══ */}
+      <AnimatePresence>
+        {showTimeEditor && (
           <m.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-400 text-[11px] font-bold tracking-wider uppercase ring-1 ring-amber-500/20"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ type: "tween", duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+            className="mt-6 overflow-hidden"
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-            🧪 DRY RUN
+            <div className="mx-auto max-w-xs space-y-3">
+              {/* Time input */}
+              <div className="relative">
+                <Clock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="time"
+                  step="1"
+                  value={targetTime}
+                  onChange={(e) => handleTimeChange(e.target.value)}
+                  aria-label="Kayıt saati"
+                  className={`h-11 w-full border bg-background pl-10 pr-4 text-center font-mono text-base transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
+                    !targetTime ? "border-primary text-muted-foreground" : ""
+                  }`}
+                  autoFocus={editing}
+                />
+              </div>
+
+              {/* Quick time buttons */}
+              <div className="flex flex-wrap items-center justify-center gap-1.5">
+                {QUICK_TIMES.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => handleQuickTime(t.value)}
+                    className={`border px-3 py-1 font-mono text-[11px] font-medium transition-colors ${
+                      targetTime === t.value
+                        ? "border-primary text-primary"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {editing && hasTarget && (
+                <button
+                  onClick={() => setEditing(false)}
+                  className="text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Kapat
+                </button>
+              )}
+            </div>
           </m.div>
         )}
+      </AnimatePresence>
 
-        {/* Phase label */}
-        <m.p
-          className="text-xs font-semibold text-muted-foreground/60 mb-4 tracking-[0.2em] uppercase"
-          initial={{ opacity: 0, y: -5 }}
-          animate={{ opacity: 1, y: 0 }}
-          key={phaseLabel}
-        >
-          {phaseLabel}
-        </m.p>
-
-        {/* Main timer display — idle shows live clock, active shows countdown */}
-        <m.div
-          key={`${phase}-${isIdle ? "live" : displayTime.length > 12 ? "text" : "num"}`}
-          initial={{ opacity: 0, scale: 0.9, filter: "blur(8px)" }}
-          animate={{
-            opacity: 1,
-            scale: urgencyScale,
-            filter: "blur(0px)",
-          }}
-          transition={
-            isLastFive
-              ? { type: "tween", duration: 0.15 }
-              : { type: "spring", stiffness: 200, damping: 20 }
-          }
-          className={`font-mono font-black tracking-[0.06em] leading-none ${
-            isRegistering
-              ? "text-4xl sm:text-5xl bg-gradient-to-r from-orange-400 to-amber-300 bg-clip-text text-transparent"
-              : isDone
-                ? "text-4xl sm:text-5xl bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent"
-                : isLastFive
-                  ? "text-6xl sm:text-7xl bg-gradient-to-r from-red-400 to-orange-400 bg-clip-text text-transparent"
-                  : isActive
-                    ? "text-6xl sm:text-7xl text-gradient-primary"
-                    : isIdle && !hasTarget
-                      ? "text-5xl sm:text-6xl text-foreground/70"
-                      : isIdle && hasTarget
-                        ? "text-5xl sm:text-6xl text-gradient-primary"
-                        : "text-5xl sm:text-6xl text-muted-foreground/40"
-          }`}
-        >
-          {isIdle
-            ? hasTarget
-              ? targetTime
-              : currentTime || "— : — : —"
-            : displayTime}
-        </m.div>
-
-        {/* Idle + has target → edit button */}
-        {isIdle && hasTarget && !editing && !disabled && (
-          <m.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            onClick={() => setEditing(true)}
-            className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-colors"
-          >
-            <Pencil className="h-3 w-3" />
-            Değiştir
-          </m.button>
-        )}
-
-        {/* ═══ INLINE TIME PICKER ═══ */}
-        <AnimatePresence>
-          {showTimeEditor && (
-            <m.div
-              initial={{ opacity: 0, y: 10, height: 0 }}
-              animate={{ opacity: 1, y: 0, height: "auto" }}
-              exit={{ opacity: 0, y: 6, height: 0 }}
-              transition={{
-                type: "tween",
-                duration: 0.25,
-                ease: [0.4, 0, 0.2, 1],
-              }}
-              className="mt-6 overflow-hidden"
-            >
-              <div className="max-w-xs mx-auto space-y-3">
-                {/* Time input */}
-                <div className="relative">
-                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 pointer-events-none" />
-                  <input
-                    type="time"
-                    step="1"
-                    value={targetTime}
-                    onChange={(e) => handleTimeChange(e.target.value)}
-                    className={`w-full h-11 rounded-xl bg-background/60 ring-1 ring-inset pl-10 pr-4 font-mono text-base text-center focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/40 transition-shadow ${
-                      !targetTime
-                        ? "ring-primary/40 text-muted-foreground"
-                        : "ring-border/30"
-                    }`}
-                    autoFocus={editing}
-                  />
-                </div>
-
-                {/* Quick time buttons */}
-                <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                  {QUICK_TIMES.map((t) => (
-                    <button
-                      key={t.value}
-                      type="button"
-                      onClick={() => handleQuickTime(t.value)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-medium transition-all ${
-                        targetTime === t.value
-                          ? "bg-primary/15 text-primary ring-1 ring-primary/30"
-                          : "bg-background/40 text-muted-foreground hover:bg-muted/50 ring-1 ring-border/20 hover:ring-border/40"
-                      }`}
-                    >
-                      <Zap className="h-2.5 w-2.5 inline mr-0.5 -mt-px" />
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Done editing button (only when editing existing target) */}
-                {editing && hasTarget && (
-                  <button
-                    onClick={() => setEditing(false)}
-                    className="text-[10px] text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors"
-                  >
-                    Kapat
-                  </button>
-                )}
-              </div>
-            </m.div>
-          )}
-        </AnimatePresence>
-
-        {/* Bottom info bar — context depends on state */}
-        <div
-          className={`${showTimeEditor ? "mt-3" : "mt-5"} flex items-center justify-center gap-6 text-xs font-mono text-muted-foreground/50`}
-        >
-          {isIdle && !hasTarget && !showTimeEditor ? (
-            <span className="text-muted-foreground/30 text-[10px]">
-              Yukarıdan kayıt saatini belirle
+      {/* Bottom info bar */}
+      <div
+        className={`${showTimeEditor ? "mt-4" : "mt-6"} flex items-center justify-center gap-6 font-mono text-xs text-muted-foreground`}
+      >
+        {isIdle && !hasTarget && !showTimeEditor ? (
+          <span className="text-[10px] text-muted-foreground/70">
+            Yukarıdan kayıt saatini belirle
+          </span>
+        ) : isIdle && hasTarget ? (
+          <span className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
+              Şu an
             </span>
-          ) : isIdle && hasTarget ? (
+            <span className="text-foreground">{currentTime}</span>
+          </span>
+        ) : !isIdle ? (
+          <>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse" />
-              <span className="text-muted-foreground/40 text-[10px]">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
                 Şu an
               </span>
-              <span className="text-foreground/60">{currentTime}</span>
+              <span className="text-foreground">{currentTime}</span>
             </span>
-          ) : !isIdle ? (
-            <>
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse" />
-                <span className="text-muted-foreground/40 text-[10px]">
-                  Şu an
-                </span>
-                <span className="text-foreground/60">{currentTime}</span>
-              </span>
-              {hasTarget && (
-                <>
-                  <span className="w-px h-3.5 bg-border/20" />
-                  <span className="flex items-center gap-1.5">
-                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500/50" />
-                    <span className="text-muted-foreground/40 text-[10px]">
-                      Hedef
-                    </span>
-                    <span className="text-foreground/60">{targetTime}</span>
+            {hasTarget && (
+              <>
+                <span className="h-3.5 w-px bg-border" />
+                <span className="flex items-center gap-1.5">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                    Hedef
                   </span>
-                </>
-              )}
-            </>
-          ) : null}
-        </div>
-
-        {/* Progress bar */}
-        {isActive && localCountdown !== null && localCountdown > 0 && (
-          <div className="mt-7 mx-auto max-w-md">
-            <div className="h-1 rounded-full bg-primary/8 overflow-hidden">
-              <m.div
-                className="h-full rounded-full bg-gradient-to-r from-primary/40 via-primary to-primary/40"
-                initial={{ width: "100%" }}
-                animate={{ width: "0%" }}
-                transition={{ duration: localCountdown, ease: "linear" }}
-              />
-            </div>
-          </div>
-        )}
+                  <span className="text-foreground">{targetTime}</span>
+                </span>
+              </>
+            )}
+          </>
+        ) : null}
       </div>
+
+      {/* Progress bar */}
+      {isActive && localCountdown !== null && localCountdown > 0 && (
+        <div className="mx-auto mt-7 max-w-md">
+          <div className="h-0.5 w-full overflow-hidden bg-muted">
+            <m.div
+              className="h-full bg-primary"
+              initial={{ width: "100%" }}
+              animate={{ width: "0%" }}
+              transition={{ duration: localCountdown, ease: "linear" }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
