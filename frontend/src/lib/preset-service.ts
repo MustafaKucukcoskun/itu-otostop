@@ -6,10 +6,10 @@ export class PresetService {
    * Kullanıcının tüm şablonlarını buluttan getirir.
    */
   static async getUserPresets(clerkUserId: string): Promise<Preset[]> {
+    if (!clerkUserId) return [];
     try {
-      const { data, error } = await supabase.rpc("get_user_presets", {
-        p_clerk_user_id: clerkUserId,
-      });
+      // Kimlik token'dan (auth.jwt()->>'sub') türetilir — client ID göndermez
+      const { data, error } = await supabase.rpc("get_user_presets");
       if (error) {
         console.error("[PresetService] get error:", error.message);
         return [];
@@ -47,9 +47,9 @@ export class PresetService {
     clerkUserId: string,
     preset: Omit<Preset, "id" | "created_at">,
   ): Promise<string | null> {
+    if (!clerkUserId) return null;
     try {
       const { data, error } = await supabase.rpc("save_user_preset", {
-        p_clerk_user_id: clerkUserId,
         p_name: preset.name,
         p_ecrn_list: preset.ecrn_list,
         p_scrn_list: preset.scrn_list,
@@ -74,9 +74,9 @@ export class PresetService {
     clerkUserId: string,
     presetId: string,
   ): Promise<boolean> {
+    if (!clerkUserId) return false;
     try {
       const { error } = await supabase.rpc("delete_user_preset", {
-        p_clerk_user_id: clerkUserId,
         p_preset_id: presetId,
       });
       if (error) {

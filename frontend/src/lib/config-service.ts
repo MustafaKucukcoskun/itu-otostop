@@ -16,10 +16,10 @@ export class ConfigService {
    * Kayıt yoksa null döner.
    */
   static async getUserConfig(clerkUserId: string): Promise<CloudConfig | null> {
+    if (!clerkUserId) return null;
     try {
-      const { data, error } = await supabase.rpc("get_user_config", {
-        p_clerk_user_id: clerkUserId,
-      });
+      // Kimlik client'tan gönderilmez — RPC token'dan (auth.jwt()->>'sub') türetir
+      const { data, error } = await supabase.rpc("get_user_config");
       if (error) {
         console.error("[ConfigService] get error:", error.message);
         return null;
@@ -37,9 +37,9 @@ export class ConfigService {
     clerkUserId: string,
     config: Omit<CloudConfig, "updated_at">,
   ): Promise<boolean> {
+    if (!clerkUserId) return false;
     try {
       const { error } = await supabase.rpc("save_user_config", {
-        p_clerk_user_id: clerkUserId,
         p_ecrn_list: config.ecrn_list,
         p_scrn_list: config.scrn_list,
         p_kayit_saati: config.kayit_saati,
