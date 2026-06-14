@@ -17,10 +17,12 @@
 
 Amaç: 3.5 aylık commit'lenmemiş işi güvene almak.
 
-- [ ] `cd frontend && bun run build` — derleme doğrulaması
-- [ ] `bun run lint` — lint temiz mi
-- [ ] Tüm değişiklikleri anlamlı commit'lere böl (schedule builder ayrı, globals.css ayrı, .agent ayrı)
-- [ ] `git push` — origin'e gönder (1 eski commit + yeniler)
+- [x] `bun run build` + `bun run lint` — temiz (2026-06-14)
+- [x] Anlamlı commit'lere bölündü: schedule (da3b520), redesign (1f86cbc), dev orchestrator (c5436c7), .agent (a098eb3), dev fix (f222b66)
+- [x] `git push` — origin/main'e gönderildi; remote yeni konuma güncellendi (MustafaKucukcoskun/itu-otostop)
+- [x] `npm run dev` fastapi hatası çözüldü: dev.mjs artık backend/venv Python'ını kullanıyor
+
+> Faz 0 tamamlandı (2026-06-14). main, origin ile senkron.
 
 ---
 
