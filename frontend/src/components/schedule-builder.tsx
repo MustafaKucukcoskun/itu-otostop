@@ -9,13 +9,12 @@ import { CourseSelectorModal } from "./course-selector-modal";
 import { ScheduleGrid } from "./schedule-grid";
 import { api } from "@/lib/api";
 import type { CourseInfo } from "@/lib/api";
+import { COURSE_HUES } from "@/lib/course-colors";
 
 // ── Constants ──
 
 const DAYS = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"] as const;
 const DAY_SHORT = ["Pzt", "Sal", "Çar", "Per", "Cum"] as const;
-
-const COURSE_HUES = [250, 185, 35, 350, 145, 65, 290, 210] as const;
 
 // Seçili dersleri sayfa yenilemede korumak için localStorage anahtarı
 const SELECTED_STORAGE_KEY = "otostop-schedule-selected";
