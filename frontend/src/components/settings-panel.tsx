@@ -182,13 +182,15 @@ export function SettingsPanel({
               aria-checked={dryRun}
               onClick={() => onDryRunChange(!dryRun)}
               disabled={disabled}
-              className={`relative h-6 w-11 border transition-colors disabled:opacity-40 ${
-                dryRun ? "border-[--status-wait] bg-[--status-wait]" : "bg-muted"
+              className={`relative h-6 w-11 shrink-0 border transition-colors disabled:opacity-40 ${
+                dryRun
+                  ? "border-[--status-wait] bg-[--status-wait]"
+                  : "border-border bg-input"
               }`}
             >
               <span
-                className={`absolute top-0.5 h-4 w-4 bg-background transition-all ${
-                  dryRun ? "left-[22px]" : "left-0.5"
+                className={`absolute top-0.5 size-4 transition-all ${
+                  dryRun ? "left-[22px] bg-white" : "left-0.5 bg-foreground"
                 }`}
               />
             </button>
