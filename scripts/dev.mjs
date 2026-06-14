@@ -63,10 +63,22 @@ function prefixStream(stream, prefix) {
 
 // ── Detect Python command ──
 import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
 function getPythonCmd() {
-  // Windows: try 'py' (Python Launcher) first, then 'python', then 'python3'
-  // Unix: try 'python3' first, then 'python'
+  // 1) backend/venv içindeki Python'ı tercih et — bağımlılıklar (fastapi vb.) burada kurulu.
+  //    Yol backend cwd'sine göre göreli döndürülür (spawn cwd: backend ile çalışır).
+  const venvRel =
+    process.platform === "win32"
+      ? "venv\\Scripts\\python.exe"
+      : "venv/bin/python";
+  if (existsSync(resolve(ROOT, "backend", venvRel))) {
+    return venvRel;
+  }
+
+  // 2) venv yoksa sistem Python'ına düş.
+  //    Windows: 'py' (Python Launcher) → 'python' → 'python3'
+  //    Unix: 'python3' → 'python'
   const candidates =
     process.platform === "win32"
       ? ["py", "python", "python3"]
