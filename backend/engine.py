@@ -174,8 +174,12 @@ class RegistrationEngine:
         self._last_ntp_delay: Optional[float] = None  # Son NTP delay (sn)
         # Cloud Run kalibrasyon sonuçları (2026-02-15, 5000 ölçüm, europe-west1)
         # OBS saati NTP'ye göre +1.5ms ileri, σ=4.08ms (95% CI: ±8.0ms)
-        self._obs_clock_offset: float = 0.0015   # OBS-NTP saat farkı (sn) [+ileri]
-        self._obs_clock_uncertainty: float = 0.00408  # OBS saat belirsizliği σ (sn)
+        # OBS-NTP saat farkının manuel düzeltmesi. 0 = varsayım yok (OBS≈NTP, ölçümle teyitli).
+        # Hardcoded erken bias TEHLİKELİ: tetiği sunucu açılmadan atabilir (VAL02). Büyük OBS
+        # sapması zaten calibrate()'te Date offset ile dinamik yakalanıyor; bu yalnız küçük
+        # (±RTT/2) artığın manuel düzeltmesi — ölçemediğimiz sürece 0 (buffer'ın σ_obs'u kapsar).
+        self._obs_clock_offset: float = 0.0
+        self._obs_clock_uncertainty: float = 0.00408  # OBS saat belirsizliği σ (sn) — buffer için
 
         # Yeni geliştirme özellikleri
         self._trend_analyzer = TrendAnalyzer(window_size=10)
@@ -631,7 +635,15 @@ class RegistrationEngine:
             "rtt_one_way_ms": self._calibration.rtt_one_way * 1000,
             "rtt_full_ms": self._calibration.rtt_one_way * 2000,
             "ntp_offset_ms": (ntp_offset_raw or 0.0) * 1000,
-            "server_ntp_diff_ms": (self._calibration.server_offset - (ntp_offset_raw or 0.0)) * 1000,
+            # GERÇEK OBS↔NTP farkı: OBS - NTP = -(date_offset + ntp_offset_raw).
+            # (Eskiden server_offset - ntp_offset_raw idi = -2×ntp_offset, totoloji; OBS'yi
+            # değil yerel makinenin NTP hatasını ölçüyordu.) Date yoksa None.
+            "server_ntp_diff_ms": (
+                -(date_offset + (ntp_offset_raw or 0.0)) * 1000
+                if date_offset is not None
+                else None
+            ),
+            "date_offset_ms": date_offset * 1000 if date_offset is not None else None,
             "accuracy_ms": accuracy * 1000,
             "source": source,
         })
