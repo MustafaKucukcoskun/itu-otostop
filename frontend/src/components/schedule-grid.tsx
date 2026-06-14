@@ -4,7 +4,8 @@ import { useMemo } from "react";
 import { m } from "motion/react";
 import { Calendar } from "lucide-react";
 import type { SelectedCourse } from "./schedule-builder";
-import { COURSE_HUES, DAY_SHORT } from "./schedule-builder";
+import { DAY_SHORT } from "./schedule-builder";
+import { courseBlockStyle } from "@/lib/course-colors";
 
 // ── Constants ──
 
@@ -30,7 +31,7 @@ interface GridBlock {
   endMin: number;
   room: string;
   building: string;
-  hue: number;
+  colorIndex: number;
 }
 
 // ── Helpers ──
@@ -58,7 +59,7 @@ export function ScheduleGrid({
         endMin: timeToMinutes(s.end_time),
         room: s.room,
         building: s.building,
-        hue: COURSE_HUES[sc.colorIndex],
+        colorIndex: sc.colorIndex,
       })),
     );
   }, [selectedCourses]);
@@ -131,6 +132,7 @@ export function ScheduleGrid({
                   ((block.startMin - MIN_HOUR * 60) / 60) * SLOT_HEIGHT;
                 const heightPx =
                   ((block.endMin - block.startMin) / 60) * SLOT_HEIGHT;
+                const color = courseBlockStyle(block.colorIndex);
 
                 return (
                   <m.div
@@ -139,23 +141,20 @@ export function ScheduleGrid({
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                    className="absolute inset-x-1 z-10 cursor-pointer overflow-hidden border transition-colors hover:brightness-110"
+                    className="absolute inset-x-1 z-10 cursor-pointer overflow-hidden border transition-[filter] hover:brightness-110"
                     style={{
                       top: topPx,
                       height: Math.max(heightPx, 28),
-                      background: `oklch(0.72 0.14 ${block.hue} / 0.15)`,
-                      borderColor: `oklch(0.72 0.16 ${block.hue} / 0.4)`,
+                      background: color.background,
+                      borderColor: color.borderColor,
                       borderLeftWidth: 3,
-                      borderLeftColor: `oklch(0.72 0.18 ${block.hue})`,
+                      borderLeftColor: color.accent,
                     }}
                     onClick={() => onRemoveCourse(block.crn)}
                     title={`${block.courseCode} — ${block.instructor}\nTıkla: kaldır`}
                   >
                     <div className="flex h-full flex-col justify-center px-2 py-1">
-                      <span
-                        className="text-[11px] font-bold leading-tight truncate"
-                        style={{ color: `oklch(0.85 0.08 ${block.hue})` }}
-                      >
+                      <span className="truncate text-[11px] font-bold leading-tight text-foreground">
                         {block.courseCode}
                       </span>
                       {heightPx > 40 && (

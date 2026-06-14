@@ -12,6 +12,7 @@ import {
   Loader2,
 } from "lucide-react";
 import type { CourseInfo } from "@/lib/api";
+import { COURSE_HUES, courseBlockStyle } from "@/lib/course-colors";
 
 // ── Constants ──
 
@@ -26,50 +27,6 @@ const DAYS_FULL = [
 const SLOT_HEIGHT = 40; // px per 30-min slot
 const DEFAULT_MIN_HOUR = 8;
 const DEFAULT_MAX_HOUR = 18;
-
-// oklch color palette — works on both light/dark
-const COURSE_COLORS = [
-  {
-    bg: "oklch(0.55 0.18 250 / 0.2)",
-    border: "oklch(0.65 0.22 250)",
-    text: "oklch(0.82 0.08 250)",
-  },
-  {
-    bg: "oklch(0.55 0.18 165 / 0.2)",
-    border: "oklch(0.65 0.22 165)",
-    text: "oklch(0.82 0.08 165)",
-  },
-  {
-    bg: "oklch(0.55 0.18 30 / 0.2)",
-    border: "oklch(0.65 0.22 30)",
-    text: "oklch(0.82 0.08 30)",
-  },
-  {
-    bg: "oklch(0.55 0.18 320 / 0.2)",
-    border: "oklch(0.65 0.22 320)",
-    text: "oklch(0.82 0.08 320)",
-  },
-  {
-    bg: "oklch(0.55 0.18 140 / 0.2)",
-    border: "oklch(0.65 0.22 140)",
-    text: "oklch(0.82 0.08 140)",
-  },
-  {
-    bg: "oklch(0.55 0.18 80 / 0.2)",
-    border: "oklch(0.65 0.22 80)",
-    text: "oklch(0.82 0.08 80)",
-  },
-  {
-    bg: "oklch(0.55 0.18 280 / 0.2)",
-    border: "oklch(0.65 0.22 280)",
-    text: "oklch(0.82 0.08 280)",
-  },
-  {
-    bg: "oklch(0.55 0.18 200 / 0.2)",
-    border: "oklch(0.65 0.22 200)",
-    text: "oklch(0.82 0.08 200)",
-  },
-];
 
 // ── Helpers ──
 
@@ -127,7 +84,7 @@ export function WeeklySchedule({
 
       const codeKey = course.course_code;
       if (!(codeKey in colorMap)) {
-        colorMap[codeKey] = colorIdx % COURSE_COLORS.length;
+        colorMap[codeKey] = colorIdx % COURSE_HUES.length;
         colorIdx++;
       }
 
@@ -314,7 +271,7 @@ export function WeeklySchedule({
                           ((block.startMin - timeRange.min) / 30) * SLOT_HEIGHT;
                         const height =
                           ((block.endMin - block.startMin) / 30) * SLOT_HEIGHT;
-                        const color = COURSE_COLORS[block.colorIdx];
+                        const color = courseBlockStyle(block.colorIdx);
                         const isConflict = conflicts.has(globalIdx);
                         const isCompact = height < 60;
                         const isTiny = height < 40;
@@ -336,8 +293,8 @@ export function WeeklySchedule({
                             style={{
                               top: top + 1,
                               height: Math.max(height - 2, 16),
-                              backgroundColor: color.bg,
-                              borderLeft: `3px solid ${color.border}`,
+                              backgroundColor: color.background,
+                              borderLeft: `3px solid ${color.accent}`,
                             }}
                             onMouseEnter={() =>
                               setHoveredBlock(block.courseCode)
@@ -354,10 +311,7 @@ export function WeeklySchedule({
                               .join("\n")}
                           >
                             <div className="p-1 h-full flex flex-col justify-center overflow-hidden">
-                              <p
-                                className="text-[9px] sm:text-[10px] font-bold leading-tight truncate"
-                                style={{ color: color.text }}
-                              >
+                              <p className="truncate text-[9px] font-bold leading-tight text-foreground sm:text-[10px]">
                                 {block.courseCode}
                               </p>
                               {!isTiny && (
@@ -369,7 +323,7 @@ export function WeeklySchedule({
                                 <p className="text-[7px] text-muted-foreground/50 truncate leading-tight flex items-center gap-0.5">
                                   <MapPin
                                     className="h-2 w-2 inline shrink-0"
-                                    style={{ color: color.border }}
+                                    style={{ color: color.accent }}
                                   />
                                   {block.room}
                                 </p>
@@ -392,7 +346,7 @@ export function WeeklySchedule({
             {Object.keys(colorMap).length > 0 && (
               <div className="px-3 pb-3 flex flex-wrap gap-1.5">
                 {Object.entries(colorMap).map(([code, idx]) => {
-                  const color = COURSE_COLORS[idx];
+                  const color = courseBlockStyle(idx);
                   const course = Object.values(courses).find(
                     (c) => c.course_code === code,
                   );
@@ -400,17 +354,15 @@ export function WeeklySchedule({
                     <div
                       key={code}
                       className="flex cursor-default items-center gap-1.5 px-2 py-1 text-[9px] transition-colors"
-                      style={{ backgroundColor: color.bg }}
+                      style={{ backgroundColor: color.background }}
                       onMouseEnter={() => setHoveredBlock(code)}
                       onMouseLeave={() => setHoveredBlock(null)}
                     >
                       <div
                         className="h-2 w-2 shrink-0"
-                        style={{ backgroundColor: color.border }}
+                        style={{ backgroundColor: color.accent }}
                       />
-                      <span className="font-bold" style={{ color: color.text }}>
-                        {code}
-                      </span>
+                      <span className="font-bold text-foreground">{code}</span>
                       {course && (
                         <span className="text-muted-foreground hidden sm:inline max-w-24 truncate">
                           {course.course_name}
