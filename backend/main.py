@@ -46,6 +46,8 @@ class SessionState:
     poll_task: Optional[asyncio.Task] = None
     ws_clients: list = field(default_factory=list)  # list[WebSocket]
     last_active: float = 0.0
+    # Engine başlat/sıfırla TOCTOU yarışını önler (check-then-act atomik)
+    lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 sessions: dict[str, SessionState] = {}
@@ -260,6 +262,15 @@ async def get_config(request: Request):
     return _config_response(session)
 
 
+def _token_preview(token: str) -> str:
+    """Token'ın ilk4…son4'ünü maskeli göster (tam token asla dönmez)."""
+    if not token:
+        return ""
+    if len(token) <= 8:
+        return "••••"
+    return f"{token[:4]}…{token[-4:]}"
+
+
 def _config_response(session: SessionState) -> ConfigResponse:
     return ConfigResponse(
         ecrn_list=session.ecrn_list,
@@ -268,7 +279,7 @@ def _config_response(session: SessionState) -> ConfigResponse:
         max_deneme=session.max_deneme,
         retry_aralik=session.retry_aralik,
         token_set=bool(session.token),
-        token_preview="",
+        token_preview=_token_preview(session.token),
         dry_run=session.dry_run,
     )
 
@@ -326,29 +337,31 @@ async def start_registration(request: Request):
     if not session.kayit_saati:
         raise HTTPException(400, "Kayıt saati ayarlanmamış")
 
-    # Engine gerçekten çalışıyor mu kontrol et (thread alive + flag)
-    if session.engine and session.engine.is_running:
-        # Thread ölmüşse flag sıkışmıştır — zorla temizle
-        if session.engine_thread and not session.engine_thread.is_alive():
-            session.engine._running = False
-            session.engine = None
-            session.engine_thread = None
-        else:
-            raise HTTPException(409, "Kayıt zaten çalışıyor")
+    # Check-then-act'i lock altında atomik yap (eşzamanlı start çift engine'i önler).
+    # Kritik bölüm kısa ve await içermez → event loop'u bloke etmez.
+    with session.lock:
+        if session.engine and session.engine.is_running:
+            # Thread ölmüşse flag sıkışmıştır — zorla temizle
+            if session.engine_thread and not session.engine_thread.is_alive():
+                session.engine._running = False
+                session.engine = None
+                session.engine_thread = None
+            else:
+                raise HTTPException(409, "Kayıt zaten çalışıyor")
 
-    session.engine = RegistrationEngine(
-        token=session.token,
-        ecrn_list=session.ecrn_list,
-        scrn_list=session.scrn_list,
-        kayit_saati=session.kayit_saati,
-        max_deneme=session.max_deneme,
-        retry_aralik=session.retry_aralik,
-        dry_run=session.dry_run,
-    )
+        session.engine = RegistrationEngine(
+            token=session.token,
+            ecrn_list=session.ecrn_list,
+            scrn_list=session.scrn_list,
+            kayit_saati=session.kayit_saati,
+            max_deneme=session.max_deneme,
+            retry_aralik=session.retry_aralik,
+            dry_run=session.dry_run,
+        )
 
-    # Engine'i ayrı thread'de başlat
-    session.engine_thread = threading.Thread(target=session.engine.run, daemon=True)
-    session.engine_thread.start()
+        # Engine'i ayrı thread'de başlat
+        session.engine_thread = threading.Thread(target=session.engine.run, daemon=True)
+        session.engine_thread.start()
 
     # Eski poll_task varsa iptal et (duplicate event yayını önlenir)
     if session.poll_task and not session.poll_task.done():

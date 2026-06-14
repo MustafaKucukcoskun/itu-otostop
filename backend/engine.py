@@ -571,12 +571,23 @@ class RegistrationEngine:
             accuracy = medyan_rtt / 2
             self._log(f"⚠️ NTP başarısız, Date header kullanılıyor (±500ms hassasiyet)", "warning")
             ntp_offset_raw = 0.0
+        elif self._cal_samples:
+            # NTP+Date başarısız AMA geçmiş havuzda ölçüm var → en iyiyi (en düşük RTT) kullan.
+            # Offset=0 varsaymak VAL02'ye yol açar; geçmiş en iyi çok daha güvenli.
+            best = min(self._cal_samples, key=lambda s: s[1])
+            server_offset = best[0]
+            accuracy = best[1] / 2
+            ntp_offset_raw = 0.0
+            self._log(
+                f"⚠️ NTP+Date başarısız → geçmiş en iyi offset kullanılıyor: "
+                f"{server_offset*1000:+.0f}ms (havuz RTT {best[1]*1000:.0f}ms)", "warning"
+            )
         else:
-            # Her ikisi de başarısız
+            # Her ikisi de başarısız ve geçmiş ölçüm yok → son çare offset=0
             server_offset = 0.0
             accuracy = medyan_rtt / 2
             ntp_offset_raw = 0.0
-            self._log("❌ Kalibrasyon başarısız! Offset=0 varsayılıyor", "error")
+            self._log("❌ Kalibrasyon başarısız ve geçmiş ölçüm yok! Offset=0 varsayılıyor", "error")
 
         self._calibration = CalibrationData(
             server_offset=server_offset,
