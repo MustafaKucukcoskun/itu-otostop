@@ -142,7 +142,7 @@ export function ScheduleBuilder() {
         if (!cancelled) setDepartments(data);
       })
       .catch(() => {
-        if (!cancelled) toast.error("Bölüm listesi yüklenemedi");
+        if (!cancelled) toast.error("Ders alanı listesi yüklenemedi");
       })
       .finally(() => {
         if (!cancelled) setDeptLoading(false);
@@ -223,6 +223,28 @@ export function ScheduleBuilder() {
     [selected, nextColorIdx],
   );
 
+  // CRN ile doğrudan ekle (ders alanı seçmeye gerek yok — global lookup)
+  const addByCrn = useCallback(
+    async (rawCrn: string) => {
+      const crn = rawCrn.trim();
+      if (!/^\d{5}$/.test(crn)) {
+        toast.error("CRN 5 haneli sayısal olmalı");
+        return;
+      }
+      if (selected.some((s) => s.course.crn === crn)) {
+        toast.warning("Bu CRN zaten ekli");
+        return;
+      }
+      const info = await api.lookupCRN(crn);
+      if (!info || !info.sessions?.length) {
+        toast.error(`CRN ${crn} bulunamadı`);
+        return;
+      }
+      addCourse(info);
+    },
+    [selected, addCourse],
+  );
+
   // Remove course
   const removeCourse = useCallback((crn: string) => {
     setSelected((prev) => prev.filter((s) => s.course.crn !== crn));
@@ -258,6 +280,7 @@ export function ScheduleBuilder() {
             selectedCourses={selected}
             onRemoveCourse={removeCourse}
             onAddCourse={() => setModalOpen(true)}
+            onAddByCrn={addByCrn}
             conflicts={conflicts}
             onExport={exportSchedule}
           />
