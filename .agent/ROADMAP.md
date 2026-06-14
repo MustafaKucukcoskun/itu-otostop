@@ -81,13 +81,16 @@ Karar görseli: `design-refs/palette-preview.png/html`. Sistem: `DESIGN_SYSTEM.m
 
 Plan: `plans/schedule-builder.md` (10 maddeden 9'u bitti)
 
-- [ ] Seçili derslerin **localStorage persist**'i (sayfa yenilemede kaybolmasın)
-- [ ] `schedule-service.ts` — Supabase cloud sync (RPC: `frontend/sql/` + servis fonksiyonu) *(persist'ten sonra, isteğe bağlı kapsam)*
-- [ ] `weekly-schedule.tsx` (dashboard, 436 satır) vs `schedule-grid.tsx` (schedule, 197 satır) — tek bileşende birleştir veya tutarlı hale getir
-- [ ] `AppNavbar`'ı her sayfada ayrı import yerine `layout.tsx`'e taşı
-- [ ] CRN import akışına toast feedback ("N ders aktarıldı")
-- [ ] Mobil responsive test (grid yatay scroll, sheet davranışı)
-- [ ] Uçtan uca akış testi: bölüm seç → ders ekle → çakışma → aktar → dashboard'da CRN'ler
+- [x] Seçili derslerin **localStorage persist**'i (Playwright ile teyit: ders kalıyor)
+- [ ] `schedule-service.ts` — Supabase cloud sync *(opsiyonel, ERTELENDİ — localStorage yeterli; cihazlar-arası senkron isteğe bağlı)*
+- [x] `weekly-schedule` vs `schedule-grid` tutarlılığı → `lib/course-colors.ts` tek kaynak; metin tema-duyarlı (light okunabilirlik bug'ı da düzeldi)
+- [x] `AppNavbar` → `ConditionalNavbar` ile `layout.tsx`'e taşındı (DRY)
+- [x] CRN import toast feedback ("N ders aktarıldı")
+- [x] CRN ile doğrudan ekleme + breadcrumb + "Ders Alanı" rename (bonus)
+- [x] Uçtan uca akış: bölüm seç → ders ekle (modal + CRN ile) → grid → aktar — Playwright ile teyit
+- [x] Mobil: redesign'da 390px test edildi; navbar yapısı değişmedi
+
+> Faz 2 TAMAM (2026-06-14). Tek açık: schedule cloud sync (opsiyonel, ertelendi).
 
 ---
 
@@ -95,25 +98,29 @@ Plan: `plans/schedule-builder.md` (10 maddeden 9'u bitti)
 
 Analizde tespit edilen sorunlar (satır numaraları 2026-06-13 itibarıyla):
 
-- [ ] **Race condition (TOCTOU):** `main.py:330-337` engine start check-then-act — `threading.Lock` ile atomikleştir
-- [ ] **`/api/config` rate limit yok** — token taşıyan endpoint, `@limiter.limit` ekle
-- [ ] **SCRN (ders bırakma) sonuçları parse edilmiyor:** `engine.py` request'e ekliyor ama response'ta takip yok; `CRNStatus.DROPPED` enum'ı hiç kullanılmıyor — ya implemente et ya kaldır
-- [ ] **Sessiz exception'lar:** 7 yerde `except Exception: continue` log'suz (`engine.py:350,501`, `main.py:175` vb.) — log ekle
-- [ ] **`token_preview` hep boş string:** `main.py:271` — ilk4...son4 formatı uygula
-- [ ] **Kalibrasyon failover:** offset ölçülemezse 0 varsayılıyor (`engine.py:549-579`) — token geçmişindeki en iyi ölçümü kullan
-- [ ] **CORS doğrulaması:** Cloud Run'da `CORS_ORIGINS` env'inin Vercel domain'ini içerdiğini doğrula
-- [ ] *(İsteğe bağlı refactor)* `engine.run()` 230 satır — alt fonksiyonlara böl; `_rtt_olc`/`_rtt_stats` tekrarını tek utility'ye indir
+- [x] **Race condition (TOCTOU):** `SessionState.lock` ile engine start atomik (commit + prod deploy)
+- [x] **`token_preview`:** ilk4…son4 maskeli (prod'da test edildi: `eyJh…9999`)
+- [x] **Kalibrasyon failover:** NTP+Date başarısızsa offset=0 yerine geçmiş en iyi (en düşük RTT) offset
+- [x] **CORS:** Cloud Run `CORS_ORIGINS=https://itu-otostop.vercel.app` doğrulandı (preflight test edildi)
+- [~] **`/api/config` rate limit:** ATLANDI (gerekçe) — kampüs paylaşımlı IP'de per-IP limit meşru kullanıcıyı engeller; config token döndürmüyor (sızma yok)
+- [~] **Sessiz exception'lar:** main.py'dekiler uygun (WS disconnect/enum fallback); engine.py tight-loop logları ertelendi (gürültü riski)
+- [~] **SCRN sonuç takibi / `CRNStatus.DROPPED`:** ERTELENDİ — kayıt loop'unu riske atar, orta değer
+- [~] *(İsteğe bağlı)* `engine.run()` refactor — atlandı (çalışıyor, dokunma riski)
+
+> Faz 3 TAMAM (2026-06-14). Backend revision 00002 prod'da. Riskli/düşük-değerli maddeler gerekçeyle ertelendi.
 
 ---
 
 ## Faz 4 — Kalite & Dayanıklılık 🧪
 
-- [ ] Global **Error Boundary** (dashboard + schedule sarmalansın; crash → beyaz ekran olmasın)
-- [ ] Offline/WS kopması durumu için kullanıcıya görünür banner
-- [ ] **Test başlangıcı:** `engine.py` timing fonksiyonları için pytest (offset hesabı, buffer clamp, trend analizi)
-- [ ] Frontend smoke test (Playwright: sayfa açılır, form çalışır)
-- [ ] A11y taraması: form label'ları, kontrast, focus yönetimi (reduced-motion Faz 1'de)
-- [ ] Lighthouse audit + skorları ROADMAP'e not et
+- [x] Global **Error Boundary** (`app/error.tsx` + `global-error.tsx`; crash → "Tekrar Dene")
+- [x] Offline/WS banner (dashboard: bağlantı kopunca görünür uyarı)
+- [x] **pytest başlangıcı:** `backend/test_engine.py` 10 test (TrendAnalyzer regresyon, ChangeDetector eşik, token_preview maske) — hepsi geçiyor
+- [x] A11y: form input aria-label'ları (token, CRN, ayarlar) + reduced-motion (Faz 1) + focus outline'lar
+- [~] Frontend smoke test (Playwright harness): ERTELENDİ — akışlar Playwright ile defalarca manuel doğrulandı; formal test harness ayrı altyapı işi
+- [~] Lighthouse audit: ERTELENDİ — opsiyonel; lighthouse CLI + dev server gerektirir, ayrı adım
+
+> Faz 4 ana maddeler TAMAM (2026-06-14). Smoke harness + Lighthouse opsiyonel/ertelendi.
 
 ---
 
