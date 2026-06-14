@@ -184,6 +184,7 @@ export function TokenInput({
             value={token}
             onChange={(e) => onTokenChange(e.target.value)}
             placeholder="Token'ı buraya yapıştır..."
+            aria-label="OBS Bearer token"
             className="min-h-20 resize-none pr-10 font-mono text-xs"
             style={
               !show

@@ -224,6 +224,7 @@ export function ScheduleSidebar({
                   if (e.key === "Enter") handleCrnAdd();
                 }}
                 placeholder="CRN ile ekle (5 hane)"
+                aria-label="CRN ile ders ekle"
                 inputMode="numeric"
                 maxLength={5}
                 className="pl-8 font-mono text-xs"

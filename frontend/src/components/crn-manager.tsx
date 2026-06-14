@@ -210,6 +210,7 @@ export function CRNManager({
                   ? "CRN gir (ör: 24066 Mat Bilimi)"
                   : "CRN gir (ör: 20150)"
               }
+              aria-label={tab === "add" ? "Eklenecek CRN" : "Bırakılacak CRN"}
               className="font-mono text-sm"
             />
             <button
