@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { m, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
@@ -16,6 +16,9 @@ const DAYS = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"] as const;
 const DAY_SHORT = ["Pzt", "Sal", "Çar", "Per", "Cum"] as const;
 
 const COURSE_HUES = [250, 185, 35, 350, 145, 65, 290, 210] as const;
+
+// Seçili dersleri sayfa yenilemede korumak için localStorage anahtarı
+const SELECTED_STORAGE_KEY = "otostop-schedule-selected";
 
 // ── Types ──
 
@@ -85,6 +88,43 @@ export function ScheduleBuilder() {
 
   // Router for export navigation
   const router = useRouter();
+
+  // localStorage persist — seçili dersler sayfa yenilemede kaybolmasın
+  const restoredRef = useRef(false);
+
+  // Restore on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SELECTED_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          selected: SelectedCourse[];
+          nextColorIdx: number;
+        };
+        if (parsed.selected?.length) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time localStorage hidratasyonu
+          setSelected(parsed.selected);
+          setNextColorIdx(parsed.nextColorIdx ?? parsed.selected.length);
+        }
+      }
+    } catch {
+      /* bozuk veri — yoksay */
+    }
+    restoredRef.current = true;
+  }, []);
+
+  // Persist on change (restore tamamlanmadan yazma — boş state ezmesin)
+  useEffect(() => {
+    if (!restoredRef.current) return;
+    try {
+      localStorage.setItem(
+        SELECTED_STORAGE_KEY,
+        JSON.stringify({ selected, nextColorIdx }),
+      );
+    } catch {
+      /* kota dolu vs. — yoksay */
+    }
+  }, [selected, nextColorIdx]);
 
   // Department change handler — resets courses before setting dept
   const handleDeptChange = useCallback((dept: DepartmentItem | null) => {

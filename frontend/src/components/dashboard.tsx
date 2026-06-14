@@ -192,7 +192,14 @@ function DashboardContent() {
             setCrnList((prev) => {
               const existing = new Set(prev);
               const newCRNs = importedCRNs.filter((c) => !existing.has(c));
-              return newCRNs.length > 0 ? [...prev, ...newCRNs] : prev;
+              if (newCRNs.length === 0) return prev;
+              // Tek seferlik import bildirimi (mount'ta; key hemen siliniyor)
+              toast.success(
+                newCRNs.length === 1
+                  ? "1 ders kayıt motoruna aktarıldı"
+                  : `${newCRNs.length} ders kayıt motoruna aktarıldı`,
+              );
+              return [...prev, ...newCRNs];
             });
           }
         } catch {
