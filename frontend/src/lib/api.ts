@@ -40,7 +40,8 @@ export interface CalibrationResult {
   rtt_one_way_ms: number;
   rtt_full_ms: number;
   ntp_offset_ms: number | null;
-  server_ntp_diff_ms: number | null;
+  server_ntp_diff_ms: number | null; // gerçek OBS↔NTP farkı (Date ölçümünden); senkron ise ~0
+  date_offset_ms?: number | null; // ham Date-header offset'i (OBS saatinin yerelden farkı)
   accuracy_ms: number;
   source?: "manual" | "initial" | "auto" | "final";
 }
