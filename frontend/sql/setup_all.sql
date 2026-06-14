@@ -178,11 +178,13 @@ BEGIN
 END $$;
 
 -- ── 8) İzinler — anon'dan EXECUTE'ı kaldır, sadece authenticated ─
-REVOKE EXECUTE ON FUNCTION get_user_config()            FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION save_user_config(TEXT[], TEXT[], TEXT, INTEGER, DOUBLE PRECISION, BOOLEAN) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION get_user_presets()           FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION save_user_preset(TEXT, TEXT[], TEXT[], TEXT, INTEGER, DOUBLE PRECISION) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION delete_user_preset(UUID)     FROM PUBLIC;
+-- NOT: Supabase yeni fonksiyonlara anon'a DOĞRUDAN grant verir; bu yüzden
+-- sadece PUBLIC değil, anon da açıkça revoke edilmeli.
+REVOKE EXECUTE ON FUNCTION get_user_config()            FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION save_user_config(TEXT[], TEXT[], TEXT, INTEGER, DOUBLE PRECISION, BOOLEAN) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION get_user_presets()           FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION save_user_preset(TEXT, TEXT[], TEXT[], TEXT, INTEGER, DOUBLE PRECISION) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION delete_user_preset(UUID)     FROM PUBLIC, anon;
 
 GRANT EXECUTE ON FUNCTION get_user_config()             TO authenticated;
 GRANT EXECUTE ON FUNCTION save_user_config(TEXT[], TEXT[], TEXT, INTEGER, DOUBLE PRECISION, BOOLEAN) TO authenticated;
