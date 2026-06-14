@@ -1,0 +1,11 @@
+{
+  "name": "itu-otostop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "İTÜ OBS ders kayıt otomasyonu — dev orchestrator",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && python main.py"
+  }
+}
