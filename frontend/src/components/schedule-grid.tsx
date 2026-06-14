@@ -134,7 +134,7 @@ export function ScheduleGrid({
 
                 return (
                   <m.div
-                    key={`${block.crn}-${block.day}`}
+                    key={`${block.crn}-${block.day}-${block.startMin}`}
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
