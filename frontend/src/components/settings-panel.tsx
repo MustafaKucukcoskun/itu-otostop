@@ -98,6 +98,7 @@ export function SettingsPanel({
                 value={maxDeneme}
                 onChange={(e) => onMaxDenemeChange(Number(e.target.value))}
                 disabled={disabled}
+                aria-label="Maksimum deneme sayısı"
                 className="h-9 w-full border bg-background px-3 font-mono text-sm transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-40"
               />
             </FieldGroup>
@@ -139,6 +140,7 @@ export function SettingsPanel({
                   }
                 }}
                 disabled={disabled}
+                aria-label="Retry aralığı (saniye)"
                 className="h-9 w-full border bg-background px-3 font-mono text-sm transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-40"
               />
             </FieldGroup>
