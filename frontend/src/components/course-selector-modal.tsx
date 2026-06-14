@@ -164,7 +164,8 @@ export function CourseSelectorModal({
     <Sheet open={open} onOpenChange={handleClose}>
       <SheetContent
         side="right"
-        className="w-full sm:max-w-lg border-l border-border p-0 flex flex-col"
+        showCloseButton={false}
+        className="flex w-full flex-col gap-0 border-l border-border p-0 sm:max-w-lg"
       >
         <SheetHeader className="border-b border-border px-5 py-4">
           <div className="flex items-center gap-3">
@@ -215,7 +216,7 @@ export function CourseSelectorModal({
         )}
 
         {/* Content */}
-        <ScrollArea className="flex-1">
+        <ScrollArea className="min-h-0 flex-1">
           <div className="px-5 py-4">
             {coursesLoading ? (
               <div className="flex flex-col items-center justify-center py-12 gap-3">
