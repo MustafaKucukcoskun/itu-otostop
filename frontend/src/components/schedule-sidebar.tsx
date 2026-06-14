@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { m } from "motion/react";
-import { Plus, Trash2, AlertTriangle, ArrowRight, Loader2 } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, ArrowRight, Loader2, Hash } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Command,
   CommandInput,
@@ -31,6 +33,7 @@ interface ScheduleSidebarProps {
   selectedCourses: SelectedCourse[];
   onRemoveCourse: (crn: string) => void;
   onAddCourse: () => void;
+  onAddByCrn: (crn: string) => void | Promise<void>;
   conflicts: string[];
   onExport: () => void;
 }
@@ -45,16 +48,35 @@ export function ScheduleSidebar({
   selectedCourses,
   onRemoveCourse,
   onAddCourse,
+  onAddByCrn,
   conflicts,
   onExport,
 }: ScheduleSidebarProps) {
+  const [crnInput, setCrnInput] = useState("");
+  const [crnAdding, setCrnAdding] = useState(false);
+
+  const handleCrnAdd = async () => {
+    const crn = crnInput.trim();
+    if (!crn) return;
+    setCrnAdding(true);
+    try {
+      await onAddByCrn(crn);
+      setCrnInput("");
+    } finally {
+      setCrnAdding(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       {/* Department Selector */}
       <div className="rounded-xl border border-border bg-card p-4">
-        <h2 className="mb-3 text-sm font-semibold tracking-tight text-muted-foreground uppercase">
-          Bölüm Seçimi
+        <h2 className="mb-1 text-sm font-semibold tracking-tight text-muted-foreground uppercase">
+          Ders Alanı
         </h2>
+        <p className="mb-3 text-[11px] text-muted-foreground/70">
+          Dersin alan/branş kodu (BLG, MAT, ATA…)
+        </p>
         {deptLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
@@ -62,7 +84,7 @@ export function ScheduleSidebar({
           </div>
         ) : (
           <Command className="rounded-lg border border-border">
-            <CommandInput placeholder="Bölüm ara..." />
+            <CommandInput placeholder="Ders alanı ara… (BLG, MAT…)" />
             <CommandList>
               <CommandEmpty>Sonuç bulunamadı</CommandEmpty>
               <CommandGroup>
@@ -187,9 +209,41 @@ export function ScheduleSidebar({
 
         {!selectedDept && (
           <p className="mt-2 text-center text-[11px] text-muted-foreground/60">
-            Önce bölüm seçin
+            Önce ders alanı seçin
           </p>
         )}
+
+        {/* CRN'i biliyorsan doğrudan ekle (alan seçmeye gerek yok) */}
+        <div className="mt-3 border-t pt-3">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Hash className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={crnInput}
+                onChange={(e) => setCrnInput(e.target.value.replace(/\D/g, ""))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCrnAdd();
+                }}
+                placeholder="CRN ile ekle (5 hane)"
+                inputMode="numeric"
+                maxLength={5}
+                className="pl-8 font-mono text-xs"
+              />
+            </div>
+            <button
+              onClick={handleCrnAdd}
+              disabled={crnInput.length !== 5 || crnAdding}
+              className="flex size-9 shrink-0 items-center justify-center border bg-card text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-40"
+              aria-label="CRN ekle"
+            >
+              {crnAdding ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Conflicts Warning */}

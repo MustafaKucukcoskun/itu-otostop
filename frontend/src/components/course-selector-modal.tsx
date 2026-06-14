@@ -194,9 +194,31 @@ export function CourseSelectorModal({
               onClick={handleClose}
               className="rounded-lg p-1.5 text-muted-foreground transition-colors
                          hover:bg-muted hover:text-foreground"
+              aria-label="Kapat"
             >
               <X className="size-4" />
             </button>
+          </div>
+
+          {/* Breadcrumb: ders alanı › ders › section (3 katman ayrı) */}
+          <div className="mt-2 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            <span className={step === "code" ? "text-primary" : ""}>
+              {selectedDept?.dersBransKodu ?? "Alan"}
+            </span>
+            {(step === "course" || step === "section") && selectedCodePrefix && (
+              <>
+                <span className="text-muted-foreground/40">›</span>
+                <span className={step === "course" ? "text-primary" : ""}>
+                  {selectedCodePrefix}
+                </span>
+              </>
+            )}
+            {step === "section" && (
+              <>
+                <span className="text-muted-foreground/40">›</span>
+                <span className="text-primary">{selectedCourseCode}</span>
+              </>
+            )}
           </div>
         </SheetHeader>
 
