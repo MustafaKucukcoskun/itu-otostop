@@ -626,6 +626,15 @@ function DashboardContent() {
 
   return (
     <>
+      {/* Offline/WS kopması bannerı — kayıt sırasında canlı güncellemeler durunca kritik */}
+      {!ws.connected && (
+        <div className="sticky top-14 z-40 flex items-center justify-center gap-2 border-b border-status-wait/40 bg-status-wait/10 px-4 py-2 text-center text-xs font-medium text-status-wait">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-status-wait" />
+          Sunucu bağlantısı yok — yeniden bağlanılıyor… Canlı güncellemeler
+          (log, geri sayım) duraklatıldı.
+        </div>
+      )}
+
       {/* Dashboard status bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-3">
         <m.div
