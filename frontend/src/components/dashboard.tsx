@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
 import { api, type CalibrationResult, type CourseInfo } from "@/lib/api";
 import { ConfigService } from "@/lib/config-service";
+import { useToken } from "@/lib/token-context";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useNotification } from "@/hooks/use-notification";
 import { TokenInput } from "@/components/token-input";
@@ -52,8 +53,8 @@ function DashboardContent() {
   const { user } = useUser();
   const clerkUserId = user?.id ?? null;
 
-  // Config state
-  const [token, setToken] = useState("");
+  // Config state — token sayfa-üstü context'te (navigasyonda korunur, diske yazılmaz)
+  const { token, setToken } = useToken();
   const [tokenChanged, setTokenChanged] = useState(false);
   const [crnList, setCrnList] = useState<string[]>([]);
   const [scrnList, setScrnList] = useState<string[]>([]);
@@ -87,11 +88,14 @@ function DashboardContent() {
 
   const isDone = ws.phase === "done";
 
-  // Success overlay: auto-show on done, user can dismiss
-  const [successDismissed, setSuccessDismissed] = useState(false);
+  // Success overlay: yalnızca CANLI tamamlanmada açılır (completionTick).
+  // Ders Planı'ndan dönünce / reconnect'te backend hâlâ "done" olsa bile
+  // overlay tekrar patlamaz — sonuç CRN listesinde + "Tamamlandı" etiketinde
+  // zaten inline görünür.
+  const [showSuccess, setShowSuccess] = useState(false);
   useEffect(() => {
-    if (isDone) setSuccessDismissed(false);
-  }, [isDone]);
+    if (ws.completionTick > 0) setShowSuccess(true);
+  }, [ws.completionTick]);
 
   // Guard: auto-save'in config load bitmeden cloud'u ezmesini engelle
   const initialLoadDone = useRef(false);
@@ -505,9 +509,9 @@ function DashboardContent() {
     }
   };
 
-  // Show toast + notification on done
+  // Toast + bildirim — yalnızca CANLI tamamlanmada (her remount'ta değil)
   useEffect(() => {
-    if (ws.done) {
+    if (ws.completionTick > 0) {
       const successCount = Object.values(ws.crnResults).filter(
         (r) => r.status === "success",
       ).length;
@@ -521,7 +525,7 @@ function DashboardContent() {
       notify.notifyResult(successCount, totalCount, ws.crnResults);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ws.done]);
+  }, [ws.completionTick]);
 
   // Load preset handler
   const handleLoadPreset = useCallback(
@@ -916,9 +920,9 @@ function DashboardContent() {
         </div>
       </footer>
 
-      {/* Success overlay with confetti */}
+      {/* Success overlay — sadece canlı tamamlanmada */}
       <SuccessOverlay
-        show={isDone && !successDismissed}
+        show={showSuccess}
         results={Object.entries(ws.crnResults).map(([crn, r]) => ({
           crn,
           status: r.status,
@@ -926,7 +930,7 @@ function DashboardContent() {
             ? `${crn} — ${courseInfo[crn].course_name}`
             : crn,
         }))}
-        onDismiss={() => setSuccessDismissed(true)}
+        onDismiss={() => setShowSuccess(false)}
       />
     </>
   );
