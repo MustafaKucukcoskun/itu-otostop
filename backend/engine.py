@@ -179,6 +179,8 @@ class RegistrationEngine:
         # sapması zaten calibrate()'te Date offset ile dinamik yakalanıyor; bu yalnız küçük
         # (±RTT/2) artığın manuel düzeltmesi — ölçemediğimiz sürece 0 (buffer'ın σ_obs'u kapsar).
         self._obs_clock_offset: float = 0.0
+        self._last_obs_skew: float = 0.0  # son başarılı OBS↔NTP skew (Date başarısızsa fallback)
+        self._last_date_offset: Optional[float] = None  # son ham Date offset (gözlem/HTTP)
         self._obs_clock_uncertainty: float = 0.00408  # OBS saat belirsizliği σ (sn) — buffer için
 
         # Yeni geliştirme özellikleri
@@ -592,6 +594,8 @@ class RegistrationEngine:
             if date_offset is not None:
                 obs_ntp_skew = -(date_offset + ntp_offset_raw)  # + ileri, - geride
                 self._obs_clock_offset = obs_ntp_skew
+                self._last_obs_skew = obs_ntp_skew       # fallback için sakla
+                self._last_date_offset = date_offset     # gözlem/HTTP için sakla
                 yon_obs = "İLERİDE" if obs_ntp_skew > 0 else "GERİDE"
                 self._log(
                     f"🛰️ OBS↔NTP skew: {abs(obs_ntp_skew*1000):.0f}ms {yon_obs} "
@@ -603,12 +607,12 @@ class RegistrationEngine:
                         f"Düzeltme uygulandı; yine de dikkat.", "warning"
                     )
             else:
-                # Date ölçülemedi → OBS skew bilinmiyor → düzeltme YOK (NTP=OBS varsayımı,
-                # erken-atış riski sürer ama yapabileceğimiz başka şey yok).
-                self._obs_clock_offset = 0.0
+                # Date ölçülemedi → SON BİLİNEN skew'i kullan (0 yapmak felaket: OBS gerçekte
+                # kaymışsa erken atarız). Skew stabil olduğundan son ölçüm güvenli fallback.
+                self._obs_clock_offset = self._last_obs_skew
                 self._log(
-                    "⚠️ Date ölçülemedi → OBS↔NTP skew düzeltmesi YOK (NTP=OBS varsayımı, "
-                    "erken-atış riski)", "warning"
+                    f"⚠️ Date ölçülemedi → son bilinen OBS skew kullanılıyor "
+                    f"({self._last_obs_skew*1000:+.0f}ms); erken atış önlenir", "warning"
                 )
         elif date_offset is not None:
             # NTP başarısız → Date header fallback
