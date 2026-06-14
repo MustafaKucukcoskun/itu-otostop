@@ -171,6 +171,9 @@ export const api = {
     fetchAPI<Array<{ bransKoduId: number; dersBransKodu: string }>>(
       "/api/departments",
     ),
+
+  getCourses: (bransKoduId: number) =>
+    fetchAPI<CourseInfo[]>(`/api/courses/${bransKoduId}`),
 };
 
 // ── WebSocket ──
