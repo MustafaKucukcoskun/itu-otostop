@@ -6,6 +6,7 @@ import { dark } from "@clerk/themes";
 import { trTR } from "@clerk/localizations";
 import { useTheme } from "next-themes";
 import { LazyMotion, domMax } from "motion/react";
+import { TokenProvider } from "@/lib/token-context";
 
 function ClerkThemeWrapper({ children }: { children: React.ReactNode }) {
   const { resolvedTheme } = useTheme();
@@ -61,7 +62,7 @@ function ClerkThemeWrapper({ children }: { children: React.ReactNode }) {
         },
       }}
     >
-      {children}
+      <TokenProvider>{children}</TokenProvider>
     </ClerkProvider>
   );
 }

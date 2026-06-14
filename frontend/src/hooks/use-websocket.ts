@@ -43,6 +43,10 @@ export function useWebSocket() {
     null,
   );
   const [done, setDone] = useState(false);
+  // Yalnızca CANLI "done" event'inde artar (siz izlerken kayıt bitince).
+  // reconnect/remount'ta getStatus "done" dönse bile artmaz → overlay/toast
+  // sadece gerçek tamamlanmada tetiklenir, her sayfa açılışında değil.
+  const [completionTick, setCompletionTick] = useState(0);
   const logIdRef = useRef(0);
 
   const connect = useCallback(() => {
@@ -158,6 +162,7 @@ export function useWebSocket() {
 
             case "done":
               setDone(true);
+              setCompletionTick((t) => t + 1); // canlı tamamlanma
               if (event.data.results) {
                 setCrnResults(
                   event.data.results as Record<
@@ -237,6 +242,7 @@ export function useWebSocket() {
     crnResults,
     calibration,
     done,
+    completionTick,
     clearLogs,
     reset,
     softReset,
