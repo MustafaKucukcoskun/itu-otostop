@@ -53,7 +53,9 @@ class CalibrationResult(BaseModel):
     rtt_one_way_ms: float
     rtt_full_ms: float
     ntp_offset_ms: Optional[float] = None
-    server_ntp_diff_ms: Optional[float] = None
+    server_ntp_diff_ms: Optional[float] = None  # GERÇEK OBS↔NTP skew (- = OBS geride)
+    obs_skew_ms: Optional[float] = None  # OBS↔NTP skew = tetik telafisi (_obs_clock_offset)
+    date_offset_ms: Optional[float] = None  # ham robust Date offset (local - OBS)
     accuracy_ms: float
     source: str = "manual"  # manual, initial, auto, final
 

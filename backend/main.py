@@ -318,7 +318,11 @@ async def calibrate(request: Request):
         rtt_one_way_ms=cal.rtt_one_way * 1000,
         rtt_full_ms=cal.rtt_one_way * 2000,
         ntp_offset_ms=cal.ntp_offset * 1000,
-        server_ntp_diff_ms=(cal.server_offset - cal.ntp_offset) * 1000,
+        # GERÇEK OBS↔NTP skew = tetik telafisi (_obs_clock_offset). Eski (server_offset -
+        # ntp_offset) totolojiydi (=-2×ntp, OBS'yi değil makine NTP hatasını ölçüyordu).
+        server_ntp_diff_ms=engine._obs_clock_offset * 1000,
+        obs_skew_ms=engine._obs_clock_offset * 1000,
+        date_offset_ms=(engine._last_date_offset * 1000) if engine._last_date_offset is not None else None,
         accuracy_ms=cal.rtt_one_way * 1000,
         source="manual",
     )
@@ -429,7 +433,9 @@ async def registration_status(request: Request):
             rtt_one_way_ms=c.rtt_one_way * 1000,
             rtt_full_ms=c.rtt_one_way * 2000,
             ntp_offset_ms=c.ntp_offset * 1000,
-            server_ntp_diff_ms=(c.server_offset - c.ntp_offset) * 1000,
+            server_ntp_diff_ms=session.engine._obs_clock_offset * 1000,
+            obs_skew_ms=session.engine._obs_clock_offset * 1000,
+            date_offset_ms=(session.engine._last_date_offset * 1000) if session.engine._last_date_offset is not None else None,
             accuracy_ms=c.rtt_one_way * 1000,
         )
 
