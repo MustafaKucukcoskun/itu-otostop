@@ -8,9 +8,9 @@ interface ConnectionStatusProps {
 }
 
 function latencyColor(ms: number): string {
-  if (ms < 200) return "text-[--status-ok]";
-  if (ms < 500) return "text-[--status-wait]";
-  return "text-[--status-err]";
+  if (ms < 200) return "text-status-ok";
+  if (ms < 500) return "text-status-wait";
+  return "text-status-err";
 }
 
 export function ConnectionStatus({
@@ -28,7 +28,7 @@ export function ConnectionStatus({
       className="flex items-center gap-2 border px-3 py-1.5"
     >
       <span
-        className={`h-2 w-2 rounded-full ${connected ? "bg-[--status-ok] status-pulse" : "bg-[--status-err]"}`}
+        className={`h-2 w-2 rounded-full ${connected ? "bg-status-ok status-pulse" : "bg-status-err"}`}
         style={
           connected
             ? ({ "--pulse-color": "var(--status-ok)" } as React.CSSProperties)
@@ -36,9 +36,9 @@ export function ConnectionStatus({
         }
       />
       {connected ? (
-        <Wifi className="h-3.5 w-3.5 text-[--status-ok]" />
+        <Wifi className="h-3.5 w-3.5 text-status-ok" />
       ) : (
-        <WifiOff className="h-3.5 w-3.5 text-[--status-err]" />
+        <WifiOff className="h-3.5 w-3.5 text-status-err" />
       )}
       <span className="text-[11px] font-medium text-muted-foreground">
         {connected ? "Canlı" : "Bağlantı yok"}

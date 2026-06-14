@@ -49,9 +49,9 @@ const CAPACITY_THRESHOLD_HIGH = 0.9;
 function capacityColor(enrolled: number, capacity: number): string {
   if (capacity === 0) return "text-muted-foreground";
   const ratio = enrolled / capacity;
-  if (ratio >= CAPACITY_THRESHOLD_HIGH) return "text-[--status-err]";
-  if (ratio >= CAPACITY_THRESHOLD_MED) return "text-[--status-wait]";
-  return "text-[--status-ok]";
+  if (ratio >= CAPACITY_THRESHOLD_HIGH) return "text-status-err";
+  if (ratio >= CAPACITY_THRESHOLD_MED) return "text-status-wait";
+  return "text-status-ok";
 }
 
 function capacityPercent(enrolled: number, capacity: number): number {

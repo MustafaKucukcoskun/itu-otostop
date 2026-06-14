@@ -53,26 +53,26 @@ interface CRNManagerProps {
 // Her durum → metin/nokta rengi (durum token'ları). Dolgu yok, hairline dil.
 const statusColor: Record<string, string> = {
   pending: "text-muted-foreground",
-  success: "text-[--status-ok]",
+  success: "text-status-ok",
   already: "text-foreground",
-  full: "text-[--status-err]",
-  conflict: "text-[--status-wait]",
+  full: "text-status-err",
+  conflict: "text-status-wait",
   upgrade: "text-primary",
-  debounce: "text-[--status-wait]",
-  error: "text-[--status-err]",
-  dropped: "text-[--status-ok]",
+  debounce: "text-status-wait",
+  error: "text-status-err",
+  dropped: "text-status-ok",
 };
 
 const statusDot: Record<string, string> = {
   pending: "bg-muted-foreground",
-  success: "bg-[--status-ok]",
+  success: "bg-status-ok",
   already: "bg-foreground",
-  full: "bg-[--status-err]",
-  conflict: "bg-[--status-wait]",
+  full: "bg-status-err",
+  conflict: "bg-status-wait",
   upgrade: "bg-primary",
-  debounce: "bg-[--status-wait]",
-  error: "bg-[--status-err]",
-  dropped: "bg-[--status-ok]",
+  debounce: "bg-status-wait",
+  error: "bg-status-err",
+  dropped: "bg-status-ok",
 };
 
 const statusLabels: Record<string, string> = {
@@ -278,7 +278,7 @@ export function CRNManager({
                   </div>
                   {!disabled && (
                     <button
-                      className="flex h-7 w-7 items-center justify-center text-muted-foreground transition-colors hover:text-[--status-err] sm:opacity-0 sm:group-hover:opacity-100"
+                      className="flex h-7 w-7 items-center justify-center text-muted-foreground transition-colors hover:text-status-err sm:opacity-0 sm:group-hover:opacity-100"
                       onClick={() => removeCRN(crn)}
                       aria-label="CRN kaldır"
                     >
@@ -301,7 +301,7 @@ export function CRNManager({
           <div className="flex justify-end pb-1">
             <button
               onClick={() => setActiveList([])}
-              className="flex items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-[--status-err]"
+              className="flex items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-status-err"
             >
               <Trash2 className="h-2.5 w-2.5" />
               Tümünü temizle

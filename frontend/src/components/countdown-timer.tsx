@@ -139,7 +139,7 @@ export function CountdownTimer({
   const mainColor = isRegistering
     ? "text-primary"
     : isDone
-      ? "text-[--status-ok]"
+      ? "text-status-ok"
       : isIdle && !hasTarget
         ? "text-muted-foreground"
         : "text-foreground";
@@ -153,8 +153,8 @@ export function CountdownTimer({
     >
       {/* Dry-run marker */}
       {dryRun && (
-        <div className="mb-4 inline-flex items-center gap-2 border border-[--status-wait] px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[--status-wait]">
-          <span className="h-1.5 w-1.5 bg-[--status-wait]" />
+        <div className="mb-4 inline-flex items-center gap-2 border border-status-wait px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-status-wait">
+          <span className="h-1.5 w-1.5 bg-status-wait" />
           Dry Run
         </div>
       )}

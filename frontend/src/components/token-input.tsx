@@ -140,7 +140,7 @@ export function TokenInput({
 
   // Expiry indicator: durum rengine eşle
   const expiryColor =
-    expiryStatus?.level === "ok" ? "text-[--status-ok]" : expiryStatus?.level === "warning" ? "text-[--status-wait]" : "text-[--status-err]";
+    expiryStatus?.level === "ok" ? "text-status-ok" : expiryStatus?.level === "warning" ? "text-status-wait" : "text-status-err";
 
   return (
     <div>
@@ -154,7 +154,7 @@ export function TokenInput({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex items-center gap-1 border border-[--status-ok] px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-[--status-ok]"
+                className="flex items-center gap-1 border border-status-ok px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-status-ok"
               >
                 <CheckCircle2 className="h-3 w-3" /> Geçerli
               </m.span>
@@ -165,7 +165,7 @@ export function TokenInput({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex items-center gap-1 border border-[--status-err] px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-[--status-err]"
+                className="flex items-center gap-1 border border-status-err px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-status-err"
               >
                 <XCircle className="h-3 w-3" /> Geçersiz
               </m.span>
@@ -238,7 +238,7 @@ export function TokenInput({
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="flex items-center gap-2 border-l-2 border-current bg-muted/40 px-3 py-2 text-xs font-medium text-[--status-wait]"
+              className="flex items-center gap-2 border-l-2 border-current bg-muted/40 px-3 py-2 text-xs font-medium text-status-wait"
             >
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
               <span>JWT formatı tanınmadı — süre bilgisi gösterilemiyor</span>

@@ -13,7 +13,6 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import type { SelectedCourse } from "./schedule-builder";
 import { COURSE_HUES, DAY_SHORT } from "./schedule-builder";
@@ -87,25 +86,25 @@ export function ScheduleSidebar({
             <CommandInput placeholder="Ders alanı ara… (BLG, MAT…)" />
             <CommandList>
               <CommandEmpty>Sonuç bulunamadı</CommandEmpty>
+              {/* CommandList kendi scroll'una sahip (max-h + overflow-auto);
+                  ayrı ScrollArea sarmak native kaydırmayı kırıyordu */}
               <CommandGroup>
-                <ScrollArea className="max-h-48">
-                  {departments.map((dept) => (
-                    <CommandItem
-                      key={dept.bransKoduId}
-                      value={dept.dersBransKodu}
-                      onSelect={() => onDeptChange(dept)}
-                      className={`cursor-pointer ${
-                        selectedDept?.bransKoduId === dept.bransKoduId
-                          ? "bg-primary/10 text-primary"
-                          : ""
-                      }`}
-                    >
-                      <span className="font-mono text-xs font-semibold mr-2">
-                        {dept.dersBransKodu}
-                      </span>
-                    </CommandItem>
-                  ))}
-                </ScrollArea>
+                {departments.map((dept) => (
+                  <CommandItem
+                    key={dept.bransKoduId}
+                    value={dept.dersBransKodu}
+                    onSelect={() => onDeptChange(dept)}
+                    className={`cursor-pointer ${
+                      selectedDept?.bransKoduId === dept.bransKoduId
+                        ? "bg-primary/10 text-primary"
+                        : ""
+                    }`}
+                  >
+                    <span className="mr-2 font-mono text-xs font-semibold">
+                      {dept.dersBransKodu}
+                    </span>
+                  </CommandItem>
+                ))}
               </CommandGroup>
             </CommandList>
           </Command>
