@@ -35,12 +35,12 @@ export const clerkAppearance = {
       "!text-muted-foreground !font-medium !text-xs !tracking-wide",
     formFieldInput:
       "!rounded-none !bg-background !border-border focus:!border-primary focus:!ring-0 !transition-colors !text-sm",
-    formFieldSuccessText: "!text-[--status-ok] !text-xs",
+    formFieldSuccessText: "!text-status-ok !text-xs",
 
     // ─── Error states ──────────────────────────────────────
-    formFieldErrorText: "!text-[--status-err] !text-xs",
+    formFieldErrorText: "!text-status-err !text-xs",
     alert:
-      "!rounded-none !bg-card !border-l-2 !border-l-[--status-err] !border !border-border !text-foreground",
+      "!rounded-none !bg-card !border-l-2 !border-l-status-err !border !border-border !text-foreground",
     alertText: "!text-sm",
 
     // ─── Submit button ─────────────────────────────────────

@@ -12,14 +12,14 @@ interface LiveLogsProps {
 
 const levelColors: Record<string, string> = {
   info: "text-foreground",
-  warning: "text-[--status-wait]",
-  error: "text-[--status-err]",
+  warning: "text-status-wait",
+  error: "text-status-err",
 };
 
 const levelDots: Record<string, string> = {
   info: "bg-muted-foreground",
-  warning: "bg-[--status-wait]",
-  error: "bg-[--status-err]",
+  warning: "bg-status-wait",
+  error: "bg-status-err",
 };
 
 export function LiveLogs({ logs, onClear }: LiveLogsProps) {

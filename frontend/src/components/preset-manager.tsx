@@ -234,7 +234,7 @@ export function PresetManager({
                 </div>
                 <button
                   onClick={(e) => handleDelete(e, preset)}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground opacity-0 transition-all hover:text-[--status-err] group-hover:opacity-100"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground opacity-0 transition-all hover:text-status-err group-hover:opacity-100"
                   aria-label="Şablonu sil"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -274,7 +274,7 @@ export function PresetManager({
               className="w-full max-w-sm space-y-4 border bg-popover p-6"
             >
               <div className="flex items-start gap-3">
-                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[--status-wait]" />
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-status-wait" />
                 <div>
                   <p className="text-sm font-semibold">Şablon Yükle</p>
                   <p className="mt-1 text-xs text-muted-foreground">

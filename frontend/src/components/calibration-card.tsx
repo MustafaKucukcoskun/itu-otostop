@@ -136,10 +136,10 @@ function stdDev(values: number[]): number {
 
 /** Kalite seviyesi — durum rengine eşlenir */
 const QUALITY = {
-  excellent: { label: "Mükemmel", color: "text-[--status-ok]" },
-  good: { label: "İyi", color: "text-[--status-ok]" },
-  normal: { label: "Normal", color: "text-[--status-wait]" },
-  poor: { label: "Yüksek", color: "text-[--status-err]" },
+  excellent: { label: "Mükemmel", color: "text-status-ok" },
+  good: { label: "İyi", color: "text-status-ok" },
+  normal: { label: "Normal", color: "text-status-wait" },
+  poor: { label: "Yüksek", color: "text-status-err" },
 } as const;
 
 type QualityLevel = keyof typeof QUALITY;
@@ -226,10 +226,10 @@ export function CalibrationCard({
     if (last5.length < 2) return null;
     const sigma = stdDev(last5.map((h) => h.rtt_one_way_ms));
     if (sigma < 3)
-      return { label: "Stabil", color: "text-[--status-ok]", desc: `σ=${sigma.toFixed(1)}ms` };
+      return { label: "Stabil", color: "text-status-ok", desc: `σ=${sigma.toFixed(1)}ms` };
     if (sigma < 10)
-      return { label: "Dalgalı", color: "text-[--status-wait]", desc: `σ=${sigma.toFixed(1)}ms` };
-    return { label: "Kararsız", color: "text-[--status-err]", desc: `σ=${sigma.toFixed(1)}ms` };
+      return { label: "Dalgalı", color: "text-status-wait", desc: `σ=${sigma.toFixed(1)}ms` };
+    return { label: "Kararsız", color: "text-status-err", desc: `σ=${sigma.toFixed(1)}ms` };
   }, [history]);
 
   const sourceLabel = useMemo(() => {

@@ -168,7 +168,7 @@ export function SettingsPanel({
           {/* Dry-Run Toggle */}
           <div className="flex items-center justify-between border px-3 py-3">
             <div className="flex items-center gap-2.5">
-              <FlaskConical className="h-4 w-4 text-[--status-wait]" />
+              <FlaskConical className="h-4 w-4 text-status-wait" />
               <div>
                 <p className="text-sm font-medium">Test Modu (Dry Run)</p>
                 <p className="text-[10px] text-muted-foreground">
@@ -184,7 +184,7 @@ export function SettingsPanel({
               disabled={disabled}
               className={`relative h-6 w-11 shrink-0 border transition-colors disabled:opacity-40 ${
                 dryRun
-                  ? "border-[--status-wait] bg-[--status-wait]"
+                  ? "border-status-wait bg-status-wait"
                   : "border-border bg-input"
               }`}
             >

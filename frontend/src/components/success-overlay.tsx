@@ -88,13 +88,13 @@ export function SuccessOverlay({
 
               <p className="mt-2 font-mono text-sm text-muted-foreground tabular-nums">
                 {successCount > 0 && (
-                  <span className="text-[--status-ok]">
+                  <span className="text-status-ok">
                     {successCount} başarılı
                   </span>
                 )}
                 {successCount > 0 && failCount > 0 && " · "}
                 {failCount > 0 && (
-                  <span className="text-[--status-err]">
+                  <span className="text-status-err">
                     {failCount} başarısız
                   </span>
                 )}
@@ -115,10 +115,10 @@ export function SuccessOverlay({
                       <span
                         className={`shrink-0 uppercase tracking-wider ${
                           isOk(r.status)
-                            ? "text-[--status-ok]"
+                            ? "text-status-ok"
                             : r.status === "pending"
                               ? "text-muted-foreground"
-                              : "text-[--status-err]"
+                              : "text-status-err"
                         }`}
                       >
                         {STATUS_TEXT[r.status] ?? r.status}

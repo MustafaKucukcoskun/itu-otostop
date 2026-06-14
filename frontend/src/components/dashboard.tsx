@@ -640,7 +640,7 @@ function DashboardContent() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="border border-[--status-wait] px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[--status-wait]"
+                className="border border-status-wait px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-status-wait"
               >
                 Dry Run
               </m.span>
@@ -716,7 +716,7 @@ function DashboardContent() {
                       disabled={starting || !token || crnList.length === 0}
                       className={`flex h-11 flex-1 items-center justify-center gap-2 text-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-30 sm:h-10 ${
                         dryRun
-                          ? "border border-[--status-wait] text-[--status-wait] hover:bg-[--status-wait]/10"
+                          ? "border border-status-wait text-status-wait hover:bg-status-wait/10"
                           : "bg-primary text-primary-foreground hover:bg-primary/90"
                       }`}
                     >

@@ -232,7 +232,7 @@ export function WeeklySchedule({
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
           )}
           {conflicts.size > 0 && (
-            <span className="flex items-center gap-1 text-[10px] font-medium text-[--status-err]">
+            <span className="flex items-center gap-1 text-[10px] font-medium text-status-err">
               <AlertTriangle className="h-3 w-3" />
               çakışma
             </span>
@@ -330,7 +330,7 @@ export function WeeklySchedule({
                             }}
                             className={`absolute left-0.5 right-0.5 cursor-default overflow-hidden ${
                               isConflict
-                                ? "outline outline-1 outline-[--status-err]"
+                                ? "outline outline-1 outline-status-err"
                                 : ""
                             }`}
                             style={{
@@ -377,7 +377,7 @@ export function WeeklySchedule({
                             </div>
                             {isConflict && (
                               <div className="absolute top-0.5 right-0.5">
-                                <AlertTriangle className="h-2.5 w-2.5 text-[--status-err]" />
+                                <AlertTriangle className="h-2.5 w-2.5 text-status-err" />
                               </div>
                             )}
                           </m.div>
