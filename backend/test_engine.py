@@ -87,3 +87,55 @@ def test_token_preview_long_masks_middle():
     out = _token_preview("eyJhbGc_SECRET_9999")
     assert out == "eyJh…9999"
     assert "SECRET" not in out  # ortadaki gizli kısım sızmamalı
+
+
+# ── calibrate() offset seçimi — OBS NTP-senkron değilse erken atışı önle ──
+#
+# KRİTİK: OBS tarihsel olarak ~2sn geriydeydi. NTP "senkron" derken OBS 2sn geride
+# olursa, NTP'ye güvenmek tetik'i sunucu açılmadan atar → VAL02 + 3sn ceza → kontenjan
+# biter. Engine, NTP-Date çelişkisini (2 ölçümle teyitli) yakalayıp GERÇEK OBS saatini
+# (Date offset) kullanmalı. Bu testler o davranışı kilitler.
+
+from unittest.mock import Mock  # noqa: E402
+from engine import RegistrationEngine  # noqa: E402
+
+
+def _make_calib_engine():
+    """Ağa dokunan metotları mock'layıp calibrate()'in offset seçim mantığını izole eder."""
+    eng = RegistrationEngine(token="dummy.jwt.token", ecrn_list=["00000"])
+    eng.session = Mock()                       # warmup POST → no-op
+    eng._rtt_olc = lambda n=5: 0.044           # medyan RTT 44ms
+    eng._log = lambda *a, **k: None
+    eng._emit = lambda *a, **k: None
+    eng._set_phase = lambda *a, **k: None
+    eng._update_trend_analysis = lambda *a, **k: None
+    return eng
+
+
+def test_calibrate_obs_synced_uses_ntp():
+    """OBS NTP-senkron (NTP≈Date) → NTP offset korunur, Date override etmez."""
+    eng = _make_calib_engine()
+    eng._ntp_calibrate = lambda: (0.005, 0.008)   # NTP: OBS yerelden 5ms geride
+    eng._measure_date_offset = lambda: 0.003      # Date ~aynı (fark 2ms < 100ms eşik)
+    cal = eng.calibrate()
+    assert cal.server_offset == pytest.approx(-0.005, abs=1e-6)  # = -ntp_offset_raw
+
+
+def test_calibrate_obs_2s_behind_uses_date():
+    """FELAKET ÖNLEME: OBS 2sn geride; NTP 0 der ama Date +2s (2 ölçümle teyit).
+    Engine NTP'ye güvenmemeli (2sn erken = VAL02), Date offset'i kullanmalı."""
+    eng = _make_calib_engine()
+    eng._ntp_calibrate = lambda: (0.0, 0.008)                # NTP: yanlışlıkla senkron sanıyor
+    eng._measure_date_offset = Mock(side_effect=[2.0, 2.0])  # Date: OBS 2sn geride
+    cal = eng.calibrate()
+    assert cal.server_offset == pytest.approx(2.0, abs=1e-3)  # NTP(0) değil → Date(+2s)
+    assert eng._measure_date_offset.call_count == 2           # teyit için 2. ölçüm yapıldı
+
+
+def test_calibrate_noisy_date_keeps_ntp():
+    """Tek gürültülü Date ölçümü NTP'yi EZMEMELİ — 2. ölçüm teyit etmezse NTP korunur."""
+    eng = _make_calib_engine()
+    eng._ntp_calibrate = lambda: (0.0, 0.008)
+    eng._measure_date_offset = Mock(side_effect=[2.0, 0.001])  # 1. büyük, 2. küçük → teyit YOK
+    cal = eng.calibrate()
+    assert cal.server_offset == pytest.approx(0.0, abs=1e-6)    # NTP korundu (override yok)
