@@ -2,15 +2,8 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { m } from "motion/react";
-import {
-  Activity,
-  Server,
-  Wifi,
-  Clock,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { PanelHeader } from "@/components/panel";
 import type { CalibrationResult } from "@/lib/api";
 
 // ── Calibration History (localStorage — token bazlı) ──
@@ -59,7 +52,6 @@ function saveToHistory(token: string, cal: CalibrationResult) {
       rtt_one_way_ms: cal.rtt_one_way_ms,
       source: cal.source ?? "manual",
     });
-    // Son N kaydı tut
     while (history.length > MAX_ENTRIES) history.shift();
     localStorage.setItem(key, JSON.stringify(history));
   } catch {
@@ -80,12 +72,10 @@ function migrateOldHistory() {
 
 function Sparkline({
   data,
-  color,
   height = 24,
   width = 120,
 }: {
   data: number[];
-  color: string;
   height?: number;
   width?: number;
 }) {
@@ -106,23 +96,18 @@ function Sparkline({
       <polyline
         points={points}
         fill="none"
-        stroke={color}
+        stroke="var(--primary)"
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
-        opacity="0.7"
+        opacity="0.8"
       />
-      {/* Last point dot */}
-      {data.length > 0 && (
-        <circle
-          cx={((data.length - 1) / (data.length - 1)) * width}
-          cy={
-            height - ((data[data.length - 1] - min) / range) * (height - 4) - 2
-          }
-          r="2.5"
-          fill={color}
-        />
-      )}
+      <circle
+        cx={width}
+        cy={height - ((data[data.length - 1] - min) / range) * (height - 4) - 2}
+        r="2.5"
+        fill="var(--primary)"
+      />
     </svg>
   );
 }
@@ -134,11 +119,11 @@ interface CalibrationCardProps {
 }
 
 /** Kaynak etiket çevirisi */
-const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
-  manual: { label: "Manuel", color: "text-blue-400" },
-  initial: { label: "Başlangıç", color: "text-violet-400" },
-  auto: { label: "Otomatik", color: "text-teal-400" },
-  final: { label: "Son Ölçüm", color: "text-amber-400" },
+const SOURCE_LABELS: Record<string, string> = {
+  manual: "Manuel",
+  initial: "Başlangıç",
+  auto: "Otomatik",
+  final: "Son Ölçüm",
 };
 
 /** Standart sapma hesapla */
@@ -149,24 +134,12 @@ function stdDev(values: number[]): number {
   return Math.sqrt(sq.reduce((a, b) => a + b, 0) / values.length);
 }
 
-/** Kalite seviyesi renkleri */
+/** Kalite seviyesi — durum rengine eşlenir */
 const QUALITY = {
-  excellent: {
-    label: "Mükemmel",
-    class: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10",
-  },
-  good: {
-    label: "İyi",
-    class: "text-blue-600 dark:text-blue-400 bg-blue-500/10",
-  },
-  normal: {
-    label: "Normal",
-    class: "text-amber-600 dark:text-amber-400 bg-amber-500/10",
-  },
-  poor: {
-    label: "Yüksek",
-    class: "text-red-600 dark:text-red-400 bg-red-500/10",
-  },
+  excellent: { label: "Mükemmel", color: "text-[--status-ok]" },
+  good: { label: "İyi", color: "text-[--status-ok]" },
+  normal: { label: "Normal", color: "text-[--status-wait]" },
+  poor: { label: "Yüksek", color: "text-[--status-err]" },
 } as const;
 
 type QualityLevel = keyof typeof QUALITY;
@@ -186,47 +159,38 @@ function accuracyQuality(ms: number): QualityLevel {
 }
 
 function Metric({
-  icon: Icon,
   label,
   value,
   unit,
-  color,
   quality,
   delay = 0,
 }: {
-  icon: React.ElementType;
   label: string;
   value: string;
   unit: string;
-  color: string;
   quality?: QualityLevel;
   delay?: number;
 }) {
   return (
     <m.div
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.3 }}
-      className="flex items-center justify-between py-2.5"
+      transition={{ delay, duration: 0.25 }}
+      className="flex items-center justify-between py-2"
     >
+      <span className="text-[13px] text-muted-foreground">{label}</span>
       <div className="flex items-center gap-2.5">
-        <div
-          className={`h-6 w-6 rounded-md ${color} bg-current/10 flex items-center justify-center`}
-        >
-          <Icon className="h-3 w-3" />
-        </div>
-        <span className="text-[13px] text-muted-foreground">{label}</span>
-      </div>
-      <div className="flex items-center gap-2">
         {quality && (
           <span
-            className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${QUALITY[quality].class}`}
+            className={`font-mono text-[10px] uppercase tracking-wider ${QUALITY[quality].color}`}
           >
             {QUALITY[quality].label}
           </span>
         )}
         <div className="flex items-baseline gap-1">
-          <span className="font-mono font-semibold text-sm">{value}</span>
+          <span className="font-mono text-sm font-semibold tabular-nums">
+            {value}
+          </span>
           <span className="text-[10px] text-muted-foreground">{unit}</span>
         </div>
       </div>
@@ -241,12 +205,10 @@ export function CalibrationCard({
 }: CalibrationCardProps) {
   const [history, setHistory] = useState<CalibrationEntry[]>([]);
 
-  // Migrate old global key once
   useEffect(() => {
     migrateOldHistory();
   }, []);
 
-  // Save new calibration to history + reload
   useEffect(() => {
     if (calibration) {
       saveToHistory(token, calibration);
@@ -254,7 +216,6 @@ export function CalibrationCard({
     }
   }, [calibration, token]);
 
-  // Load history on mount / token change
   useEffect(() => {
     setHistory(loadHistory(token));
   }, [token]);
@@ -263,138 +224,97 @@ export function CalibrationCard({
   const stability = useMemo(() => {
     const last5 = history.slice(-5);
     if (last5.length < 2) return null;
-    const rttValues = last5.map((h) => h.rtt_one_way_ms);
-    const sigma = stdDev(rttValues);
+    const sigma = stdDev(last5.map((h) => h.rtt_one_way_ms));
     if (sigma < 3)
-      return {
-        icon: Minus,
-        label: "Stabil",
-        color: "text-emerald-400",
-        desc: `σ=${sigma.toFixed(1)}ms`,
-      };
+      return { label: "Stabil", color: "text-[--status-ok]", desc: `σ=${sigma.toFixed(1)}ms` };
     if (sigma < 10)
-      return {
-        icon: TrendingUp,
-        label: "Dalgalı",
-        color: "text-orange-400",
-        desc: `σ=${sigma.toFixed(1)}ms`,
-      };
-    return {
-      icon: TrendingDown,
-      label: "Kararsız",
-      color: "text-red-400",
-      desc: `σ=${sigma.toFixed(1)}ms`,
-    };
+      return { label: "Dalgalı", color: "text-[--status-wait]", desc: `σ=${sigma.toFixed(1)}ms` };
+    return { label: "Kararsız", color: "text-[--status-err]", desc: `σ=${sigma.toFixed(1)}ms` };
   }, [history]);
 
-  // Source badge
-  const sourceBadge = useMemo(() => {
+  const sourceLabel = useMemo(() => {
     const src = calibration?.source ?? "manual";
     return SOURCE_LABELS[src] ?? SOURCE_LABELS.manual;
   }, [calibration?.source]);
 
   return (
-    <div className="overflow-hidden">
-      <div className="flex items-center justify-between px-5 pt-5 pb-3">
-        <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
-            <Activity className="h-4 w-4 text-violet-400" />
-          </div>
-          <h3 className="text-sm font-semibold">Kalibrasyon</h3>
-          {stability && (
-            <span
-              className={`flex items-center gap-1 text-[10px] font-medium ${stability.color}`}
-              title={stability.desc}
-            >
-              <stability.icon className="h-3 w-3" />
-              {stability.label}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {calibration && (
-            <span
-              className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-current/5 ${sourceBadge.color}`}
-            >
-              {sourceBadge.label}
-            </span>
-          )}
-          {loading && (
-            <m.div
-              animate={{ rotate: 360 }}
-              transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-            >
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </m.div>
-          )}
-        </div>
-      </div>
-      <div className="px-5 pb-5">
+    <div>
+      <PanelHeader
+        label="Kalibrasyon"
+        action={
+          <>
+            {stability && (
+              <span
+                className={`font-mono text-[10px] uppercase tracking-wider ${stability.color}`}
+                title={stability.desc}
+              >
+                {stability.label}
+              </span>
+            )}
+            {calibration && (
+              <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                {sourceLabel}
+              </span>
+            )}
+            {loading && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+            )}
+          </>
+        }
+      />
+      <div className="p-4">
         {calibration ? (
           <>
-            <div className="divide-y divide-border/30">
+            <div className="divide-y">
               <Metric
-                icon={Server}
                 label="Sunucu Offset"
                 value={`${calibration.server_offset_ms >= 0 ? "+" : ""}${calibration.server_offset_ms?.toFixed(0)}`}
                 unit="ms"
-                color="text-blue-400"
-                delay={0}
               />
               <Metric
-                icon={Wifi}
                 label="RTT (tam)"
                 value={calibration.rtt_full_ms?.toFixed(0) || "—"}
                 unit="ms"
-                color="text-emerald-400"
                 quality={
                   calibration.rtt_full_ms != null
                     ? rttQuality(calibration.rtt_full_ms)
                     : undefined
                 }
-                delay={0.05}
+                delay={0.04}
               />
               <Metric
-                icon={Wifi}
                 label="RTT (tek yön)"
                 value={calibration.rtt_one_way_ms?.toFixed(1) || "—"}
                 unit="ms"
-                color="text-teal-400"
                 quality={
                   calibration.rtt_one_way_ms != null
                     ? rttQuality(calibration.rtt_one_way_ms)
                     : undefined
                 }
-                delay={0.1}
+                delay={0.08}
               />
               <Metric
-                icon={Clock}
                 label="NTP Offset"
                 value={calibration.ntp_offset_ms?.toFixed(0) || "—"}
                 unit="ms"
-                color="text-amber-400"
-                delay={0.15}
+                delay={0.12}
               />
               <Metric
-                icon={Server}
                 label="Sunucu ↔ NTP"
                 value={calibration.server_ntp_diff_ms?.toFixed(0) || "—"}
                 unit="ms"
-                color="text-orange-400"
-                delay={0.2}
+                delay={0.16}
               />
               <Metric
-                icon={Activity}
                 label="Hassasiyet"
                 value={`±${calibration.accuracy_ms?.toFixed(1)}`}
                 unit="ms"
-                color="text-violet-400"
                 quality={
                   calibration.accuracy_ms != null
                     ? accuracyQuality(calibration.accuracy_ms)
                     : undefined
                 }
-                delay={0.25}
+                delay={0.2}
               />
             </div>
 
@@ -403,15 +323,15 @@ export function CalibrationCard({
               <m.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className="mt-3 pt-3 border-t border-border/20"
+                transition={{ delay: 0.24 }}
+                className="mt-3 border-t pt-3"
               >
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="panel-label">
                     Son {Math.min(history.length, 10)} ölçüm
                   </p>
-                  {history.length > 0 && history[history.length - 1].source && (
-                    <p className="text-[9px] text-muted-foreground/40">
+                  {history[history.length - 1]?.source && (
+                    <p className="font-mono text-[10px] text-muted-foreground">
                       {new Date(
                         history[history.length - 1].timestamp,
                       ).toLocaleTimeString("tr-TR", {
@@ -423,18 +343,20 @@ export function CalibrationCard({
                   )}
                 </div>
                 <div className="flex items-center justify-between gap-4">
-                  <div className="space-y-0.5">
-                    <p className="text-[10px] text-blue-400">Offset</p>
+                  <div className="space-y-1">
+                    <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                      Offset
+                    </p>
                     <Sparkline
                       data={history.slice(-10).map((h) => h.server_offset_ms)}
-                      color="oklch(0.65 0.18 240)"
                     />
                   </div>
-                  <div className="space-y-0.5">
-                    <p className="text-[10px] text-emerald-400">RTT</p>
+                  <div className="space-y-1">
+                    <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                      RTT
+                    </p>
                     <Sparkline
                       data={history.slice(-10).map((h) => h.rtt_one_way_ms)}
-                      color="oklch(0.7 0.18 165)"
                     />
                   </div>
                 </div>
@@ -442,7 +364,7 @@ export function CalibrationCard({
             )}
           </>
         ) : (
-          <div className="text-center py-8 text-muted-foreground/50 text-sm">
+          <div className="py-8 text-center text-sm text-muted-foreground">
             {loading ? (
               <m.span
                 animate={{ opacity: [0.4, 1, 0.4] }}

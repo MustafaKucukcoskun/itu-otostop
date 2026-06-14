@@ -8,12 +8,12 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
-  ShieldCheck,
   Clock,
   AlertTriangle,
   HelpCircle,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { PanelHeader } from "@/components/panel";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { TokenGuideModal } from "@/components/token-guide-modal";
@@ -127,7 +127,7 @@ export function TokenInput({
     setTesting(true);
     try {
       const result = await api.testToken();
-      if (result.valid) toast.success("Token geçerli ✓");
+      if (result.valid) toast.success("Token geçerli");
       else toast.error(result.message);
     } catch (err) {
       toast.error(
@@ -138,55 +138,53 @@ export function TokenInput({
     }
   };
 
+  // Expiry indicator: durum rengine eşle
+  const expiryColor =
+    expiryStatus?.level === "ok" ? "text-[--status-ok]" : expiryStatus?.level === "warning" ? "text-[--status-wait]" : "text-[--status-err]";
+
   return (
-    <div className="overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 pt-5 pb-3">
-        <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-            <ShieldCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold">Bearer Token</h3>
-            <p className="text-[11px] text-muted-foreground">
-              OBS → F12 → Network → jwt ara → Response
-            </p>
-          </div>
-        </div>
-        <AnimatePresence mode="wait">
-          {tokenValid === true && (
-            <m.div
-              key="valid"
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0, opacity: 0 }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-medium"
-            >
-              <CheckCircle2 className="h-3 w-3" /> Geçerli
-            </m.div>
-          )}
-          {tokenValid === false && (
-            <m.div
-              key="invalid"
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0, opacity: 0 }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 text-[11px] font-medium"
-            >
-              <XCircle className="h-3 w-3" /> Geçersiz
-            </m.div>
-          )}
-        </AnimatePresence>
-      </div>
+    <div>
+      <PanelHeader
+        label="Bearer Token"
+        action={
+          <AnimatePresence mode="wait">
+            {tokenValid === true && (
+              <m.span
+                key="valid"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex items-center gap-1 border border-[--status-ok] px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-[--status-ok]"
+              >
+                <CheckCircle2 className="h-3 w-3" /> Geçerli
+              </m.span>
+            )}
+            {tokenValid === false && (
+              <m.span
+                key="invalid"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex items-center gap-1 border border-[--status-err] px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-[--status-err]"
+              >
+                <XCircle className="h-3 w-3" /> Geçersiz
+              </m.span>
+            )}
+          </AnimatePresence>
+        }
+      />
 
       {/* Token area */}
-      <div className="px-5 pb-4 space-y-3">
-        <div className="relative group">
+      <div className="space-y-3 p-4">
+        <p className="font-mono text-[11px] text-muted-foreground">
+          OBS → F12 → Network → jwt ara → Response
+        </p>
+        <div className="relative">
           <Textarea
             value={token}
             onChange={(e) => onTokenChange(e.target.value)}
             placeholder="Token'ı buraya yapıştır..."
-            className="font-mono text-xs min-h-20 pr-10 resize-none bg-background/50 border-border/30 rounded-xl focus:ring-1 focus:ring-primary/30 transition-all"
+            className="min-h-20 resize-none pr-10 font-mono text-xs"
             style={
               !show
                 ? ({ WebkitTextSecurity: "disc" } as React.CSSProperties)
@@ -195,8 +193,9 @@ export function TokenInput({
           />
           <button
             type="button"
-            className="absolute top-2.5 right-2.5 h-7 w-7 rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            className="absolute right-2.5 top-2.5 flex h-7 w-7 items-center justify-center border bg-card text-muted-foreground transition-colors hover:text-foreground"
             onClick={() => setShow(!show)}
+            aria-label={show ? "Token'ı gizle" : "Token'ı göster"}
           >
             {show ? (
               <EyeOff className="h-3.5 w-3.5" />
@@ -213,15 +212,7 @@ export function TokenInput({
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium ${
-                expiryStatus.level === "expired"
-                  ? "bg-red-500/10 text-red-600 dark:text-red-400"
-                  : expiryStatus.level === "critical"
-                    ? "bg-red-500/10 text-red-600 dark:text-red-400"
-                    : expiryStatus.level === "warning"
-                      ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"
-                      : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-              }`}
+              className={`flex items-center gap-2 border-l-2 border-current bg-muted/40 px-3 py-2 text-xs font-medium ${expiryColor}`}
             >
               {expiryStatus.level === "expired" ? (
                 <XCircle className="h-3.5 w-3.5 shrink-0" />
@@ -233,7 +224,7 @@ export function TokenInput({
               )}
               <span>{expiryStatus.text}</span>
               {jwtInfo?.exp && (
-                <span className="ml-auto text-[10px] opacity-60 font-mono">
+                <span className="ml-auto font-mono text-[10px] opacity-70">
                   {jwtInfo.exp.toLocaleTimeString("tr-TR", {
                     hour: "2-digit",
                     minute: "2-digit",
@@ -247,7 +238,7 @@ export function TokenInput({
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium bg-yellow-500/10 text-yellow-400"
+              className="flex items-center gap-2 border-l-2 border-current bg-muted/40 px-3 py-2 text-xs font-medium text-[--status-wait]"
             >
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
               <span>JWT formatı tanınmadı — süre bilgisi gösterilemiyor</span>
@@ -259,7 +250,7 @@ export function TokenInput({
           <button
             onClick={handleTest}
             disabled={!token || testing}
-            className="flex-1 py-2 px-4 rounded-xl text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+            className="flex flex-1 items-center justify-center gap-2 bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {testing ? (
               <>
@@ -272,7 +263,7 @@ export function TokenInput({
           </button>
           <button
             onClick={() => setGuideOpen(true)}
-            className="h-9 px-3 rounded-xl ring-1 ring-border/30 bg-background/40 hover:bg-muted/40 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5 text-xs"
+            className="flex h-9 items-center gap-1.5 border px-3 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             title="Token nasıl alınır?"
           >
             <HelpCircle className="h-3.5 w-3.5" />

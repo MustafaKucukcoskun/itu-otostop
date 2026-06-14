@@ -1,6 +1,5 @@
 "use client";
 
-import { m } from "motion/react";
 import { Wifi, WifiOff } from "lucide-react";
 
 interface ConnectionStatusProps {
@@ -9,9 +8,9 @@ interface ConnectionStatusProps {
 }
 
 function latencyColor(ms: number): string {
-  if (ms < 200) return "text-emerald-400";
-  if (ms < 500) return "text-yellow-400";
-  return "text-red-400";
+  if (ms < 200) return "text-[--status-ok]";
+  if (ms < 500) return "text-[--status-wait]";
+  return "text-[--status-err]";
 }
 
 export function ConnectionStatus({
@@ -19,40 +18,36 @@ export function ConnectionStatus({
   latency,
 }: ConnectionStatusProps) {
   return (
-    <m.div
+    <div
       role="status"
-      aria-label={connected ? `Bağlı${latency != null ? `, gecikme ${latency}ms` : ""}` : "Bağlantı yok"}
-      className="flex items-center gap-2 px-3 py-1.5 rounded-full glass"
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
+      aria-label={
+        connected
+          ? `Bağlı${latency != null ? `, gecikme ${latency}ms` : ""}`
+          : "Bağlantı yok"
+      }
+      className="flex items-center gap-2 border px-3 py-1.5"
     >
-      <div className="relative">
-        <m.div
-          className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-400" : "bg-red-400"}`}
-        />
-        {connected && (
-          <m.div
-            className="absolute inset-0 h-2 w-2 rounded-full bg-emerald-400"
-            animate={{ scale: [1, 2.5], opacity: [0.6, 0] }}
-            transition={{ repeat: Infinity, duration: 2, ease: "easeOut" }}
-          />
-        )}
-      </div>
+      <span
+        className={`h-2 w-2 rounded-full ${connected ? "bg-[--status-ok] status-pulse" : "bg-[--status-err]"}`}
+        style={
+          connected
+            ? ({ "--pulse-color": "var(--status-ok)" } as React.CSSProperties)
+            : undefined
+        }
+      />
       {connected ? (
-        <Wifi className="h-3.5 w-3.5 text-emerald-400" />
+        <Wifi className="h-3.5 w-3.5 text-[--status-ok]" />
       ) : (
-        <WifiOff className="h-3.5 w-3.5 text-red-400" />
+        <WifiOff className="h-3.5 w-3.5 text-[--status-err]" />
       )}
       <span className="text-[11px] font-medium text-muted-foreground">
         {connected ? "Canlı" : "Bağlantı yok"}
       </span>
       {connected && latency != null && (
-        <span
-          className={`text-[10px] font-mono font-medium ${latencyColor(latency)}`}
-        >
+        <span className={`font-mono text-[10px] font-medium ${latencyColor(latency)}`}>
           {latency}ms
         </span>
       )}
-    </m.div>
+    </div>
   );
 }

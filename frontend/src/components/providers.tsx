@@ -56,7 +56,8 @@ function ClerkThemeWrapper({ children }: { children: React.ReactNode }) {
       appearance={{
         baseTheme: resolvedTheme === "dark" ? dark : undefined,
         variables: {
-          colorPrimary: "oklch(0.70 0.18 195)",
+          colorPrimary: "oklch(0.62 0.19 39)",
+          borderRadius: "0rem",
         },
       }}
     >

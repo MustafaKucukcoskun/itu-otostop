@@ -1,12 +1,11 @@
 /**
  * Shared Clerk appearance.elements overrides.
  *
- * These class strings deeply restyle every Clerk UI surface —
- * initial form, OAuth buttons, verification step (OTP), and error banners —
- * to match İTÜ Otostop's glassmorphism design system.
+ * Clerk UI yüzeylerini (form, OAuth butonları, OTP, hata banner'ı) İTÜ Otostop'un
+ * "Chronometer" tasarım diline uyarlar: keskin köşeler, hairline border,
+ * solid international orange primary, gradient/glow yok.
  *
- * The outer card is made transparent: the glass wrapper is provided by
- * <AuthLayout> instead of Clerk's own card styling.
+ * Dış kart şeffaftır: cam yerine <AuthLayout> hairline panel sağlar.
  */
 export const clerkAppearance = {
   elements: {
@@ -23,45 +22,45 @@ export const clerkAppearance = {
 
     // ─── Social login buttons ──────────────────────────────
     socialButtonsBlockButton:
-      "!rounded-xl !border !border-border/30 !bg-card/50 hover:!bg-muted/60 !transition-all !duration-200 !shadow-sm hover:!shadow-md",
+      "!rounded-none !border !border-border !bg-card hover:!bg-accent !transition-colors !shadow-none",
     socialButtonsBlockButtonText: "!font-medium !text-foreground/80",
     socialButtonsProviderIcon: "!w-5 !h-5",
 
     // ─── Divider ───────────────────────────────────────────
-    dividerLine: "!bg-border/30",
-    dividerText: "!text-muted-foreground/50 !text-xs",
+    dividerLine: "!bg-border",
+    dividerText: "!text-muted-foreground !text-xs",
 
     // ─── Form fields ───────────────────────────────────────
     formFieldLabel:
-      "!text-muted-foreground/70 !font-medium !text-xs !tracking-wide",
+      "!text-muted-foreground !font-medium !text-xs !tracking-wide",
     formFieldInput:
-      "!rounded-xl !bg-background/60 !border-border/40 focus:!border-primary/50 focus:!ring-2 focus:!ring-primary/20 !transition-all !duration-200 !text-sm",
-    formFieldSuccessText: "!text-emerald-600 dark:!text-emerald-400 !text-xs",
+      "!rounded-none !bg-background !border-border focus:!border-primary focus:!ring-0 !transition-colors !text-sm",
+    formFieldSuccessText: "!text-[--status-ok] !text-xs",
 
     // ─── Error states ──────────────────────────────────────
-    formFieldErrorText: "!text-red-500 dark:!text-red-400 !text-xs",
+    formFieldErrorText: "!text-[--status-err] !text-xs",
     alert:
-      "!rounded-xl !bg-red-500/8 !border-red-500/20 !border !text-red-700 dark:!text-red-300",
+      "!rounded-none !bg-card !border-l-2 !border-l-[--status-err] !border !border-border !text-foreground",
     alertText: "!text-sm",
 
     // ─── Submit button ─────────────────────────────────────
     formButtonPrimary:
-      "!rounded-xl !bg-gradient-to-r !from-primary !to-emerald-600 hover:!from-primary/90 hover:!to-emerald-500 !text-white !font-semibold !shadow-lg !shadow-primary/20 hover:!shadow-primary/30 !transition-all !duration-200 !h-11",
+      "!rounded-none !bg-primary hover:!bg-primary/90 !text-primary-foreground !font-semibold !shadow-none !transition-colors !h-11",
 
     // ─── Footer action (Hesabınız yok mu? Kayıt ol) ────────
-    footerAction: "!text-muted-foreground/50 !text-sm",
+    footerAction: "!text-muted-foreground !text-sm",
     footerActionLink:
       "!text-primary !font-semibold hover:!text-primary/80 !transition-colors",
 
     // ─── Verification step (OTP) ───────────────────────────
     otpCodeFieldInput:
-      "!rounded-lg !border-border/40 !bg-background/60 focus:!border-primary/50 focus:!ring-2 focus:!ring-primary/20 !text-lg !font-mono",
+      "!rounded-none !border-border !bg-background focus:!border-primary focus:!ring-0 !text-lg !font-mono",
     formResendCodeLink:
-      "!text-primary/70 hover:!text-primary !transition-colors !text-sm",
+      "!text-primary/80 hover:!text-primary !transition-colors !text-sm",
 
     // ─── Identity preview (back on verification) ───────────
     identityPreviewEditButton:
-      "!text-primary/70 hover:!text-primary !transition-colors",
+      "!text-primary/80 hover:!text-primary !transition-colors",
     identityPreviewText: "!text-foreground/80 !text-sm",
   },
 } as const;

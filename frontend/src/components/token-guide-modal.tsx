@@ -25,7 +25,6 @@ const STEPS = [
     detail:
       "Hangi sayfada olduğunun önemi yok, OBS'e giriş yapmış olman yeterli. Fotoğraftaki kırmızı kutular kullanıcı adı ve şifre alanlarını, yeşil kutu ise giriş butonunu gösteriyor.",
     icon: ExternalLink,
-    color: "text-blue-600 dark:text-blue-400 bg-blue-500/10",
     image: "/guide/step1-obs-login.png",
   },
   {
@@ -34,7 +33,6 @@ const STEPS = [
     detail:
       'Mac kullanıyorsan Cmd+Option+I kısayolunu kullanabilirsin. Chrome, Firefox ve Edge\'de çalışır. Fotoğrafta "Network" sekmesinin yerini görebilirsin.',
     icon: MonitorSmartphone,
-    color: "text-purple-600 dark:text-purple-400 bg-purple-500/10",
     image: "/guide/step2-devtools.png",
   },
   {
@@ -43,7 +41,6 @@ const STEPS = [
     detail:
       'Fotoğrafta kırmızı kutuyla işaretli filtre alanına "jwt" yazdığında, alttaki sonuç satırı görünecek. O satıra tıklaman gerekiyor. Liste boşsa sayfayı F5 ile yenileyi dene.',
     icon: Search,
-    color: "text-amber-600 dark:text-amber-400 bg-amber-500/10",
     image: "/guide/step3a-jwt-filter.png",
   },
   {
@@ -52,7 +49,6 @@ const STEPS = [
     detail:
       "Fotoğraftaki kırmızı kutuyla işaretli Response sekmesine tıkla. Açılan token metnini Ctrl+A ile tümünü seç, ardından Ctrl+C ile kopyala.",
     icon: Copy,
-    color: "text-orange-600 dark:text-orange-400 bg-orange-500/10",
     image: "/guide/step3b-response-copy.png",
   },
   {
@@ -61,7 +57,6 @@ const STEPS = [
     detail:
       '"Bearer " ön eki otomatik olarak kaldırılır. Yapıştırdıktan sonra "Token Test Et" butonuyla doğruluğunu kontrol edebilirsin.',
     icon: ClipboardPaste,
-    color: "text-cyan-600 dark:text-cyan-400 bg-cyan-500/10",
     image: "/guide/step4-paste-token.png",
   },
 ];
@@ -103,16 +98,16 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 dark:bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55"
             onClick={onClose}
           >
             <m.div
-              initial={{ scale: 0.92, opacity: 0, y: 12 }}
+              initial={{ scale: 0.96, opacity: 0, y: 12 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.92, opacity: 0, y: 12 }}
+              exit={{ scale: 0.96, opacity: 0, y: 12 }}
               transition={{ type: "spring", damping: 26, stiffness: 300 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-card rounded-2xl ring-1 ring-border shadow-2xl mx-4 max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col"
+              className="mx-4 flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden border bg-card"
             >
               {/* Header */}
               <div className="flex items-center justify-between px-5 pt-5 pb-2 shrink-0">
@@ -158,9 +153,7 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
                   >
                     {/* Title + description */}
                     <div className="flex items-start gap-3">
-                      <div
-                        className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${current.color}`}
-                      >
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center border text-primary">
                         <Icon className="h-5 w-5" />
                       </div>
                       <div className="space-y-1">
@@ -202,8 +195,9 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
                     )}
 
                     {/* Tip */}
-                    <div className="bg-muted/50 dark:bg-muted/20 rounded-xl p-3.5 text-xs text-muted-foreground leading-relaxed">
-                      💡 {current.detail}
+                    <div className="border-l-2 border-l-primary bg-muted/40 p-3.5 text-xs leading-relaxed text-muted-foreground">
+                      <span className="panel-label mr-1.5">İpucu</span>
+                      {current.detail}
                     </div>
                   </m.div>
                 </AnimatePresence>
@@ -222,7 +216,7 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
                 {step < STEPS.length - 1 ? (
                   <button
                     onClick={next}
-                    className="flex items-center gap-1 h-9 px-4 rounded-xl bg-primary/15 text-primary text-xs font-semibold hover:bg-primary/25 transition-colors"
+                    className="flex h-9 items-center gap-1 bg-primary px-4 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
                   >
                     Sonraki
                     <ChevronRight className="h-3.5 w-3.5" />
@@ -230,7 +224,7 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
                 ) : (
                   <button
                     onClick={onClose}
-                    className="h-9 px-4 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-xs font-semibold hover:bg-emerald-500/25 transition-colors"
+                    className="h-9 bg-primary px-4 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
                   >
                     Anladım, Kapat
                   </button>
@@ -248,7 +242,7 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-md cursor-zoom-out"
+            className="fixed inset-0 z-[110] flex cursor-zoom-out items-center justify-center bg-black/80"
             onClick={() => setLightbox(null)}
           >
             <m.img

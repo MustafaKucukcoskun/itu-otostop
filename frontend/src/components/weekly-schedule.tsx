@@ -198,13 +198,15 @@ export function WeeklySchedule({
   // Empty state
   if (activeCRNs.length === 0 && !loading) {
     return (
-      <div className="overflow-hidden">
-        <div className="px-5 py-4 flex items-center gap-2 text-muted-foreground">
-          <Calendar className="h-4 w-4" />
-          <span className="text-xs font-medium">Haftalık Program</span>
+      <div>
+        <div className="flex h-11 items-center gap-2 border-b px-4">
+          <span className="panel-label flex items-center gap-2">
+            <Calendar className="h-3.5 w-3.5" />
+            Haftalık Program
+          </span>
         </div>
-        <div className="px-5 pb-6 text-center text-sm text-muted-foreground/50 py-8">
-          <GraduationCap className="h-8 w-8 mx-auto mb-2 opacity-30" />
+        <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+          <GraduationCap className="mx-auto mb-2 h-8 w-8 opacity-40" />
           CRN eklendikçe haftalık ders programınız burada görünecek
         </div>
       </div>
@@ -212,30 +214,30 @@ export function WeeklySchedule({
   }
 
   return (
-    <div className="overflow-hidden">
+    <div>
       {/* Header */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="w-full px-5 py-3 flex items-center justify-between hover:bg-muted/20 transition-colors"
+        className="flex h-11 w-full items-center justify-between border-b px-4 transition-colors hover:bg-accent/40"
       >
-        <div className="flex items-center gap-2">
-          <Calendar className="h-4 w-4 text-primary" />
-          <span className="text-xs font-semibold">Haftalık Program</span>
+        <span className="panel-label flex items-center gap-2">
+          <Calendar className="h-3.5 w-3.5" />
+          Haftalık Program
           {activeCRNs.length > 0 && (
-            <span className="text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded-full">
+            <span className="border px-1.5 font-mono text-[10px] text-muted-foreground">
               {activeCRNs.length} ders
             </span>
           )}
           {loading && (
-            <Loader2 className="h-3 w-3 text-muted-foreground animate-spin" />
+            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
           )}
           {conflicts.size > 0 && (
-            <span className="flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400 font-medium">
+            <span className="flex items-center gap-1 text-[10px] font-medium text-[--status-err]">
               <AlertTriangle className="h-3 w-3" />
               çakışma
             </span>
           )}
-        </div>
+        </span>
         <ChevronDown
           className={`h-4 w-4 text-muted-foreground transition-transform ${collapsed ? "-rotate-90" : ""}`}
         />
@@ -321,23 +323,21 @@ export function WeeklySchedule({
                         return (
                           <m.div
                             key={`${block.crn}-${dayIdx}-${block.startMin}`}
-                            initial={{ opacity: 0, scale: 0.9 }}
+                            initial={{ opacity: 0 }}
                             animate={{
                               opacity: 1,
-                              scale: isHovered ? 1.02 : 1,
                               zIndex: isHovered ? 10 : 1,
                             }}
-                            className={`absolute left-0.5 right-0.5 rounded-lg overflow-hidden cursor-default transition-shadow ${
+                            className={`absolute left-0.5 right-0.5 cursor-default overflow-hidden ${
                               isConflict
-                                ? "ring-1 ring-red-500/60 dark:ring-red-400/60 shadow-[0_0_8px_-2px_rgba(248,113,113,0.3)]"
+                                ? "outline outline-1 outline-[--status-err]"
                                 : ""
-                            } ${isHovered ? "shadow-lg" : ""}`}
+                            }`}
                             style={{
                               top: top + 1,
                               height: Math.max(height - 2, 16),
                               backgroundColor: color.bg,
                               borderLeft: `3px solid ${color.border}`,
-                              backdropFilter: "blur(8px)",
                             }}
                             onMouseEnter={() =>
                               setHoveredBlock(block.courseCode)
@@ -377,7 +377,7 @@ export function WeeklySchedule({
                             </div>
                             {isConflict && (
                               <div className="absolute top-0.5 right-0.5">
-                                <AlertTriangle className="h-2.5 w-2.5 text-red-600 dark:text-red-400" />
+                                <AlertTriangle className="h-2.5 w-2.5 text-[--status-err]" />
                               </div>
                             )}
                           </m.div>
@@ -399,13 +399,13 @@ export function WeeklySchedule({
                   return (
                     <div
                       key={code}
-                      className="flex items-center gap-1.5 text-[9px] rounded-md px-2 py-1 transition-colors cursor-default"
+                      className="flex cursor-default items-center gap-1.5 px-2 py-1 text-[9px] transition-colors"
                       style={{ backgroundColor: color.bg }}
                       onMouseEnter={() => setHoveredBlock(code)}
                       onMouseLeave={() => setHoveredBlock(null)}
                     >
                       <div
-                        className="h-2 w-2 rounded-sm shrink-0"
+                        className="h-2 w-2 shrink-0"
                         style={{ backgroundColor: color.border }}
                       />
                       <span className="font-bold" style={{ color: color.text }}>

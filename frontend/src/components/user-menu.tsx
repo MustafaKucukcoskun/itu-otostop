@@ -60,7 +60,7 @@ export function UserMenu() {
       {/* Trigger */}
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 rounded-xl px-1 py-1 transition-all duration-200 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="flex items-center gap-1.5 p-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         aria-expanded={open}
         aria-haspopup="true"
       >
@@ -70,10 +70,10 @@ export function UserMenu() {
             alt={displayName}
             width={32}
             height={32}
-            className="h-8 w-8 rounded-lg object-cover ring-1 ring-border/30"
+            className="h-8 w-8 border object-cover"
           />
         ) : (
-          <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-xs font-bold ring-1 ring-primary/20">
+          <div className="flex h-8 w-8 items-center justify-center border border-primary bg-primary/10 text-xs font-bold text-primary">
             {initials}
           </div>
         )}
@@ -90,10 +90,10 @@ export function UserMenu() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -4 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
-            className="absolute right-0 top-full mt-2 w-64 origin-top-right rounded-xl glass border border-border/40 shadow-xl z-[200]"
+            className="absolute right-0 top-full z-[200] mt-2 w-64 origin-top-right border bg-popover"
           >
             {/* User Info Section */}
-            <div className="p-3 border-b border-border/20">
+            <div className="border-b p-3">
               <div className="flex items-center gap-3">
                 {user.imageUrl ? (
                   <Image
@@ -101,10 +101,10 @@ export function UserMenu() {
                     alt={displayName}
                     width={40}
                     height={40}
-                    className="h-10 w-10 rounded-lg object-cover ring-1 ring-border/30"
+                    className="h-10 w-10 border object-cover"
                   />
                 ) : (
-                  <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-sm font-bold ring-1 ring-primary/20">
+                  <div className="flex h-10 w-10 items-center justify-center border border-primary bg-primary/10 text-sm font-bold text-primary">
                     {initials}
                   </div>
                 )}
@@ -123,17 +123,17 @@ export function UserMenu() {
             <div className="p-1.5">
               <button
                 onClick={handleManageAccount}
-                className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-muted/50 transition-colors duration-150"
+                className="flex w-full items-center gap-2.5 px-2.5 py-2 text-sm text-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
               >
                 <Settings className="h-4 w-4 text-muted-foreground" />
                 Hesabı Yönet
               </button>
 
-              <div className="my-1 h-px bg-border/15" />
+              <div className="my-1 h-px bg-border" />
 
               <button
                 onClick={handleSignOut}
-                className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-red-600 dark:text-red-400 hover:bg-red-500/8 transition-colors duration-150"
+                className="flex w-full items-center gap-2.5 px-2.5 py-2 text-sm text-[--status-err] transition-colors hover:bg-[--status-err]/10"
               >
                 <LogOut className="h-4 w-4" />
                 Çıkış Yap

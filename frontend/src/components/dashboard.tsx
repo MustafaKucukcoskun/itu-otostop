@@ -6,7 +6,6 @@ import {
   Play,
   Square,
   Gauge,
-  Zap,
   Volume2,
   VolumeX,
   RotateCcw,
@@ -25,11 +24,9 @@ import { LiveLogs } from "@/components/live-logs";
 import { SettingsPanel } from "@/components/settings-panel";
 import { PresetManager } from "@/components/preset-manager";
 import { ConnectionStatus } from "@/components/connection-status";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { WeeklySchedule } from "@/components/weekly-schedule";
-import { SpotlightCard } from "@/components/spotlight-card";
+import { Panel } from "@/components/panel";
 import { SuccessOverlay } from "@/components/success-overlay";
-import { UserMenu } from "@/components/user-menu";
 import { DashboardSkeleton } from "@/components/dashboard-skeleton";
 
 // ── Wrapper: kullanıcı değiştiğinde key ile tam remount sağlar ──
@@ -41,8 +38,8 @@ export function Dashboard() {
   // Clerk yüklenene kadar bekle — double mount + flash önlenir
   if (!isLoaded) {
     return (
-      <div className="min-h-screen mesh-bg flex items-center justify-center">
-        <div className="h-8 w-8 rounded-xl bg-primary/20 animate-pulse" />
+      <div className="flex items-center justify-center py-32">
+        <div className="skeleton h-8 w-8" />
       </div>
     );
   }
@@ -185,6 +182,25 @@ function DashboardContent() {
       initialLoadDone.current = true; // Auto-save kilidini aç
       configReadyRef.current = true;
       setConfigReady(true);
+
+      // Import CRNs from schedule builder if available
+      const scheduleExport = localStorage.getItem("otostop-schedule-export");
+      if (scheduleExport) {
+        try {
+          const importedCRNs = JSON.parse(scheduleExport) as string[];
+          if (importedCRNs.length > 0) {
+            setCrnList((prev) => {
+              const existing = new Set(prev);
+              const newCRNs = importedCRNs.filter((c) => !existing.has(c));
+              return newCRNs.length > 0 ? [...prev, ...newCRNs] : prev;
+            });
+          }
+        } catch {
+          // Invalid JSON, ignore
+        }
+        localStorage.removeItem("otostop-schedule-export");
+      }
+
       // null → "" : config loaded but no time was saved by user
       setKayitSaati((prev) => prev ?? "");
     })();
@@ -443,7 +459,7 @@ function DashboardContent() {
         }
       }
       toast.success(
-        dryRun ? "🧪 DRY RUN başlatıldı!" : "Kayıt süreci başlatıldı!",
+        dryRun ? "DRY RUN başlatıldı" : "Kayıt süreci başlatıldı",
       );
     } catch (err) {
       toast.error(
@@ -490,7 +506,7 @@ function DashboardContent() {
       ).length;
       const totalCount = Object.keys(ws.crnResults).length;
       if (successCount > 0) {
-        toast.success(`${successCount} ders başarıyla kaydedildi! 🎉`);
+        toast.success(`${successCount} ders başarıyla kaydedildi`);
       } else {
         toast.warning("Kayıt süreci bitti, başarılı ders yok");
       }
@@ -548,10 +564,10 @@ function DashboardContent() {
     const base = "İTÜ Otostop";
     switch (ws.phase) {
       case "token_check":
-        document.title = `🔑 Token kontrol — ${base}`;
+        document.title = `Token kontrol — ${base}`;
         break;
       case "calibrating":
-        document.title = `📡 Kalibrasyon... — ${base}`;
+        document.title = `Kalibrasyon — ${base}`;
         break;
       case "waiting": {
         if (ws.countdown !== null && ws.countdown > 0) {
@@ -563,17 +579,17 @@ function DashboardContent() {
             h > 0
               ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
               : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-          document.title = `⏳ ${timeStr} — ${base}`;
+          document.title = `${timeStr} — ${base}`;
         } else {
-          document.title = `⏳ Bekleniyor... — ${base}`;
+          document.title = `Bekleniyor — ${base}`;
         }
         break;
       }
       case "registering":
-        document.title = `⚡ KAYIT YAPILIYOR — ${base}`;
+        document.title = `KAYIT YAPILIYOR — ${base}`;
         break;
       case "done":
-        document.title = `✅ TAMAMLANDI — ${base}`;
+        document.title = `TAMAMLANDI — ${base}`;
         break;
       default:
         document.title = base;
@@ -593,90 +609,57 @@ function DashboardContent() {
 
   if (!shouldShowContent) {
     if (showSkeleton) return <DashboardSkeleton />;
-    // Before 300ms: show just the mesh background (no flash, no skeleton)
-    return (
-      <div className="min-h-screen mesh-bg relative">
-        <div className="dot-grid fixed inset-0 pointer-events-none z-0" />
-        <div className="mesh-orb-accent" />
-        <div className="grain-overlay" />
-      </div>
-    );
+    // Before 300ms: page.tsx provides background, just render nothing
+    return null;
   }
 
   return (
-    <div className="min-h-screen mesh-bg relative">
-      {/* Background layers */}
-      <div className="dot-grid fixed inset-0 pointer-events-none z-0" />
-      <div className="mesh-orb-accent" />
-      <div className="grain-overlay" />
-
-      {/* Header */}
-      <header className="sticky top-0 z-50 glass border-b border-border/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <m.div
-            className="flex items-center gap-3"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={springIn}
+    <>
+      {/* Dashboard status bar */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-3">
+        <m.div
+          className="flex items-center justify-end gap-2"
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={springIn}
+        >
+          <AnimatePresence>
+            {dryRun && (
+              <m.span
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="border border-[--status-wait] px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[--status-wait]"
+              >
+                Dry Run
+              </m.span>
+            )}
+          </AnimatePresence>
+          <ConnectionStatus connected={ws.connected} latency={ws.latency} />
+          <div className="h-4 w-px bg-border" />
+          <button
+            onClick={notify.toggleMute}
+            className="flex h-7 w-7 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+            title={notify.muted ? "Sesi aç" : "Sessize al"}
           >
-            <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center ring-1 ring-primary/20">
-              <Zap className="h-4 w-4 text-primary" />
-            </div>
-            <h1 className="text-sm font-bold tracking-tight text-gradient-primary">
-              İTÜ Otostop
-            </h1>
-            <AnimatePresence>
-              {dryRun && (
-                <m.span
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.8 }}
-                  className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-bold tracking-wider ring-1 ring-amber-500/20"
-                >
-                  DRY RUN
-                </m.span>
-              )}
-            </AnimatePresence>
-          </m.div>
-          <m.div
-            className="flex items-center gap-2"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={springIn}
-          >
-            <ConnectionStatus connected={ws.connected} latency={ws.latency} />
-            <div className="w-px h-5 bg-border/20" />
-            <button
-              onClick={notify.toggleMute}
-              className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all duration-200"
-              title={notify.muted ? "Sesi aç" : "Sessize al"}
-            >
-              {notify.muted ? (
-                <VolumeX className="h-4 w-4" />
-              ) : (
-                <Volume2 className="h-4 w-4" />
-              )}
-            </button>
-            <ThemeToggle />
-            <UserMenu />
-          </m.div>
-        </div>
-      </header>
+            {notify.muted ? (
+              <VolumeX className="h-3.5 w-3.5" />
+            ) : (
+              <Volume2 className="h-3.5 w-3.5" />
+            )}
+          </button>
+        </m.div>
+      </div>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 relative z-10 space-y-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
         {/* ═══ HERO: Countdown + Actions (always full width) ═══ */}
         <m.section
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...springIn, delay: 0.05 }}
         >
-          <SpotlightCard
-            className="glass"
-            spotlightColor="oklch(0.7 0.18 195 / 0.08)"
-            spotlightSize={500}
-            accent="oklch(0.7 0.18 195)"
-          >
+          <Panel>
             <CountdownTimer
               targetTime={kayitSaati}
               onTargetTimeChange={(t) => setKayitSaati(t)}
@@ -687,12 +670,12 @@ function DashboardContent() {
             />
 
             {/* Action buttons — inside hero card */}
-            <div className="px-6 pb-6 flex gap-3">
+            <div className="flex gap-3 border-t p-4 sm:px-6">
               {isDone ? (
                 <>
                   <button
                     onClick={handleReset}
-                    className="flex-1 h-11 sm:h-10 rounded-xl ring-1 ring-border/20 bg-background/40 hover:bg-muted/40 text-sm font-medium flex items-center justify-center gap-2 transition-all duration-200 hover:ring-border/40"
+                    className="flex h-11 flex-1 items-center justify-center gap-2 border text-sm font-medium transition-colors hover:bg-accent sm:h-10"
                   >
                     <RotateCcw className="h-4 w-4" />
                     Yeni Kayıt
@@ -700,11 +683,7 @@ function DashboardContent() {
                   <button
                     onClick={handleStart}
                     disabled={starting || !token || crnList.length === 0}
-                    className={`flex-1 h-11 sm:h-10 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none ${
-                      dryRun
-                        ? "bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 hover:to-orange-400 shadow-lg shadow-amber-500/20"
-                        : "bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 shadow-lg shadow-emerald-500/20"
-                    }`}
+                    className="flex h-11 flex-1 items-center justify-center gap-2 bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-30 sm:h-10"
                   >
                     <Play className="h-4 w-4" />
                     {starting ? "Başlatılıyor..." : "Tekrar Başlat"}
@@ -715,7 +694,7 @@ function DashboardContent() {
                   <button
                     onClick={handleCalibrate}
                     disabled={calibrating || isRunning || !token}
-                    className="flex-1 h-11 sm:h-10 rounded-xl ring-1 ring-border/20 bg-background/40 hover:bg-muted/40 text-sm font-medium flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none hover:ring-border/40"
+                    className="flex h-11 flex-1 items-center justify-center gap-2 border text-sm font-medium transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-30 sm:h-10"
                   >
                     <Gauge className="h-4 w-4" />
                     {calibrating ? "Kalibre ediliyor..." : "Kalibre Et"}
@@ -724,23 +703,23 @@ function DashboardContent() {
                     <button
                       onClick={handleStart}
                       disabled={starting || !token || crnList.length === 0}
-                      className={`flex-1 h-11 sm:h-10 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none ${
+                      className={`flex h-11 flex-1 items-center justify-center gap-2 text-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-30 sm:h-10 ${
                         dryRun
-                          ? "bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 hover:to-orange-400 shadow-lg shadow-amber-500/20"
-                          : "bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 shadow-lg shadow-emerald-500/20"
+                          ? "border border-[--status-wait] text-[--status-wait] hover:bg-[--status-wait]/10"
+                          : "bg-primary text-primary-foreground hover:bg-primary/90"
                       }`}
                     >
                       <Play className="h-4 w-4" />
                       {starting
                         ? "Başlatılıyor..."
                         : dryRun
-                          ? "🧪 Dry Run Başlat"
+                          ? "Dry Run Başlat"
                           : "Kayıt Başlat"}
                     </button>
                   ) : (
                     <button
                       onClick={handleCancel}
-                      className="flex-1 h-11 sm:h-10 rounded-xl bg-gradient-to-r from-red-600 to-rose-500 hover:from-red-500 hover:to-rose-400 text-white text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 shadow-lg shadow-red-500/20"
+                      className="flex h-11 flex-1 items-center justify-center gap-2 border border-destructive text-sm font-semibold text-destructive transition-colors hover:bg-destructive/10 sm:h-10"
                     >
                       <Square className="h-4 w-4" />
                       İptal Et
@@ -749,7 +728,7 @@ function DashboardContent() {
                 </>
               )}
             </div>
-          </SpotlightCard>
+          </Panel>
         </m.section>
 
         {/* ═══ 2-COLUMN LAYOUT: Config (left) + Monitor (right) ═══ */}
@@ -757,28 +736,22 @@ function DashboardContent() {
           {/* ── Left Column: Yapılandırma ── */}
           <div className="lg:col-span-6 space-y-5">
             <m.div
-              className="flex items-center gap-2 px-1"
+              className="flex items-center gap-2.5 px-1"
               initial={{ opacity: 0, x: -12 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ ...springIn, delay: 0.1 }}
             >
-              <div className="h-1 w-6 rounded-full bg-gradient-to-r from-amber-500 dark:from-amber-400 to-orange-500 dark:to-orange-400" />
-              <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                Yapılandırma
-              </span>
+              <div className="h-3 w-0.5 bg-primary" />
+              <span className="panel-label">Yapılandırma</span>
             </m.div>
 
             {/* Token */}
             <m.div
-              initial={{ opacity: 0, y: 20, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ ...springIn, delay: 0.13 }}
             >
-              <SpotlightCard
-                className="glass h-full"
-                spotlightColor="oklch(0.65 0.18 240 / 0.10)"
-                accent="oklch(0.65 0.2 240)"
-              >
+              <Panel className="h-full">
                 <TokenInput
                   token={token}
                   onTokenChange={(t) =>
@@ -786,20 +759,16 @@ function DashboardContent() {
                   }
                   tokenValid={tokenValid}
                 />
-              </SpotlightCard>
+              </Panel>
             </m.div>
 
             {/* CRN Manager */}
             <m.div
-              initial={{ opacity: 0, y: 20, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ ...springIn, delay: 0.16 }}
             >
-              <SpotlightCard
-                className="glass h-full"
-                spotlightColor="oklch(0.7 0.18 165 / 0.10)"
-                accent="oklch(0.7 0.18 165)"
-              >
+              <Panel className="h-full">
                 <CRNManager
                   ecrnList={crnList}
                   onEcrnListChange={setCrnList}
@@ -810,20 +779,16 @@ function DashboardContent() {
                   lookingUp={lookingUpCRNs}
                   disabled={isRunning}
                 />
-              </SpotlightCard>
+              </Panel>
             </m.div>
 
             {/* Settings */}
             <m.div
-              initial={{ opacity: 0, y: 20, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ ...springIn, delay: 0.19 }}
             >
-              <SpotlightCard
-                className="glass h-full"
-                spotlightColor="oklch(0.7 0.15 30 / 0.08)"
-                accent="oklch(0.7 0.18 30)"
-              >
+              <Panel className="h-full">
                 <SettingsPanel
                   maxDeneme={maxDeneme}
                   onMaxDenemeChange={setMaxDeneme}
@@ -833,69 +798,55 @@ function DashboardContent() {
                   onDryRunChange={setDryRun}
                   disabled={isRunning}
                 />
-              </SpotlightCard>
+              </Panel>
             </m.div>
           </div>
 
           {/* ── Right Column: İzleme ── */}
           <div className="lg:col-span-6 space-y-5">
             <m.div
-              className="flex items-center gap-2 px-1"
+              className="flex items-center gap-2.5 px-1"
               initial={{ opacity: 0, x: -12 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ ...springIn, delay: 0.1 }}
             >
-              <div className="h-1 w-6 rounded-full bg-gradient-to-r from-violet-500 dark:from-violet-400 to-fuchsia-500 dark:to-fuchsia-400" />
-              <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                İzleme
-              </span>
+              <div className="h-3 w-0.5 bg-primary" />
+              <span className="panel-label">İzleme</span>
             </m.div>
 
             {/* Calibration */}
             <m.div
-              initial={{ opacity: 0, y: 20, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ ...springIn, delay: 0.13 }}
             >
-              <SpotlightCard
-                className="glass h-full"
-                spotlightColor="oklch(0.6 0.15 280 / 0.10)"
-                accent="oklch(0.6 0.18 280)"
-              >
+              <Panel className="h-full">
                 <CalibrationCard
                   calibration={ws.calibration ?? calibrationData}
                   loading={calibrating}
                   token={token}
                 />
-              </SpotlightCard>
+              </Panel>
             </m.div>
 
             {/* Live Logs */}
             <m.div
-              initial={{ opacity: 0, y: 20, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ ...springIn, delay: 0.16 }}
             >
-              <SpotlightCard
-                className="glass h-full"
-                spotlightColor="oklch(0.7 0.18 165 / 0.08)"
-                accent="oklch(0.65 0.2 165)"
-              >
+              <Panel className="h-full">
                 <LiveLogs logs={ws.logs} onClear={ws.clearLogs} />
-              </SpotlightCard>
+              </Panel>
             </m.div>
 
             {/* Presets */}
             <m.div
-              initial={{ opacity: 0, y: 20, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ ...springIn, delay: 0.19 }}
             >
-              <SpotlightCard
-                className="glass h-full"
-                spotlightColor="oklch(0.65 0.15 30 / 0.08)"
-                accent="oklch(0.65 0.18 50)"
-              >
+              <Panel className="h-full">
                 <PresetManager
                   currentConfig={{
                     ecrn_list: crnList,
@@ -913,7 +864,7 @@ function DashboardContent() {
                   )}
                   disabled={isRunning}
                 />
-              </SpotlightCard>
+              </Panel>
             </m.div>
           </div>
         </div>
@@ -924,36 +875,31 @@ function DashboardContent() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...springIn, delay: 0.28 }}
         >
-          <SpotlightCard
-            className="glass"
-            spotlightColor="oklch(0.7 0.15 80 / 0.08)"
-            spotlightSize={600}
-            accent="oklch(0.7 0.15 80)"
-          >
+          <Panel>
             <WeeklySchedule
               courses={courseInfo}
               crnList={[...new Set([...crnList, ...scrnList])]}
               loading={lookingUpCRNs.size > 0}
             />
-          </SpotlightCard>
+          </Panel>
         </m.section>
-      </main>
+      </div>
 
       {/* Footer */}
-      <footer className="relative z-10 mt-16 border-t border-border/5">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-2 text-center">
-          <p className="text-[11px] text-muted-foreground/30 font-medium">
+      <footer className="mt-16 border-t">
+        <div className="mx-auto max-w-7xl space-y-2 px-4 py-6 text-center sm:px-6">
+          <p className="text-[11px] font-medium text-muted-foreground/50">
             İTÜ Otostop — Ders Kayıt Otomasyon Aracı v1.0.0 —{" "}
             {new Date().getFullYear()}
           </p>
-          <p className="text-[10px] text-muted-foreground/20">
+          <p className="text-[10px] text-muted-foreground/40">
             Bu araç bağımsız bir projedir, İTÜ ile resmi bir bağlantısı yoktur.
             Kullanım sorumluluğu kullanıcıya aittir.
           </p>
-          <div className="flex items-center justify-center gap-3 text-[10px] text-muted-foreground/25">
+          <div className="flex items-center justify-center gap-3 text-[10px] text-muted-foreground/40">
             <a
               href="mailto:nubealbor@gmail.com?subject=İTÜ Otostop - Sorun Bildirimi"
-              className="hover:text-muted-foreground/50 transition-colors underline underline-offset-2"
+              className="underline underline-offset-2 transition-colors hover:text-foreground"
             >
               Sorun Bildir
             </a>
@@ -975,6 +921,6 @@ function DashboardContent() {
         }))}
         onDismiss={() => setSuccessDismissed(true)}
       />
-    </div>
+    </>
   );
 }

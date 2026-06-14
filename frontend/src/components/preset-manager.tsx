@@ -3,8 +3,8 @@
 import { useState, useRef } from "react";
 import { m, AnimatePresence } from "motion/react";
 import {
-  BookmarkPlus,
   Plus,
+  X,
   Trash2,
   Download,
   Upload,
@@ -12,6 +12,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { PanelHeader } from "@/components/panel";
 import { usePresets, type Preset } from "@/hooks/use-presets";
 
 interface PresetManagerProps {
@@ -118,34 +119,26 @@ export function PresetManager({
   };
 
   return (
-    <div className="overflow-hidden">
-      {/* Header — always visible */}
-      <div className="flex items-center justify-between px-5 pt-5 pb-3">
-        <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg bg-orange-500/10 flex items-center justify-center">
-            <BookmarkPlus className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold">Ders Şablonları</h3>
-            <p className="text-[10px] text-muted-foreground">
-              CRN ve ayarlarını kaydet, sonraki dönem hızlıca yükle
-            </p>
-          </div>
-        </div>
-        {presets.length > 0 && (
-          <div className="flex items-center gap-1">
+    <div>
+      <PanelHeader
+        label="Ders Şablonları"
+        action={
+          presets.length > 0 && (
             <button
               onClick={handleExport}
-              className="h-7 w-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/40 transition-colors"
+              className="flex h-7 w-7 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               title="Şablonları dışa aktar (JSON)"
             >
               <Share2 className="h-3.5 w-3.5" />
             </button>
-          </div>
-        )}
-      </div>
+          )
+        }
+      />
 
-      <div className="px-5 pb-5 space-y-3">
+      <div className="space-y-3 p-4">
+        <p className="text-[11px] text-muted-foreground">
+          CRN ve ayarlarını kaydet, sonraki dönem hızlıca yükle
+        </p>
         {/* Save / Import actions */}
         <div className="flex gap-2">
           {!saving ? (
@@ -153,7 +146,7 @@ export function PresetManager({
               <button
                 onClick={() => setSaving(true)}
                 disabled={disabled}
-                className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl ring-1 ring-border/30 bg-background/40 hover:bg-muted/40 text-sm font-medium transition-colors disabled:opacity-40"
+                className="flex flex-1 items-center justify-center gap-2 border py-2 text-sm font-medium transition-colors hover:bg-accent disabled:opacity-40"
               >
                 <Plus className="h-3.5 w-3.5" />
                 Mevcut Ayarları Kaydet
@@ -161,7 +154,7 @@ export function PresetManager({
               <button
                 onClick={() => importRef.current?.click()}
                 disabled={disabled}
-                className="h-9 px-3 rounded-xl ring-1 ring-border/30 bg-background/40 hover:bg-muted/40 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+                className="flex h-9 items-center border px-3 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
                 title="Şablon dosyası içe aktar"
               >
                 <Upload className="h-3.5 w-3.5" />
@@ -178,7 +171,7 @@ export function PresetManager({
             <m.div
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="flex gap-2 w-full"
+              className="flex w-full gap-2"
             >
               <input
                 value={newName}
@@ -189,19 +182,20 @@ export function PresetManager({
                 }}
                 placeholder="Şablon adı (ör: Güz 2026)"
                 autoFocus
-                className="flex-1 h-9 rounded-xl bg-background/60 ring-1 ring-border/30 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 transition-shadow"
+                className="h-9 flex-1 border bg-background px-3 text-sm transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               />
               <button
                 onClick={handleSave}
-                className="h-9 px-4 rounded-xl bg-primary/15 text-primary text-sm font-medium hover:bg-primary/25 transition-colors"
+                className="h-9 bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 Kaydet
               </button>
               <button
                 onClick={() => setSaving(false)}
-                className="h-9 px-2 rounded-xl text-muted-foreground hover:text-foreground transition-colors text-sm"
+                className="flex h-9 w-9 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                aria-label="Vazgeç"
               >
-                ✕
+                <X className="h-4 w-4" />
               </button>
             </m.div>
           )}
@@ -221,15 +215,15 @@ export function PresetManager({
                 role="button"
                 tabIndex={disabled ? -1 : 0}
                 aria-disabled={disabled}
-                className="w-full flex items-center justify-between py-2.5 px-3.5 rounded-xl bg-background/40 ring-1 ring-border/20 hover:ring-primary/30 hover:bg-muted/30 group transition-all aria-disabled:opacity-40 text-left cursor-pointer"
+                className="group flex w-full cursor-pointer items-center justify-between border px-3.5 py-2.5 text-left transition-colors hover:border-primary hover:bg-accent/40 aria-disabled:opacity-40"
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  <Download className="h-3.5 w-3.5 text-muted-foreground shrink-0 group-hover:text-primary transition-colors" />
+                <div className="flex min-w-0 items-center gap-3">
+                  <Download className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
                   <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">
+                    <p className="truncate text-sm font-medium">
                       {preset.name}
                     </p>
-                    <p className="text-[10px] text-muted-foreground truncate">
+                    <p className="truncate text-[10px] text-muted-foreground">
                       {crnSummary(preset.ecrn_list)}
                       {preset.kayit_saati &&
                         ` · ${preset.kayit_saati.slice(0, 5)}`}
@@ -240,7 +234,8 @@ export function PresetManager({
                 </div>
                 <button
                   onClick={(e) => handleDelete(e, preset)}
-                  className="h-6 w-6 rounded-lg flex items-center justify-center text-muted-foreground/40 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground opacity-0 transition-all hover:text-[--status-err] group-hover:opacity-100"
+                  aria-label="Şablonu sil"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -249,14 +244,14 @@ export function PresetManager({
           </AnimatePresence>
 
           {presets.length === 0 && (
-            <p className="text-center py-4 text-muted-foreground/40 text-xs">
+            <p className="py-4 text-center text-xs text-muted-foreground">
               Henüz şablon kaydedilmedi
             </p>
           )}
         </div>
 
         {/* Data persistence notice */}
-        <p className="text-[9px] text-muted-foreground/30 text-center pt-1">
+        <p className="pt-1 text-center text-[9px] text-muted-foreground/60">
           Şablonlar hesabına bağlı olarak bulutta saklanır.
         </p>
       </div>
@@ -268,23 +263,21 @@ export function PresetManager({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-4"
             onClick={() => setConfirmLoad(null)}
           >
             <m.div
-              initial={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.96, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
+              exit={{ scale: 0.96, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="rounded-2xl p-6 mx-4 max-w-sm w-full space-y-4 ring-1 ring-border/30 shadow-2xl bg-zinc-900/95 backdrop-blur-xl"
+              className="w-full max-w-sm space-y-4 border bg-popover p-6"
             >
               <div className="flex items-start gap-3">
-                <div className="h-9 w-9 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0 mt-0.5">
-                  <AlertTriangle className="h-4.5 w-4.5 text-amber-600 dark:text-amber-400" />
-                </div>
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[--status-wait]" />
                 <div>
                   <p className="text-sm font-semibold">Şablon Yükle</p>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     &ldquo;{confirmLoad.name}&rdquo; yüklemek mevcut CRN listeni
                     ve tüm ayarlarını değiştirecek.
                   </p>
@@ -293,13 +286,13 @@ export function PresetManager({
               <div className="flex gap-2">
                 <button
                   onClick={() => setConfirmLoad(null)}
-                  className="flex-1 h-9 rounded-xl ring-1 ring-border/30 bg-background/40 text-sm font-medium hover:bg-muted/40 transition-colors"
+                  className="h-9 flex-1 border text-sm font-medium transition-colors hover:bg-accent"
                 >
                   Vazgeç
                 </button>
                 <button
                   onClick={() => doLoad(confirmLoad)}
-                  className="flex-1 h-9 rounded-xl bg-primary/15 text-primary text-sm font-medium hover:bg-primary/25 transition-colors"
+                  className="h-9 flex-1 bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                 >
                   Yükle
                 </button>
