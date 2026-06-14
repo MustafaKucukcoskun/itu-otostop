@@ -507,7 +507,7 @@ class RegistrationEngine:
                 if yeni and yeni != son_date:
                     server_ts = parsedate_to_datetime(yeni).timestamp()
                     offset = (t_utc + rtt / 2) - server_ts
-                    self._log(f"Date geçişi: RTT={rtt*1000:.0f}ms, offset={offset*1000:+.0f}ms (±500ms hassasiyet)")
+                    self._log(f"Date geçişi: RTT={rtt*1000:.0f}ms, offset={offset*1000:+.0f}ms (±{rtt*500:.0f}ms — transition)")
                     return offset
                 time.sleep(poll_aralik)
 
@@ -558,18 +558,40 @@ class RegistrationEngine:
                 f"(delay: {(ntp_delay or 0)*1000:.0f}ms, hassasiyet: ±{accuracy*1000:.0f}ms)"
             )
 
-            # Date header ile karşılaştır (sanity check)
+            # Date header ile cross-validation — KRİTİK güvenlik kontrolü.
+            # NTP-Date çelişkisi, OBS'nin NTP-senkron OLMADIĞINI gösterir (OBS tarihsel
+            # olarak ~2sn geriydeydi). Bu durumda NTP'ye güvenmek tetik'i sunucu açılmadan
+            # ATAR → VAL02 + 3sn ceza → kontenjan biter (FELAKET). Date offset, transition
+            # tekniğiyle GERÇEK OBS saatini ölçer (NTP-senkron varsaymaz, ±~RTT/2 hassasiyet).
             if date_offset is not None:
-                diff = abs(server_offset - date_offset)
-                if diff > 0.500:
-                    self._log(f"ℹ️ NTP-Date farkı: {diff*1000:.0f}ms (beklenen — Date header 1sn granülarite)")
+                diff = server_offset - date_offset  # ≈ OBS'nin NTP'den sapması
+                if abs(diff) > 0.100:
+                    # Tek Date ölçümü gürültülü olabilir → ikinci ölçümle TEYİT et,
+                    # ancak öyle NTP'yi ez (yanlış override de erken/geç atışa yol açar).
+                    date_offset2 = self._measure_date_offset()
+                    if date_offset2 is not None and abs(server_offset - date_offset2) > 0.100:
+                        confirmed = (date_offset + date_offset2) / 2
+                        self._log(
+                            f"🚨 OBS NTP-senkron DEĞİL! NTP-Date farkı {diff*1000:+.0f}ms "
+                            f"(2 ölçümle teyit edildi). NTP yanıltıcı → gerçek OBS saatini "
+                            f"(Date offset {confirmed*1000:+.0f}ms) kullanıyorum; erken atış (VAL02) önlenir.",
+                            "warning",
+                        )
+                        server_offset = confirmed
+                        accuracy = max(accuracy, medyan_rtt / 2)
+                        self._obs_clock_uncertainty = medyan_rtt / 2
+                    else:
+                        self._log(
+                            f"ℹ️ NTP-Date farkı {diff*1000:+.0f}ms teyit edilemedi "
+                            f"(tek ölçüm gürültüsü) — NTP korunuyor"
+                        )
                 else:
-                    self._log(f"✅ NTP-Date tutarlı (fark: {diff*1000:.0f}ms)")
+                    self._log(f"✅ NTP-Date tutarlı (fark: {abs(diff)*1000:.0f}ms) — OBS NTP-senkron")
         elif date_offset is not None:
             # NTP başarısız → Date header fallback
             server_offset = date_offset
             accuracy = medyan_rtt / 2
-            self._log(f"⚠️ NTP başarısız, Date header kullanılıyor (±500ms hassasiyet)", "warning")
+            self._log(f"⚠️ NTP başarısız, Date header kullanılıyor (transition, ±{medyan_rtt*500:.0f}ms)", "warning")
             ntp_offset_raw = 0.0
         elif self._cal_samples:
             # NTP+Date başarısız AMA geçmiş havuzda ölçüm var → en iyiyi (en düşük RTT) kullan.
