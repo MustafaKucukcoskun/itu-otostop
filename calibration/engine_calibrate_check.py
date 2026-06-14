@@ -1,6 +1,6 @@
 """
-Engine'in GERÇEK production kalibrasyonunu çalıştırır (NTP + Date header + cross-validation).
-quick_calibrate sadece kesirli offset ölçüyordu; bu, engine'in kullandığı TAM offset'i verir.
+Engine'in GERÇEK production kalibrasyonunu çalıştırır (NTP + robust Date + OBS↔NTP skew).
+Engine'in tetik için kullandığı TAM offset'i + OBS skew telafisini gösterir.
 
 Çalıştırma (calibration/ içinden, backend venv ile):
     python engine_calibrate_check.py
@@ -13,23 +13,33 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from engine import RegistrationEngine  # noqa: E402
 
-eng = RegistrationEngine(token="dummy.jwt.token", ecrn_list=["00000"])
+VERBOSE = "-v" in sys.argv
 
-# _log'u stdout'a yönlendir (normalde event queue'ya gider)
-eng._log = lambda msg, level="info": print(f"  [{level}] {msg}")
 
-print("=== Engine.calibrate() — gerçek production kalibrasyonu ===\n")
-cal = eng.calibrate()
+def run_once(label: str):
+    eng = RegistrationEngine(token="dummy.jwt.token", ecrn_list=["00000"])
+    if VERBOSE:
+        eng._log = lambda msg, level="info": print(f"  [{level}] {msg}")
+    else:
+        eng._log = lambda msg, level="info": None
 
-print("\n=== SONUÇ ===")
-print(f"  server_offset (yerel - OBS): {cal.server_offset * 1000:+.0f} ms")
-print(f"  ntp_offset    (NTP - yerel): {cal.ntp_offset * 1000:+.0f} ms")
-print(f"  rtt_one_way:                 {cal.rtt_one_way * 1000:.0f} ms")
+    cal = eng.calibrate()
+    skew = eng._obs_clock_offset  # OBS↔NTP skew telafisi (- = OBS geride, geç at)
+    print(
+        f"  {label}: server_offset(NTP)={cal.server_offset*1000:+6.0f}ms | "
+        f"ntp_offset={cal.ntp_offset*1000:+6.0f}ms | "
+        f"OBS↔NTP skew={skew*1000:+5.0f}ms ({'OBS GERİDE' if skew < 0 else 'OBS İLERİDE'}) | "
+        f"rtt_1yön={cal.rtt_one_way*1000:.0f}ms"
+    )
+    return skew
 
-date_off = eng._measure_date_offset()
-if date_off is not None:
-    print(f"  date_offset (TAM, yerel+rtt/2 - OBS): {date_off * 1000:+.0f} ms")
-    print(f"\n  YORUM: |date_offset| ~0 → OBS NTP-senkron")
-    print(f"         date_offset ~+2000ms → OBS ~2sn GERİDE (CLAUDE.md notu hâlâ geçerli)")
-else:
-    print("  date_offset: ölçülemedi")
+
+print("=== Engine.calibrate() — robust kalibrasyon + OBS↔NTP skew (2 kez) ===\n")
+s1 = run_once("#1")
+s2 = run_once("#2")
+
+print("\n=== YORUM ===")
+print("  OBS↔NTP skew, engine'in tetiği telafi ettiği OBS saat kayması.")
+print("  - skew ~0      → OBS NTP-senkron, telafi gereksiz")
+print("  - skew negatif → OBS NTP'den GERİDE; engine bu kadar GEÇ atar (erken atış = VAL02 önlenir)")
+print(f"  İki ölçüm tutarlıysa (|fark|={abs(s1-s2)*1000:.0f}ms) skew güvenilir; değilse Date gürültülü.")

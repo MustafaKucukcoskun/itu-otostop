@@ -89,19 +89,21 @@ def test_token_preview_long_masks_middle():
     assert "SECRET" not in out  # ortadaki gizli kısım sızmamalı
 
 
-# ── calibrate() offset seçimi — OBS NTP-senkron değilse erken atışı önle ──
+# ── calibrate() offset + OBS↔NTP skew düzeltmesi ──
 #
-# KRİTİK: OBS tarihsel olarak ~2sn geriydeydi. NTP "senkron" derken OBS 2sn geride
-# olursa, NTP'ye güvenmek tetik'i sunucu açılmadan atar → VAL02 + 3sn ceza → kontenjan
-# biter. Engine, NTP-Date çelişkisini (2 ölçümle teyitli) yakalayıp GERÇEK OBS saatini
-# (Date offset) kullanmalı. Bu testler o davranışı kilitler.
+# KRİTİK: NTP, OBS'nin NTP-senkron olduğunu VARSAYAR. Gerçekte OBS NTP'den kayabilir
+# (canlı ölçüm: ~90ms geride). Düzeltilmezse engine OBS açılmadan ~kayma kadar ERKEN
+# atar → VAL02 + 3sn ceza → kontenjan biter. Doğru tasarım: server_offset NTP'de STABİL
+# kalır; OBS↔NTP skew'i robust Date (min) ile ölçülüp _obs_clock_offset'e konur ve tetik
+# formülünde telafi edilir. (Önceki "server_offset'i Date ile ez" yaklaşımı GCP'de date
+# gürültüsüne kapıldığı için terk edildi — bu testler doğru davranışı kilitler.)
 
 from unittest.mock import Mock  # noqa: E402
 from engine import RegistrationEngine  # noqa: E402
 
 
 def _make_calib_engine():
-    """Ağa dokunan metotları mock'layıp calibrate()'in offset seçim mantığını izole eder."""
+    """Ağa dokunan metotları mock'layıp calibrate()'in offset mantığını izole eder."""
     eng = RegistrationEngine(token="dummy.jwt.token", ecrn_list=["00000"])
     eng.session = Mock()                       # warmup POST → no-op
     eng._rtt_olc = lambda n=5: 0.044           # medyan RTT 44ms
@@ -112,30 +114,33 @@ def _make_calib_engine():
     return eng
 
 
-def test_calibrate_obs_synced_uses_ntp():
-    """OBS NTP-senkron (NTP≈Date) → NTP offset korunur, Date override etmez."""
+def test_calibrate_obs_synced_no_skew():
+    """OBS NTP-senkron → server_offset=NTP, OBS skew düzeltmesi ~0."""
     eng = _make_calib_engine()
-    eng._ntp_calibrate = lambda: (0.005, 0.008)   # NTP: OBS yerelden 5ms geride
-    eng._measure_date_offset = lambda: 0.003      # Date ~aynı (fark 2ms < 100ms eşik)
+    eng._ntp_calibrate = lambda: (0.0, 0.008)                 # GCP saati NTP-senkron
+    eng._measure_date_offset = lambda n_transitions=1: 0.0    # local-OBS ~0 → OBS=NTP
     cal = eng.calibrate()
-    assert cal.server_offset == pytest.approx(-0.005, abs=1e-6)  # = -ntp_offset_raw
+    assert cal.server_offset == pytest.approx(0.0, abs=1e-6)         # NTP
+    assert eng._obs_clock_offset == pytest.approx(0.0, abs=2e-3)     # skew yok
 
 
-def test_calibrate_obs_2s_behind_uses_date():
-    """FELAKET ÖNLEME: OBS 2sn geride; NTP 0 der ama Date +2s (2 ölçümle teyit).
-    Engine NTP'ye güvenmemeli (2sn erken = VAL02), Date offset'i kullanmalı."""
+def test_calibrate_obs_behind_corrected_by_skew():
+    """KRİTİK: OBS 90ms NTP-geride. server_offset NTP'de STABİL kalmalı (gürültüye
+    kapılmamalı); düzeltme _obs_clock_offset üzerinden uygulanmalı (erken atış önlenir)."""
     eng = _make_calib_engine()
-    eng._ntp_calibrate = lambda: (0.0, 0.008)                # NTP: yanlışlıkla senkron sanıyor
-    eng._measure_date_offset = Mock(side_effect=[2.0, 2.0])  # Date: OBS 2sn geride
+    eng._ntp_calibrate = lambda: (0.0, 0.008)                  # GCP NTP-senkron
+    eng._measure_date_offset = lambda n_transitions=1: 0.090   # local-OBS=+90ms → OBS 90ms geride
     cal = eng.calibrate()
-    assert cal.server_offset == pytest.approx(2.0, abs=1e-3)  # NTP(0) değil → Date(+2s)
-    assert eng._measure_date_offset.call_count == 2           # teyit için 2. ölçüm yapıldı
+    assert cal.server_offset == pytest.approx(0.0, abs=1e-6)         # NTP stabil (ezilmez)
+    # skew = -(date + ntp) = -(0.090 + 0) = -0.090 → tetik 90ms geç atar, erken atmaz
+    assert eng._obs_clock_offset == pytest.approx(-0.090, abs=2e-3)
 
 
-def test_calibrate_noisy_date_keeps_ntp():
-    """Tek gürültülü Date ölçümü NTP'yi EZMEMELİ — 2. ölçüm teyit etmezse NTP korunur."""
+def test_calibrate_date_fails_no_correction():
+    """Date ölçülemezse OBS skew düzeltmesi yok (NTP=OBS varsayımı), server_offset=NTP."""
     eng = _make_calib_engine()
-    eng._ntp_calibrate = lambda: (0.0, 0.008)
-    eng._measure_date_offset = Mock(side_effect=[2.0, 0.001])  # 1. büyük, 2. küçük → teyit YOK
+    eng._ntp_calibrate = lambda: (0.002, 0.008)
+    eng._measure_date_offset = lambda n_transitions=1: None
     cal = eng.calibrate()
-    assert cal.server_offset == pytest.approx(0.0, abs=1e-6)    # NTP korundu (override yok)
+    assert cal.server_offset == pytest.approx(-0.002, abs=1e-6)
+    assert eng._obs_clock_offset == 0.0
