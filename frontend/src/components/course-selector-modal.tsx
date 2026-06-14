@@ -10,6 +10,8 @@ import {
   Users,
   Loader2,
   X,
+  Plus,
+  Check,
 } from "lucide-react";
 import {
   Sheet,
@@ -406,27 +408,26 @@ function StepSections({
             <button
               onClick={() => !isSelected && onSelect(section)}
               disabled={isSelected}
-              className={`w-full border p-4 text-left transition-colors ${
+              className={`group w-full border p-4 text-left transition-colors ${
                 isSelected
-                  ? "cursor-not-allowed border-primary bg-accent opacity-60"
+                  ? "cursor-not-allowed border-primary bg-accent opacity-70"
                   : "border-border bg-card hover:border-primary hover:bg-accent"
               }`}
             >
-              {/* Header: CRN + instructor */}
+              {/* Header: CRN + ekle/eklendi durumu */}
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`size-3 rounded-full border-2 ${
-                      isSelected
-                        ? "border-primary bg-primary"
-                        : "border-muted-foreground/30"
-                    }`}
-                  />
-                  <span className="font-mono text-xs font-semibold text-muted-foreground">
-                    CRN {section.crn}
+                <span className="font-mono text-xs font-semibold text-muted-foreground">
+                  CRN {section.crn}
+                </span>
+                {isSelected ? (
+                  <span className="flex items-center gap-1 border border-primary px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-primary">
+                    <Check className="size-3" /> Eklendi
                   </span>
-                </div>
-                {isSelected && <Badge className="text-[10px]">Eklendi</Badge>}
+                ) : (
+                  <span className="flex items-center gap-1 border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary">
+                    <Plus className="size-3" /> Ekle
+                  </span>
+                )}
               </div>
 
               <p className="mt-2 text-sm font-medium">{section.instructor}</p>
