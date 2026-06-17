@@ -19,6 +19,7 @@ import socket
 import struct
 import requests
 import sys
+import os
 from datetime import datetime
 
 OBS_URL = "https://obs.itu.edu.tr"
@@ -169,7 +170,8 @@ def main():
         return
 
     # 3. Date geçiş ölçümleri
-    target_samples = 5000  # 5000 geçiş ölçümü → ±4ms hassasiyet hedefi
+    # Örnek sayısı env-var ile ayarlanabilir (çalışma süresi kontrolü). Varsayılan 5000 → ±8ms.
+    target_samples = int(os.getenv("SAMPLE_COUNT", "5000"))
     print()
     print(f"3️⃣  {target_samples} Date header geçişi ölçülüyor...")
     print(f"   (Her biri ~1-2 saniye, toplam ~{target_samples * 1.5:.0f} saniye)")

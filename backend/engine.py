@@ -172,9 +172,10 @@ class RegistrationEngine:
 
         # Ölçüm tabanlı zamanlama
         self._last_ntp_delay: Optional[float] = None  # Son NTP delay (sn)
-        # Cloud Run kalibrasyon sonuçları (2026-02-15, 5000 ölçüm, europe-west1)
-        # OBS saati NTP'ye göre +1.5ms ileri, σ=4.08ms (95% CI: ±8.0ms)
-        self._obs_clock_offset: float = 0.0015   # OBS-NTP saat farkı (sn) [+ileri]
+        # Cloud Run kalibrasyon sonuçları (2026-06-14, 5000 ölçüm, europe-west1)
+        # OBS saati NTP'ye göre -0.7ms geride, σ=4.08ms (95% CI: ±8.0ms) — pratikte senkron.
+        # (Önceki ölçüm 2026-02-15: +1.5ms; 4 ayda 2.2ms değişim = ±8ms içinde, stabil.)
+        self._obs_clock_offset: float = -0.0007  # OBS-NTP saat farkı (sn) [+ileri / -geride]
         self._obs_clock_uncertainty: float = 0.00408  # OBS saat belirsizliği σ (sn)
 
         # Yeni geliştirme özellikleri
