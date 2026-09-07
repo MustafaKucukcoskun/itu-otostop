@@ -129,4 +129,4 @@ Analizde tespit edilen sorunlar (satır numaraları 2026-06-13 itibarıyla):
 - [ ] Production build + deploy (Cloud Run backend güncellemesi gerekiyorsa)
 - [ ] Vercel'de yeni tasarımın canlı doğrulaması
 - [ ] README güncelle (ekran görüntüleri yeni tasarımla)
-- [ ] CLAUDE.md'yi son mimariye göre güncelle
+- [x] CLAUDE.md son mimariye göre güncellendi (2026-09-07): NTP-birincil kalibrasyon, ölçüm-tabanlı buffer, _obs_clock_offset, proxy.ts, --workers 1 kısıtı, pytest + root `npm run dev` komutları
