@@ -69,3 +69,6 @@ Desktop.ini
 # ══════════════════════════════════════════
 migration_guide.md
 calibration_guide.md
+
+# Playwright CLI test artefaktları
+.playwright-cli/
