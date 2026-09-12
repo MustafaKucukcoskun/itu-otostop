@@ -165,7 +165,9 @@ export function CountdownTimer({
 
   return (
     <div
-      className="relative px-6 py-12 text-center sm:py-14"
+      className={`relative px-6 text-center ${
+        isIdle ? "py-6 sm:py-8" : "py-12 sm:py-14"
+      }`}
       role="timer"
       aria-live="assertive"
       aria-label="Geri sayım sayacı"
@@ -201,7 +203,9 @@ export function CountdownTimer({
         className={`font-mono font-semibold leading-none tracking-tight ${
           display.main.length > 12
             ? "text-2xl sm:text-4xl"
-            : "text-[2.6rem] sm:text-7xl"
+            : isIdle
+              ? "text-4xl sm:text-5xl"
+              : "text-[2.6rem] sm:text-7xl"
         } ${isLastFive ? "text-primary" : mainColor}`}
       >
         {isIdle ? (
