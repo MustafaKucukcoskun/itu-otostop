@@ -73,6 +73,8 @@ export function CourseSearch({
   const cacheRef = useRef<Map<number, CourseInfo[]>>(new Map());
   // Yarış koşulu koruması: geç dönen eski istek yeni sonucu ezmesin
   const runIdRef = useRef(0);
+  // Ada göre arama sonuçları: kod tıklanınca OBS'ye tekrar gitmeden filtrelenir
+  const searchHitsRef = useRef<CourseInfo[]>([]);
 
   const deptIndex = useMemo(() => {
     const m = new Map<string, DepartmentItem>();
@@ -142,12 +144,23 @@ export function CourseSearch({
         if (parsed.kind === "unknown") {
           const found = await api.searchCourses(query.trim());
           if (runIdRef.current !== id) return;
-          setResult({
-            kind: "sections",
-            heading: `"${query.trim()}"`,
-            sections: found,
-          });
-          if (found.length === 0) {
+          searchHitsRef.current = found;
+
+          // Aynı ders birden çok section'la tekrarlıyor; alan gözatmadaki gibi
+          // önce KOD listesi göster, section'lar koda tıklanınca açılsın.
+          const byCode = new Map<string, { name: string; count: number }>();
+          for (const c of found) {
+            const k = norm(c.course_code);
+            const prev = byCode.get(k);
+            if (prev) prev.count += 1;
+            else byCode.set(k, { name: c.course_name, count: 1 });
+          }
+          const codes = [...byCode.entries()]
+            .map(([code, v]) => ({ code, name: v.name, count: v.count }))
+            .sort((a, b) => a.code.localeCompare(b.code, "tr"));
+
+          setResult({ kind: "codes", heading: `"${query.trim()}"`, codes });
+          if (codes.length === 0) {
             setMessage(
               "Sonuç yok. Kısa bir kök dene (ör. “mekani”), ya da CRN/ders kodu yaz.",
             );
@@ -282,7 +295,21 @@ export function CourseSearch({
             {result.codes.map((c) => (
               <button
                 key={c.code}
-                onClick={() => activeDept && showCode(activeDept, c.code)}
+                onClick={() => {
+                  const local = searchHitsRef.current.filter(
+                    (x) => norm(x.course_code) === norm(c.code),
+                  );
+                  if (local.length > 0) {
+                    // Ada göre arama sonucu — OBS'ye tekrar gitmeye gerek yok
+                    setResult({
+                      kind: "sections",
+                      heading: c.code,
+                      sections: local,
+                    });
+                  } else if (activeDept) {
+                    showCode(activeDept, c.code);
+                  }
+                }}
                 className="flex w-full items-baseline gap-2 border-t border-border px-4 py-2.5 text-left transition-colors hover:bg-muted/50"
               >
                 <span className="font-mono text-xs font-semibold text-primary">
