@@ -1,7 +1,7 @@
 # ROADMAP — İTÜ Otostop
 
 > **Yaşayan doküman.** Her oturumda buradan devam et; biten işi `[x]` işaretle.
-> Son güncelleme: 2026-06-13 (kapsamlı proje analizi sonrası ilk sürüm)
+> Son güncelleme: 2026-09-12 (Faz 6: GCP taşıma, eşzamanlılık kökü, kimlik, UX yenileme)
 
 ## Mevcut Durum (Özet)
 
@@ -130,3 +130,55 @@ Analizde tespit edilen sorunlar (satır numaraları 2026-06-13 itibarıyla):
 - [ ] Vercel'de yeni tasarımın canlı doğrulaması
 - [ ] README güncelle (ekran görüntüleri yeni tasarımla)
 - [x] CLAUDE.md son mimariye göre güncellendi (2026-09-07): NTP-birincil kalibrasyon, ölçüm-tabanlı buffer, _obs_clock_offset, proxy.ts, --workers 1 kısıtı, pytest + root `npm run dev` komutları
+
+---
+
+## Faz 6 — Taşıma, Eşzamanlılık ve UX (2026-09-12)
+
+### Altyapı
+- [x] Yeni GCP projesine taşındı: `itu-otostop-2026`, **europe-west3** (Frankfurt)
+- [x] Eski servis 404 veriyordu; sitedeki tüm backend bağımlı özellikler bu yüzden ölüydü
+- [x] Supabase duraklatılmıştı (silinmemişti); Cloud Scheduler ile günlük uyanık tutuluyor
+- [x] Hiç çalışmamış Azure workflow'u kaldırıldı
+
+### Kök neden: ders kapılması
+- [x] **Bulundu ve ölçüldü**: istek tetikten SONRA inşa ediliyordu; eşzamanlı kullanıcı başına ~1.4ms gecikme
+- [x] `_prepare_fire()` / `_request_for()` ile tetik öncesine alındı
+- [x] Gerçek motor sınıfıyla doğrulandı: 15 kullanıcı 30.4ms → **1.8ms**, 100 kullanıcı 188ms → 47ms
+- [x] **Ölçülerek elenen alternatifler**: process izolasyonu (thread'lerden kötü), CPU artırımı (2→16 vCPU kazanç yok).
+      Gönderim yolu I/O ağırlıklı olduğu için thread'ler zaten paralel — kullanıcı başına instance'a GEREK YOK
+- [x] OBS aynı-IP testi: **90 eşzamanlıya kadar kısıtlama yok**, gecikme düz (37→38ms)
+
+### Kimlik ve kota
+- [x] Backend Clerk token'ını doğruluyor (`auth.py`, RS256/JWKS)
+- [x] Oturumlar tarayıcıya değil **kimliğe** bağlı → bir kişi tek slot; `MAX_SESSIONS` 100 → 200
+- [x] `REQUIRE_AUTH=true`; kimliksiz istek 401
+- [x] WS token'ı URL yerine `Sec-WebSocket-Protocol` başlığında (URL'ler loglanıyor)
+- [x] Giriş artık uygulamanın kendi Türkçe sayfasında (`signInUrl`) — alan adı gerekmeden
+
+### Düzeltilen hatalar
+- [x] Ders planı kullanıcılar arasında sızıyordu (sabit localStorage anahtarı)
+- [x] `saveConfig` hataları sessizce yutuluyordu → yanlış CRN ile kayıt riski
+- [x] `manifest.json` 404 (middleware `.json`'u muaf tutmuyordu) + eksik PWA ikonları
+- [x] Devre dışı düğmeler aktif görünüyordu (global `grayscale` kuralı)
+- [x] Dry-run gerçek kayıtla aynı "KAYIT TAMAM" ekranını gösteriyordu
+- [x] İptal "TAMAMLANDI" gösteriyordu; ayrıca araya "HAZIR" parlaması giriyordu
+- [x] Gizlilik metni yanlıştı ve kendiyle çelişiyordu
+- [x] Preset bulut hataları sessizdi (Supabase duraklamasını aylarca gizledi)
+
+### UX yenileme
+- [x] 5 kademeli sihirbaz → tek akıllı arama kutusu (modal silindi, 511 satır)
+- [x] Gözatma ızgarası (177 alan) — kod bilmeyen için
+- [x] Ders **adına** göre arama (Türkçe karaktersiz yazım dahil)
+- [x] Takvim yüksekliğe duyarlı; sayfa uygulama kabuğuna dönüştü
+- [x] Çakışan dersler yan yana (eskiden biri diğerini tamamen gizliyordu)
+- [x] Geri sayım paneli duruma göre ölçekleniyor
+
+### Açık kalanlar
+- [ ] **Clerk production** — alan adı gerektiriyor, kullanıcı şu an alamıyor
+- [ ] Gerçek eşzamanlı yük Cloud Run'da test edilmedi (ölçümler yerelde gerçek motor sınıfıyla)
+- [ ] İptal, bloke eden ağ çağrısının ortasında duramıyor (arayüzde "DURDURULUYOR" ile maskelendi)
+- [ ] Olmayan CRN sorgusu 14 saniye sürüyor
+- [ ] Dashboard sol sütun boşluğu; komut paleti (Cmd+K) fikri
+- [ ] Frontend testi yok
+- [ ] `.github/copilot-instructions.md` hâlâ tek dosyalı scripti anlatıyor (yanıltıcı)
