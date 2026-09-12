@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 import { m, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import { ScheduleSidebar } from "./schedule-sidebar";
@@ -10,14 +11,21 @@ import { ScheduleGrid } from "./schedule-grid";
 import { api } from "@/lib/api";
 import type { CourseInfo } from "@/lib/api";
 import { COURSE_HUES } from "@/lib/course-colors";
+import {
+  scheduleKeyFor,
+  scheduleExportKeyFor,
+  LEGACY_SCHEDULE_SELECTED,
+} from "@/lib/storage-keys";
 
 // ── Constants ──
 
 const DAYS = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"] as const;
 const DAY_SHORT = ["Pzt", "Sal", "Çar", "Per", "Cum"] as const;
 
-// Seçili dersleri sayfa yenilemede korumak için localStorage anahtarı
-const SELECTED_STORAGE_KEY = "otostop-schedule-selected";
+// Seçili dersleri sayfa yenilemede korumak için localStorage anahtarı.
+// Anahtar kullanıcıya göre ayrılır: aynı tarayıcıda farklı hesapla giriş yapan
+// kullanıcı öncekinin planını GÖRMEMELİ (gizlilik) ve ÜZERİNE YAZMAMALI (veri kaybı).
+const SELECTED_STORAGE_KEY = LEGACY_SCHEDULE_SELECTED;
 
 // ── Types ──
 
@@ -88,20 +96,43 @@ export function ScheduleBuilder() {
   // Router for export navigation
   const router = useRouter();
 
-  // localStorage persist — seçili dersler sayfa yenilemede kaybolmasın
-  const restoredRef = useRef(false);
+  // localStorage persist — seçili dersler sayfa yenilemede kaybolmasın.
+  // Kullanıcı başına ayrı anahtar; hangi anahtarın geri yüklendiğini takip ederiz.
+  const { user } = useUser();
+  const userId = user?.id ?? null;
+  const storageKey = userId ? scheduleKeyFor(userId) : null;
+  const restoredForRef = useRef<string | null>(null);
 
-  // Restore on mount
+  // Kullanıcı belli olunca (veya değişince) o kullanıcının planını geri yükle
   useEffect(() => {
+    if (!userId || !storageKey) return;
+    if (restoredForRef.current === storageKey) return;
+
+    // Hesap değiştiyse önceki kullanıcının planını ekranda bırakma
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- kullanıcı değişiminde izolasyon
+    setSelected([]);
+    setNextColorIdx(0);
+
     try {
-      const raw = localStorage.getItem(SELECTED_STORAGE_KEY);
+      // Tek seferlik göç: kullanıcıya bağlı olmayan eski küresel anahtarı kapat.
+      // Sahibi olduğunu bildiğimiz durumda (son giriş yapan kullanıcı aynıysa) taşı,
+      // aksi halde sil — başkasının planını devralmaktansa boş başlamak doğru.
+      const legacy = localStorage.getItem(SELECTED_STORAGE_KEY);
+      if (legacy) {
+        const lastUser = localStorage.getItem("otostop-last-user");
+        if (lastUser === userId && !localStorage.getItem(storageKey)) {
+          localStorage.setItem(storageKey, legacy);
+        }
+        localStorage.removeItem(SELECTED_STORAGE_KEY);
+      }
+
+      const raw = localStorage.getItem(storageKey);
       if (raw) {
         const parsed = JSON.parse(raw) as {
           selected: SelectedCourse[];
           nextColorIdx: number;
         };
         if (parsed.selected?.length) {
-          // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time localStorage hidratasyonu
           setSelected(parsed.selected);
           setNextColorIdx(parsed.nextColorIdx ?? parsed.selected.length);
         }
@@ -109,21 +140,22 @@ export function ScheduleBuilder() {
     } catch {
       /* bozuk veri — yoksay */
     }
-    restoredRef.current = true;
-  }, []);
+    restoredForRef.current = storageKey;
+  }, [userId, storageKey]);
 
-  // Persist on change (restore tamamlanmadan yazma — boş state ezmesin)
+  // Persist on change (geri yükleme tamamlanmadan yazma — boş state ezmesin)
   useEffect(() => {
-    if (!restoredRef.current) return;
+    if (!storageKey) return;
+    if (restoredForRef.current !== storageKey) return;
     try {
       localStorage.setItem(
-        SELECTED_STORAGE_KEY,
+        storageKey,
         JSON.stringify({ selected, nextColorIdx }),
       );
     } catch {
       /* kota dolu vs. — yoksay */
     }
-  }, [selected, nextColorIdx]);
+  }, [selected, nextColorIdx, storageKey]);
 
   // Department change handler — resets courses before setting dept
   const handleDeptChange = useCallback((dept: DepartmentItem | null) => {
@@ -255,11 +287,16 @@ export function ScheduleBuilder() {
       toast.warning("Aktarılacak ders yok");
       return;
     }
+    if (!userId) {
+      toast.error("Oturum bilgisi yüklenmedi, tekrar dene");
+      return;
+    }
     const crns = selected.map((s) => s.course.crn);
-    localStorage.setItem("otostop-schedule-export", JSON.stringify(crns));
+    // Aktarım anahtarı da kullanıcıya bağlı: başka hesap devralmasın
+    localStorage.setItem(scheduleExportKeyFor(userId), JSON.stringify(crns));
     toast.success(`${crns.length} CRN kayıt motoruna aktarıldı`);
     router.push("/");
-  }, [selected, router]);
+  }, [selected, router, userId]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">

@@ -28,9 +28,9 @@ export function PrivacyBanner() {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 80, opacity: 0 }}
           transition={{ type: "spring", damping: 24, stiffness: 260 }}
-          className="pointer-events-none fixed bottom-4 left-4 right-4 z-[90] flex justify-center"
+          className="pointer-events-none fixed bottom-4 right-4 left-4 z-[90] flex justify-center sm:left-auto sm:justify-end"
         >
-          <div className="pointer-events-auto flex w-full max-w-lg items-start gap-3.5 border-l-2 border-l-primary border bg-popover px-5 py-4">
+          <div className="pointer-events-auto flex w-full max-w-sm items-start gap-3.5 border-l-2 border-l-primary border bg-popover px-5 py-4">
             <div className="min-w-0 flex-1 space-y-2">
               <p className="panel-label">Gizlilik Bildirimi</p>
               <p className="text-xs leading-relaxed text-muted-foreground">

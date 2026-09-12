@@ -124,7 +124,9 @@ export function CountdownTimer({
           ? "Yükleniyor"
           : hasTarget
             ? "Hazır"
-            : "Kayıt saatini ayarla";
+            // Kayıt saati yokken büyük sayı CANLI SAAT'tir, geri sayım değil.
+            // Etiket bunu söylemezse kullanıcı geri sayım sanıyor.
+            : "Şu an · kayıt saatini ayarla";
 
   const handleTimeChange = (v: string) => {
     onTargetTimeChange(v && v.length === 5 ? v + ":00" : v);

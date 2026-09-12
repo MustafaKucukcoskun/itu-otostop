@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
+import { scheduleExportKeyFor } from "@/lib/storage-keys";
 import { api, type CalibrationResult, type CourseInfo } from "@/lib/api";
 import { ConfigService } from "@/lib/config-service";
 import { useToken } from "@/lib/token-context";
@@ -101,6 +102,8 @@ function DashboardContent() {
   const initialLoadDone = useRef(false);
   const configReadyRef = useRef(false);
   const [configReady, setConfigReady] = useState(false);
+  // Yapılandırma kaydı sağlıklı mı — sadece durum değişiminde uyarı göster
+  const saveHealthyRef = useRef(true);
 
   // Delayed skeleton: only show after 300ms, then keep for min 1 shimmer cycle
   const [showSkeleton, setShowSkeleton] = useState(false);
@@ -188,7 +191,9 @@ function DashboardContent() {
       setConfigReady(true);
 
       // Import CRNs from schedule builder if available
-      const scheduleExport = localStorage.getItem("otostop-schedule-export");
+      const scheduleExport = clerkUserId
+        ? localStorage.getItem(scheduleExportKeyFor(clerkUserId))
+        : null;
       if (scheduleExport) {
         try {
           const importedCRNs = JSON.parse(scheduleExport) as string[];
@@ -209,7 +214,7 @@ function DashboardContent() {
         } catch {
           // Invalid JSON, ignore
         }
-        localStorage.removeItem("otostop-schedule-export");
+        if (clerkUserId) localStorage.removeItem(scheduleExportKeyFor(clerkUserId));
       }
 
       // null → "" : config loaded but no time was saved by user
@@ -243,7 +248,7 @@ function DashboardContent() {
   }, [ws.connected]);
 
   // Save config to backend
-  const saveConfig = useCallback(async () => {
+  const saveConfig = useCallback(async (): Promise<boolean> => {
     try {
       await api.setConfig({
         ...(tokenChanged && token ? { token } : {}),
@@ -254,8 +259,11 @@ function DashboardContent() {
         retry_aralik: retryAralik,
         dry_run: dryRun,
       });
+      return true;
     } catch {
-      // silent fail for auto-save
+      // Hata YUTULMAZ — çağıran taraf karar verir.
+      // Sessiz başarısızlık, motorun eski CRN listesiyle çalışmasına yol açıyordu.
+      return false;
     }
   }, [
     token,
@@ -273,7 +281,18 @@ function DashboardContent() {
   useEffect(() => {
     if (!initialLoadDone.current) return;
     const timer = setTimeout(() => {
-      saveConfig();
+      saveConfig().then((ok) => {
+        if (!ok && saveHealthyRef.current) {
+          saveHealthyRef.current = false;
+          toast.error(
+            "Ayarlar sunucuya kaydedilemiyor — bağlantını kontrol et. Kayıt başlatmadan önce düzelmeli.",
+            { duration: 8000 },
+          );
+        } else if (ok && !saveHealthyRef.current) {
+          saveHealthyRef.current = true;
+          toast.success("Ayarlar yeniden kaydediliyor");
+        }
+      });
       // Cloud sync (token excluded for security)
       if (clerkUserId) {
         ConfigService.saveUserConfig(clerkUserId, {
@@ -409,7 +428,11 @@ function DashboardContent() {
     }
     setCalibrating(true);
     try {
-      await saveConfig();
+      const saved = await saveConfig();
+      if (!saved) {
+        toast.error("Ayarlar kaydedilemedi — kalibrasyon yapılmadı");
+        return;
+      }
       const result = await api.calibrate();
       setCalibrationData(result);
       toast.success(
@@ -456,7 +479,16 @@ function DashboardContent() {
     notify.requestPermission();
     notify.playSound("start");
     try {
-      await saveConfig();
+      // Ayarlar sunucuya yazılmadan başlatmak, motorun ESKİ listeyle
+      // çalışmasına yol açar — yanlış derse kayıt demek. O yüzden bloke ediyoruz.
+      const saved = await saveConfig();
+      if (!saved) {
+        toast.error(
+          "Ayarlar sunucuya kaydedilemedi — kayıt BAŞLATILMADI. Bağlantını kontrol edip tekrar dene.",
+          { duration: 10000 },
+        );
+        return;
+      }
       try {
         await api.startRegistration();
       } catch (err) {
