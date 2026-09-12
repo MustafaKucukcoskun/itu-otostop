@@ -1,0 +1,39 @@
+# Supabase ücretsiz katmanı, bir süre kullanılmayan projeyi DURAKLATIR.
+# Duraklatılmış projede DNS bile çözülmez; preset'ler ve bulut yapılandırması
+# sessizce kaybolur. 2026-09-12'de tam bu oldu ve aylarca fark edilmedi.
+#
+# Bu iş günde bir kez veritabanına dokunan bir sorgu atarak projeyi uyanık tutar.
+# RLS doğrudan erişimi reddeder (boş sonuç döner) ama sorgu Postgres'e ulaşır.
+
+name: Supabase uyanık tut
+
+on:
+  schedule:
+    - cron: "17 6 * * *" # her gün 06:17 UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Veritabanına dokun
+        env:
+          URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "SUPABASE_URL / SUPABASE_ANON_KEY secret'ları tanımlı değil."
+            echo "Repo → Settings → Secrets and variables → Actions'tan ekleyin."
+            exit 1
+          fi
+          code=$(curl -s -o /tmp/out -w "%{http_code}" --max-time 30 \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+            "$URL/rest/v1/user_configs?select=user_id&limit=1")
+          echo "HTTP $code"
+          head -c 300 /tmp/out; echo
+          # 200 (boş liste) ve 401/403 (RLS reddi) kabul: üçü de Postgres'e ulaştığını gösterir.
+          case "$code" in
+            200|401|403) echo "Proje uyanık." ;;
+            000) echo "Bağlantı kurulamadı — proje duraklatılmış olabilir!"; exit 1 ;;
+            *)   echo "Beklenmeyen durum: $code"; exit 1 ;;
+          esac
