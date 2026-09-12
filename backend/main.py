@@ -204,7 +204,9 @@ app.add_middleware(
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Session-ID"],
+    # Authorization: Clerk oturum token'ı buradan gelir. Listede olmazsa
+    # tarayıcı preflight'ı reddeder ve tüm API çağrıları CORS hatası alır.
+    allow_headers=["Content-Type", "X-Session-ID", "Authorization"],
 )
 app.add_middleware(SecurityHeadersMiddleware)
 
