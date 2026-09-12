@@ -373,7 +373,7 @@ export function CalibrationCard({
                 Ölçülüyor...
               </m.span>
             ) : (
-              "Kalibre Et butonuna bas"
+              "Token girince kalibrasyon yapılabilir"
             )}
           </div>
         )}
