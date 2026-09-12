@@ -971,6 +971,7 @@ function DashboardContent() {
             ? `${crn} — ${courseInfo[crn].course_name}`
             : crn,
         }))}
+        dryRun={dryRun}
         onDismiss={() => setShowSuccess(false)}
       />
     </>
