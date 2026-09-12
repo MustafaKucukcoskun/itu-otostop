@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { m } from "motion/react";
 import { Plus, Trash2, AlertTriangle, ArrowRight, Loader2, Hash } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -197,8 +198,15 @@ export function ScheduleSidebar({
 
         {/* Add Course Button */}
         <Button
-          onClick={onAddCourse}
-          disabled={!selectedDept}
+          onClick={() => {
+            // Devre dışı bırakmak yerine sebebini söyle: devre dışı düğmeye basan
+            // kullanıcı hiçbir geri bildirim alamıyordu ("hiçbir şey olmuyor").
+            if (!selectedDept) {
+              toast.info("Önce yukarıdan bir ders alanı seç (ör. BLG, MAT)");
+              return;
+            }
+            onAddCourse();
+          }}
           className="mt-3 w-full gap-2"
           variant={selectedCourses.length === 0 ? "default" : "outline"}
         >

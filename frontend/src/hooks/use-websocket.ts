@@ -15,9 +15,12 @@ export interface LogEntry {
   level: "info" | "warning" | "error";
 }
 
-// Exponential backoff: 3s → 6s → 12s → 24s → max 30s
-const RECONNECT_BASE = 3000;
-const RECONNECT_MAX = 30000;
+// Exponential backoff: 0.5s → 1s → 2s → 4s → max 5s
+// Eski değerler (3s tabanlı, 30s tavan) kayıt anında felaketti: bağlantı T-20sn'de
+// koparsa kullanıcı geri sayımı ve logları en kritik pencerede 30 saniye kaybediyordu.
+// Motor sunucuda çalışmaya devam eder ama kullanıcı kör kalır.
+const RECONNECT_BASE = 500;
+const RECONNECT_MAX = 5000;
 
 function getReconnectDelay(attempt: number): number {
   return Math.min(RECONNECT_BASE * Math.pow(2, attempt), RECONNECT_MAX);
