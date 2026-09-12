@@ -10,6 +10,8 @@ interface SuccessOverlayProps {
     status: string;
     label?: string;
   }>;
+  /** Dry run sonucu: gerçek kayıt yapılmadı, sonuçlar simülasyon. */
+  dryRun?: boolean;
   onDismiss?: () => void;
 }
 
@@ -33,6 +35,7 @@ function isOk(status: string) {
 export function SuccessOverlay({
   show,
   results = [],
+  dryRun = false,
   onDismiss,
 }: SuccessOverlayProps) {
   const successCount = results.filter((r) => isOk(r.status)).length;
@@ -41,8 +44,19 @@ export function SuccessOverlay({
   ).length;
   const allFailed = successCount === 0 && failCount > 0;
 
-  const accent = allFailed ? "var(--status-err)" : "var(--status-ok)";
-  const headline = allFailed ? "KAYIT BAŞARISIZ" : "KAYIT TAMAM";
+  // Dry run'da motor CRN'leri "success" olarak işaretliyor (simülasyon).
+  // Bunu gerçek kayıtla aynı göstermek, kullanıcının kaydolduğunu sanmasına
+  // yol açıyordu — ders kayıt aracında kabul edilemez bir belirsizlik.
+  const accent = dryRun
+    ? "var(--status-wait)"
+    : allFailed
+      ? "var(--status-err)"
+      : "var(--status-ok)";
+  const headline = dryRun
+    ? "DRY RUN TAMAM"
+    : allFailed
+      ? "KAYIT BAŞARISIZ"
+      : "KAYIT TAMAM";
 
   return (
     <AnimatePresence>
@@ -86,10 +100,16 @@ export function SuccessOverlay({
                 {headline}
               </h2>
 
+              {dryRun && (
+                <p className="mt-2 border border-status-wait px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-status-wait">
+                  Gerçek kayıt yapılmadı — bu bir simülasyon
+                </p>
+              )}
+
               <p className="mt-2 font-mono text-sm text-muted-foreground tabular-nums">
                 {successCount > 0 && (
-                  <span className="text-status-ok">
-                    {successCount} başarılı
+                  <span className={dryRun ? "text-status-wait" : "text-status-ok"}>
+                    {successCount} {dryRun ? "simüle başarı" : "başarılı"}
                   </span>
                 )}
                 {successCount > 0 && failCount > 0 && " · "}

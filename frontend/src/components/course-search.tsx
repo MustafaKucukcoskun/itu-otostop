@@ -228,6 +228,30 @@ export function CourseSearch({
         </p>
       )}
 
+      {/* GÖZAT — kutu boşken tüm ders alanları listelenir.
+          Kodu bilen yazıp geçer; bilmeyen buradan keşfeder. Arama kutusunu
+          zorunlu kılmak, kod ezberlemeyen öğrenciyi çıkmaza sokuyordu. */}
+      {!departmentsLoading && query.trim() === "" && departments.length > 0 && (
+        <div className="border-t border-border">
+          <p className="px-4 py-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Gözat · {departments.length} ders alanı
+          </p>
+          <div className="max-h-[24rem] overflow-y-auto">
+            <div className="grid grid-cols-3 gap-px bg-border">
+              {departments.map((d) => (
+                <button
+                  key={d.bransKoduId}
+                  onClick={() => setQuery(d.dersBransKodu)}
+                  className="bg-card px-2 py-2.5 font-mono text-xs text-foreground transition-colors hover:bg-primary hover:text-primary-foreground"
+                >
+                  {d.dersBransKodu}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {message && (
         <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
           {message}
