@@ -276,7 +276,7 @@ export function CourseSearch({
               </button>
             )}
             <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              {result.heading} · {result.sections.length} section
+              {result.heading} · {result.sections.length} CRN
             </p>
           </div>
           <div className="max-h-[26rem] overflow-y-auto">
@@ -328,7 +328,9 @@ export function CourseSearch({
                     {c.sessions.map((s, i) => (
                       <span key={i}>
                         {DAY_SHORT[s.day]} {s.start_time}–{s.end_time}
-                        {s.room ? ` · ${s.room}` : ""}
+                        {s.room && s.room.replace(/-/g, "").trim()
+                          ? ` · ${s.room}`
+                          : ""}
                       </span>
                     ))}
                     <span className={full ? "text-status-err" : "text-status-ok"}>
