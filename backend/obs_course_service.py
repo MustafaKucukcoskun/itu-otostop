@@ -35,6 +35,39 @@ POPULAR_DEPT_CODES = [
     "EUT", "MIM", "PEM", "SBP", "ICM", "MTO", "JEO", "CHZ", "ROS", "UZB",
 ]
 
+# ── Türkçe-duyarlı metin katlama ──
+#
+# Python'ın .lower()'ı Türkçe için yanlış: "I".lower() → "i" (olması gereken "ı"),
+# "İ".lower() → "i" + birleşen nokta (bozuk karşılaştırma). Bu yüzden büyük harf
+# eşlemesi lower() ÖNCESİ yapılır.
+#
+# Aksanlar da temizlenir: kullanıcı klavyeden Türkçe karakter yazmadan da
+# ("akiskanlar") aramayı bulabilmeli.
+
+_TR_UPPER = str.maketrans({"İ": "i", "I": "ı"})
+_TR_DIACRITICS = str.maketrans({
+    "ı": "i", "ş": "s", "ğ": "g", "ü": "u", "ö": "o", "ç": "c", "â": "a", "î": "i", "û": "u",
+})
+
+
+def fold_tr(s: str) -> str:
+    """Türkçe-duyarlı küçültme + aksan temizliği. Karşılaştırma için."""
+    return s.translate(_TR_UPPER).lower().translate(_TR_DIACRITICS)
+
+
+def matches_query(query: str, course_name: str, course_code: str) -> bool:
+    """Sorgudaki kelimelerin HEPSİ ders kodu veya adında geçiyor mu?
+
+    Tek kelime eşleşmesi yeterli sayılsaydı çok kelimeli aramada alakasız
+    sonuçlar yağardı ("akışkanlar termodinamik" her ikisini de getirirdi).
+    """
+    q = fold_tr(query).strip()
+    if not q:
+        return False
+    hay = fold_tr(f"{course_code} {course_name}")
+    return all(word in hay for word in q.split())
+
+
 # Day name → index (0=Monday, 4=Friday)
 DAY_MAP = {
     "Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4,
@@ -203,6 +236,47 @@ class OBSCourseService:
                 return self._crn_index[crn]
 
         return None
+
+    def search_courses(self, query: str, limit: int = 60) -> list[CourseInfo]:
+        """Ders ADINA veya koduna göre ara.
+
+        Kapsam bilinçli olarak SINIRLI: önce zaten önbellekte olan her şey,
+        yetmezse POPULAR_DEPT_CODES (40 bölüm). 177 bölümün tamamını taramak
+        OBS'ye her önbellek yenilemesinde yüzlerce istek demek olurdu; bu,
+        kayıt günü riske atılmayacak bir yük.
+
+        Türkçe karakter yazmadan arama çalışır ("akiskanlar" → "Akışkanlar").
+        """
+        q = (query or "").strip()
+        if len(q) < 3:
+            return []  # cok kisa sorgu her seyi getirir
+
+        def scan() -> list[CourseInfo]:
+            found: list[CourseInfo] = []
+            seen: set[str] = set()
+            for course in self._crn_index.values():
+                if course.crn in seen:
+                    continue
+                if matches_query(q, course.course_name, course.course_code):
+                    found.append(course)
+                    seen.add(course.crn)
+                    if len(found) >= limit:
+                        break
+            return found
+
+        results = scan()
+        if results:
+            return results
+
+        # Onbellekte yoksa populer bolumleri isit ve tekrar tara
+        departments = self.get_departments()
+        if not departments:
+            return []
+        dept_map = {d["dersBransKodu"]: d["bransKoduId"] for d in departments}
+        for code in POPULAR_DEPT_CODES:
+            if code in dept_map:
+                self.get_courses(dept_map[code])
+        return scan()
 
     def lookup_crns(self, crns: list[str]) -> dict[str, Optional[CourseInfo]]:
         """Toplu CRN arama (batch — daha verimli)."""
