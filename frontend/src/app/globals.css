@@ -189,6 +189,20 @@
    PANEL LABEL — cihaz paneli etiketi
    Mono, uppercase, tracked. Kart başlıklarının dili.
    ────────────────────────────────────────────────────── */
+/* ── Devre dışı öğeler ────────────────────────────────────────────
+   Koyu zeminde tek başına opaklık yetmiyor: %30-50 opaklıktaki turuncu
+   bir düğme "devre dışı" değil "biraz koyu turuncu" gibi okunuyor ve
+   kullanıcı basıyor, hiçbir şey olmuyor. Doygunluğu sıfırlamak durumu
+   tereddütsüz anlatıyor.
+
+   Tek yerde tanımlı, çünkü disabled:opacity-* 19 ayrı yerde üç farklı
+   değerle dağılmıştı; bileşeni düzeltmek ham <button> etiketlerine
+   ulaşmıyordu. */
+button:disabled,
+[aria-disabled="true"] {
+  filter: grayscale(1);
+}
+
 .panel-label {
   font-family: var(--font-geist-mono);
   font-size: 11px;
