@@ -139,3 +139,26 @@ def test_request_for_rebuilds_when_crn_list_changed():
     assert got is not first
     assert "67890" in _body_text(got)
     assert "12345" not in _body_text(got)
+
+
+# ── Bitiş sinyali: iptal ile gerçek tamamlanma ayrılmalı ──
+
+
+def test_done_payload_not_cancelled_by_default():
+    """Normal bitişte done olayı cancelled=False taşımalı."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    assert eng._done_payload()["cancelled"] is False
+
+
+def test_done_payload_marks_cancellation():
+    """İptal edildiyse done olayı bunu söylemeli — yoksa arayüz
+    'KAYIT TAMAMLANDI' modalını iptalden sonra da gösteriyor."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng.cancel()
+    assert eng._done_payload()["cancelled"] is True
+
+
+def test_done_payload_carries_results():
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng._prepare_fire()
+    assert eng._done_payload()["results"]["12345"]["status"] == "pending"

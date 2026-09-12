@@ -703,6 +703,18 @@ class RegistrationEngine:
         self._prepped = self._build_request(kalan)
         self._prepped_for = kalan
 
+    def _done_payload(self) -> dict:
+        """Bitiş olayının içeriği.
+
+        İptal ile gerçek tamamlanmayı AYIRIR. run() finally bloğu her durumda
+        done yayınladığı için, iptal eden kullanıcıya da "KAYIT TAMAMLANDI"
+        modalı gösteriliyordu — hiçbir şey tamamlanmamışken.
+        """
+        return {
+            "results": dict(self._crn_results),
+            "cancelled": self._cancelled.is_set(),
+        }
+
     def _request_for(self, ecrn_list: list[str]) -> requests.PreparedRequest:
         """Hazır istek bu CRN listesiyle eşleşiyorsa onu kullan; değilse yeniden inşa et.
 
@@ -1256,7 +1268,7 @@ class RegistrationEngine:
             gc.enable()  # GC'yi tekrar aç
             self._set_timer_resolution(False)
             self._set_phase("done")
-            self._emit("done", {"results": dict(self._crn_results)})
+            self._emit("done", self._done_payload())
             self._running = False  # MUST be last — poll_engine_events checks this flag
 
     # ── Token testi ──
