@@ -107,7 +107,6 @@ export function ScheduleBuilder() {
     if (restoredForRef.current === storageKey) return;
 
     // Hesap değiştiyse önceki kullanıcının planını ekranda bırakma
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- kullanıcı değişiminde izolasyon
     setSelected([]);
     setNextColorIdx(0);
 
@@ -191,9 +190,9 @@ export function ScheduleBuilder() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `selected` bilerek dışarıda:
-    // efekt setSelected çağırıyor, bağımlılığa eklemek gereksiz yeniden render üretir.
-    // refreshedForRef zaten tek seferlik çalışmayı garanti ediyor.
+    // `selected` bilerek bağımlılıkta değil: efekt setSelected çağırıyor, eklemek
+    // gereksiz yeniden render üretir. refreshedForRef tek seferlik çalışmayı garanti ediyor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey, selected.length]);
 
   // Load departments on mount
