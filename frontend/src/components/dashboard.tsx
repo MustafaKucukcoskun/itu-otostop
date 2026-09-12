@@ -956,7 +956,7 @@ function DashboardContent() {
               Sorun Bildir
             </a>
             <span>·</span>
-            <span>Verileriniz yalnızca tarayıcınızda saklanır</span>
+            <span>İTÜ şifreniz istenmez · token yalnızca bellekte tutulur</span>
           </div>
         </div>
       </footer>

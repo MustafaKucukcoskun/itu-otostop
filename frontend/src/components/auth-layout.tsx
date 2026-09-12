@@ -6,7 +6,7 @@ import { Zap, Timer, Shield } from "lucide-react";
 const features = [
   { icon: Timer, label: "Milisaniye hassasiyetiyle kayıt" },
   { icon: Zap, label: "Otomatik çoklu ders ekleme" },
-  { icon: Shield, label: "Verileriniz yalnızca tarayıcınızda" },
+  { icon: Shield, label: "İTÜ şifreniz istenmez" },
 ];
 
 interface AuthLayoutProps {

@@ -34,9 +34,10 @@ export function PrivacyBanner() {
             <div className="min-w-0 flex-1 space-y-2">
               <p className="panel-label">Gizlilik Bildirimi</p>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Bu uygulama İTÜ şifrenizi saklamaz. CRN listeniz ve ayarlarınız
-                tarayıcınızda tutulur. Kayıt başlatıldığında yalnızca token
-                güvenli şekilde sunucuya iletilir. Hiçbir veri üçüncü taraflarla
+                İTÜ şifreniz hiçbir zaman istenmez ve saklanmaz. OBS token'ınız
+                yalnızca kayıt sırasında sunucu belleğinde tutulur; diske veya
+                buluta yazılmaz. Ders listeniz, şablonlarınız ve ayarlarınız
+                hesabınıza bağlı olarak saklanır. Hiçbir veri üçüncü taraflarla
                 paylaşılmaz.
               </p>
               <button
