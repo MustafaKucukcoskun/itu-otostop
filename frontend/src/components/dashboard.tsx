@@ -94,9 +94,16 @@ function DashboardContent() {
   // overlay tekrar patlamaz — sonuç CRN listesinde + "Tamamlandı" etiketinde
   // zaten inline görünür.
   const [showSuccess, setShowSuccess] = useState(false);
+  // İptal isteği gönderildi ama motor henüz durmadı — ara durum.
+  const [cancelling, setCancelling] = useState(false);
   useEffect(() => {
     if (ws.completionTick > 0) setShowSuccess(true);
   }, [ws.completionTick]);
+
+  // Motor gerçekten durduğunda ara durumu kapat
+  useEffect(() => {
+    if (ws.phase === "done" || ws.phase === "idle") setCancelling(false);
+  }, [ws.phase]);
 
   // Guard: auto-save'in config load bitmeden cloud'u ezmesini engelle
   const initialLoadDone = useRef(false);
@@ -526,15 +533,22 @@ function DashboardContent() {
   // Cancel
   const handleCancel = async () => {
     try {
+      // Motor iptali anında duramaz: kalibrasyondaki ağ çağrıları iptal bayrağını
+      // kontrol etmiyor, kapanma birkaç saniye sürebilir. Bu arada ekranı boşa
+      // çevirmek yerine "durduruluyor" gösteriyoruz — eskiden 2sn'lik yedek
+      // devreye girip bir an "HAZIR" ekranı parlatıyordu.
+      setCancelling(true);
       await api.cancelRegistration();
-      // Backend emits done via WS, but add fallback in case WS event is missed
+      // Gerçekten kaçan WS olayına karşı yedek — motorun en uzun ağ timeout'undan sonra
       setTimeout(() => {
         if (ws.phase !== "idle" && ws.phase !== "done") {
           ws.softReset();
         }
-      }, 2000);
-      toast.info("Kayıt iptal edildi");
+        setCancelling(false);
+      }, 12000);
+      toast.info("Kayıt iptal ediliyor…");
     } catch (err) {
+      setCancelling(false);
       toast.error(
         `İptal hatası: ${err instanceof Error ? err.message : "Bilinmeyen hata"}`,
       );
@@ -718,6 +732,7 @@ function DashboardContent() {
               countdown={ws.countdown}
               phase={ws.phase}
               cancelled={ws.cancelled}
+              cancelling={cancelling}
               dryRun={dryRun}
               disabled={isRunning}
             />
