@@ -203,11 +203,12 @@ export const api = {
 
 export async function createWebSocket(): Promise<WebSocket> {
   const token = await clerkToken();
-  // Tarayıcı WebSocket el sıkışmasında özel başlık gönderemez; token sorgu
-  // parametresiyle iletilir. Bağlantı wss:// olduğu için taşınırken şifreli.
   const wsUrl =
     API_BASE.replace("http", "ws") +
-    `/ws?session_id=${encodeURIComponent(getSessionId())}` +
-    (token ? `&token=${encodeURIComponent(token)}` : "");
-  return new WebSocket(wsUrl);
+    `/ws?session_id=${encodeURIComponent(getSessionId())}`;
+  // Token URL'e KONULMAZ: sorgu dizeleri erişim loglarına yazılır. Bunun yerine
+  // WebSocket alt protokolü olarak gönderilir — başlık loglanmaz.
+  return token
+    ? new WebSocket(wsUrl, ["bearer", token])
+    : new WebSocket(wsUrl);
 }

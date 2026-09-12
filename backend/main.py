@@ -555,22 +555,33 @@ async def lookup_crns_batch(body: dict):
 # ── WebSocket ──
 
 @app.websocket("/ws")
-async def websocket_endpoint(
-    ws: WebSocket,
-    session_id: str = Query(""),
-    token: str = Query(""),
-):
-    # Tarayıcı WebSocket'te özel başlık gönderemez; token sorgu parametresiyle gelir.
-    uid = clerk_user_id(None, token)
+async def websocket_endpoint(ws: WebSocket, session_id: str = Query("")):
+    # Token URL'de TAŞINMAZ: sorgu dizeleri erişim loglarına düşer ve oturum
+    # token'ının loglanması sızıntıdır. Tarayıcı WS el sıkışmasında özel başlık
+    # gönderemediği için Sec-WebSocket-Protocol alt protokolü kullanılır:
+    #   new WebSocket(url, ["bearer", "<token>"])
+    # Sunucu seçtiği alt protokolü geri bildirmek zorunda, yoksa tarayıcı bağlantıyı düşürür.
+    proto = ws.headers.get("sec-websocket-protocol", "")
+    uid = None
+    subprotocol = None
+    if proto:
+        parts = [x.strip() for x in proto.split(",") if x.strip()]
+        if len(parts) >= 2 and parts[0].lower() == "bearer":
+            uid = clerk_user_id(None, parts[1])
+            subprotocol = parts[0]
+        elif parts:
+            subprotocol = parts[0]
+
     if uid:
         session_id = f"u:{uid}"
     elif REQUIRE_AUTH:
-        await ws.close(code=4001, reason="Giriş gerekli")
+        await ws.close(code=4001, reason="Giris gerekli")
         return
     elif not UUID_RE.match(session_id or ""):
-        await ws.close(code=4000, reason="Geçersiz session ID formatı")
+        await ws.close(code=4000, reason="Gecersiz session ID formati")
         return
-    await ws.accept()
+
+    await ws.accept(subprotocol=subprotocol)
     session = get_session(session_id)
     session.ws_clients.append(ws)
     try:
