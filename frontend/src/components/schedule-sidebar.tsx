@@ -91,7 +91,7 @@ export function ScheduleSidebar({
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
                       {sc.course.instructor}
                     </p>
-                    <div className="mt-1 flex flex-wrap gap-1">
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
                       {sc.course.sessions.map((s, si) => (
                         <Badge
                           key={si}
@@ -101,6 +101,18 @@ export function ScheduleSidebar({
                           {DAY_SHORT[s.day]} {s.start_time}
                         </Badge>
                       ))}
+                      {sc.course.capacity > 0 && (
+                        <span
+                          className={`font-mono text-[10px] ${
+                            sc.course.enrolled >= sc.course.capacity
+                              ? "text-status-err"
+                              : "text-status-ok"
+                          }`}
+                          title="Kontenjan (sayfa açılışında tazelenir)"
+                        >
+                          {sc.course.enrolled}/{sc.course.capacity}
+                        </span>
+                      )}
                     </div>
                   </div>
 

@@ -155,6 +155,47 @@ export function ScheduleBuilder() {
     }
   }, [selected, nextColorIdx, storageKey]);
 
+  // Kontenjan localStorage'da ANLIK GÖRÜNTÜ olarak duruyor; günler önceki sayıyı
+  // güncelmiş gibi göstermek kayıt gününde yanıltıcı olur. Sayfa açılışında bir
+  // kez tazelenir (backend'in 1 saatlik önbelleği sayesinde ucuz).
+  const refreshedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!storageKey || restoredForRef.current !== storageKey) return;
+    if (refreshedForRef.current === storageKey) return;
+    if (selected.length === 0) return;
+    refreshedForRef.current = storageKey;
+
+    let cancelled = false;
+    api
+      .lookupCRNs(selected.map((s) => s.course.crn))
+      .then((fresh) => {
+        if (cancelled) return;
+        setSelected((prev) =>
+          prev.map((sc) => {
+            const f = fresh[sc.course.crn];
+            if (!f) return sc;
+            return {
+              ...sc,
+              course: {
+                ...sc.course,
+                capacity: f.capacity,
+                enrolled: f.enrolled,
+              },
+            };
+          }),
+        );
+      })
+      .catch(() => {
+        /* tazeleme başarısızsa eldeki veriyle devam — sessiz, kritik değil */
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `selected` bilerek dışarıda:
+    // efekt setSelected çağırıyor, bağımlılığa eklemek gereksiz yeniden render üretir.
+    // refreshedForRef zaten tek seferlik çalışmayı garanti ediyor.
+  }, [storageKey, selected.length]);
+
   // Load departments on mount
   useEffect(() => {
     let cancelled = false;
