@@ -12,6 +12,8 @@ const QUICK_TIMES = [
 
 interface CountdownTimerProps {
   targetTime: string | null;
+  /** Süreç iptal edilerek mi bitti? Tamamlanmadan ayrı gösterilir. */
+  cancelled?: boolean;
   onTargetTimeChange: (v: string) => void;
   countdown: number | null;
   phase: string;
@@ -21,6 +23,7 @@ interface CountdownTimerProps {
 
 export function CountdownTimer({
   targetTime,
+  cancelled = false,
   onTargetTimeChange,
   countdown,
   phase,
@@ -76,7 +79,8 @@ export function CountdownTimer({
   const display = useMemo(() => {
     if (localCountdown === null || localCountdown <= 0) {
       if (phase === "registering") return { main: "KAYIT YAPILIYOR", ms: "" };
-      if (phase === "done") return { main: "TAMAMLANDI", ms: "" };
+      if (phase === "done")
+        return { main: cancelled ? "İPTAL EDİLDİ" : "TAMAMLANDI", ms: "" };
       if (phase === "idle") return { main: "", ms: "" };
       return { main: targetTime ?? "--:--:--", ms: "" };
     }
@@ -95,7 +99,7 @@ export function CountdownTimer({
       main: `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`,
       ms: `.${ms}`,
     };
-  }, [localCountdown, phase, targetTime]);
+  }, [localCountdown, phase, targetTime, cancelled]);
 
   const isIdle = phase === "idle";
   const isActive =
@@ -119,7 +123,9 @@ export function CountdownTimer({
     : isRegistering
       ? "Kayıt devam ediyor"
       : isDone
-        ? "Tamamlandı"
+        ? cancelled
+          ? "İptal edildi"
+          : "Tamamlandı"
         : !configLoaded
           ? "Yükleniyor"
           : hasTarget
@@ -141,7 +147,9 @@ export function CountdownTimer({
   const mainColor = isRegistering
     ? "text-primary"
     : isDone
-      ? "text-status-ok"
+      ? cancelled
+        ? "text-muted-foreground"
+        : "text-status-ok"
       : isIdle && !hasTarget
         ? "text-muted-foreground"
         : "text-foreground";

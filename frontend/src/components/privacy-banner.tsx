@@ -34,7 +34,7 @@ export function PrivacyBanner() {
             <div className="min-w-0 flex-1 space-y-2">
               <p className="panel-label">Gizlilik Bildirimi</p>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                İTÜ şifreniz hiçbir zaman istenmez ve saklanmaz. OBS token'ınız
+                İTÜ şifreniz hiçbir zaman istenmez ve saklanmaz. OBS token&apos;ınız
                 yalnızca kayıt sırasında sunucu belleğinde tutulur; diske veya
                 buluta yazılmaz. Ders listeniz, şablonlarınız ve ayarlarınız
                 hesabınıza bağlı olarak saklanır. Hiçbir veri üçüncü taraflarla

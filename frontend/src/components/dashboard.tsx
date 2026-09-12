@@ -717,6 +717,7 @@ function DashboardContent() {
               onTargetTimeChange={(t) => setKayitSaati(t)}
               countdown={ws.countdown}
               phase={ws.phase}
+              cancelled={ws.cancelled}
               dryRun={dryRun}
               disabled={isRunning}
             />

@@ -46,6 +46,9 @@ export function useWebSocket() {
     null,
   );
   const [done, setDone] = useState(false);
+  // İptal edilerek biten süreç, tamamlanan süreçten AYRI izlenir:
+  // ikisi de aynı 'done' olayını üretiyor ama kullanıcıya aynı şey söylenemez.
+  const [cancelled, setCancelled] = useState(false);
   // Yalnızca CANLI "done" event'inde artar (siz izlerken kayıt bitince).
   // reconnect/remount'ta getStatus "done" dönse bile artmaz → overlay/toast
   // sadece gerçek tamamlanmada tetiklenir, her sayfa açılışında değil.
@@ -164,9 +167,12 @@ export function useWebSocket() {
               setCalibration(event.data as unknown as CalibrationResult);
               break;
 
-            case "done":
+            case "done": {
+              const wasCancelled = event.data.cancelled === true;
               setDone(true);
-              setCompletionTick((t) => t + 1); // canlı tamamlanma
+              setCancelled(wasCancelled);
+              // İptalde tamamlanma sayacı artmaz → "KAYIT TAMAM" modalı açılmaz.
+              if (!wasCancelled) setCompletionTick((t) => t + 1);
               if (event.data.results) {
                 setCrnResults(
                   event.data.results as Record<
@@ -176,6 +182,7 @@ export function useWebSocket() {
                 );
               }
               break;
+            }
 
             case "pong":
               if (pingSentRef.current > 0) {
@@ -222,6 +229,7 @@ export function useWebSocket() {
     setCrnResults({});
     setCalibration(null);
     setDone(false);
+    setCancelled(false);
   }, [clearLogs]);
 
   // Cancel sonrası: logları koruyarak state sıfırla
@@ -230,6 +238,7 @@ export function useWebSocket() {
     setCountdown(null);
     setCrnResults({});
     setDone(false);
+    setCancelled(false);
   }, []);
 
   useEffect(() => {
@@ -246,6 +255,7 @@ export function useWebSocket() {
     crnResults,
     calibration,
     done,
+    cancelled,
     completionTick,
     clearLogs,
     reset,
