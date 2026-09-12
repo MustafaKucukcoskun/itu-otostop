@@ -7,3 +7,4 @@ ntplib>=0.3.4
 beautifulsoup4>=4.12.0
 tzdata>=2024.1
 slowapi>=0.1.9
+PyJWT[crypto]>=2.8.0

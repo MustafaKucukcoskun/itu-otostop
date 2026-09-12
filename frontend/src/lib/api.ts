@@ -2,6 +2,27 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // ── Session ID (localStorage persist — tarayıcı kapatılsa bile korunur) ──
 
+/**
+ * Clerk oturum token'ı — backend isteği kullanıcıya bağlayabilsin diye.
+ *
+ * Backend bu token'ı doğruladığında oturumu Clerk kimliğine bağlar; böylece
+ * bir kişi kaç cihazdan girerse girsin tek oturum slotu tutar ve kimliksiz
+ * istekler (REQUIRE_AUTH açıkken) reddedilir.
+ */
+async function clerkToken(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const clerk = (
+      window as unknown as {
+        Clerk?: { session?: { getToken: () => Promise<string | null> } };
+      }
+    ).Clerk;
+    return (await clerk?.session?.getToken()) ?? null;
+  } catch {
+    return null; // Clerk henüz yüklenmediyse istek X-Session-ID ile devam eder
+  }
+}
+
 function getSessionId(): string {
   if (typeof window === "undefined") return "ssr";
   let sid = localStorage.getItem("otostop_session_id");
@@ -114,11 +135,13 @@ export interface CourseInfo {
 // ── API Functions ──
 
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = await clerkToken();
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
       "X-Session-ID": getSessionId(),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
   });
@@ -178,9 +201,13 @@ export const api = {
 
 // ── WebSocket ──
 
-export function createWebSocket(): WebSocket {
+export async function createWebSocket(): Promise<WebSocket> {
+  const token = await clerkToken();
+  // Tarayıcı WebSocket el sıkışmasında özel başlık gönderemez; token sorgu
+  // parametresiyle iletilir. Bağlantı wss:// olduğu için taşınırken şifreli.
   const wsUrl =
     API_BASE.replace("http", "ws") +
-    `/ws?session_id=${encodeURIComponent(getSessionId())}`;
+    `/ws?session_id=${encodeURIComponent(getSessionId())}` +
+    (token ? `&token=${encodeURIComponent(token)}` : "");
   return new WebSocket(wsUrl);
 }

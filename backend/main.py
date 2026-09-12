@@ -26,6 +26,7 @@ from models import (
     ConfigRequest, ConfigResponse, CalibrationResult,
     RegistrationState, TokenTestResult, CRNResultItem, CRNStatus,
 )
+from auth import ClerkVerifier
 from engine import RegistrationEngine
 from obs_course_service import get_obs_service, CourseInfo as OBSCourseInfo
 
@@ -51,8 +52,20 @@ class SessionState:
 
 
 sessions: dict[str, SessionState] = {}
-MAX_SESSIONS = 100
+
+# Oturumlar kimliğe bağlandığında bir kişi kaç cihazdan girerse girsin tek slot
+# tutar, dolayısıyla tavan kullanıcı sayısıyla doğrudan orantılı olur.
+# 100 eşzamanlı kayıt ölçüldü (en kötü varış +47ms); 200 rahat pay bırakıyor.
+MAX_SESSIONS = int(os.getenv("MAX_SESSIONS", "200"))
 SESSION_TIMEOUT = 7200  # 2 saat
+
+# ── Clerk kimlik doğrulaması ──
+# CLERK_ISSUER: Clerk Frontend API kökü (ör. https://xxx.clerk.accounts.dev)
+# REQUIRE_AUTH: true olduğunda kimliksiz istek 401 alır. Güvenli devreye alma için
+# önce false ile yayınlanıp token akışı doğrulanır, sonra açılır.
+CLERK_ISSUER = os.getenv("CLERK_ISSUER", "").strip()
+REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "").lower() in ("1", "true", "yes")
+_clerk = ClerkVerifier(issuer=CLERK_ISSUER) if CLERK_ISSUER else None
 
 # Session ID format doğrulama (UUIDv4)
 UUID_RE = re.compile(
@@ -92,8 +105,35 @@ def get_session(session_id: str) -> SessionState:
     return s
 
 
+def clerk_user_id(auth_header: Optional[str], query_token: str = "") -> Optional[str]:
+    """Authorization başlığından (veya WS için sorgu parametresinden) kimliği çıkar."""
+    if _clerk is None:
+        return None
+    token = ""
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    elif query_token:
+        token = query_token.strip()
+    if not token:
+        return None
+    return _clerk.user_id_from_token(token)
+
+
 def get_session_id(request: Request) -> str:
-    """Request'ten session ID'yi çıkar ve UUIDv4 formatını doğrula."""
+    """Oturum anahtarını belirle.
+
+    Kimlik doğrulanabiliyorsa oturum KULLANICIYA bağlanır ("u:<clerk_id>"):
+    bir kişi kaç cihazdan girerse girsin tek slot tutar ve yabancı oturum açamaz.
+
+    REQUIRE_AUTH kapalıyken eski istemciler X-Session-ID ile çalışmaya devam eder
+    (güvenli devreye alma); açıldığında kimliksiz istek 401 alır.
+    """
+    uid = clerk_user_id(request.headers.get("Authorization"))
+    if uid:
+        return f"u:{uid}"
+    if REQUIRE_AUTH:
+        raise HTTPException(401, "Giriş gerekli")
+
     sid = request.headers.get("X-Session-ID", "")
     if not sid:
         sid = request.query_params.get("session_id", "")
@@ -108,6 +148,12 @@ def get_session_id(request: Request) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # JWKS'i baştan çek: ilk isteğin ağ beklemesini event loop'ta yapmasını önler
+    if _clerk is not None:
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, _clerk._keys)
+        except Exception:
+            pass  # Clerk geçici erişilemezse ilk istekte tekrar denenir
     yield
     # Shutdown: cancel all running engines
     for sid, s in sessions.items():
@@ -509,9 +555,19 @@ async def lookup_crns_batch(body: dict):
 # ── WebSocket ──
 
 @app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket, session_id: str = Query(...)):
-    # UUID format doğrulaması (REST API ile aynı güvenlik seviyesi)
-    if not UUID_RE.match(session_id):
+async def websocket_endpoint(
+    ws: WebSocket,
+    session_id: str = Query(""),
+    token: str = Query(""),
+):
+    # Tarayıcı WebSocket'te özel başlık gönderemez; token sorgu parametresiyle gelir.
+    uid = clerk_user_id(None, token)
+    if uid:
+        session_id = f"u:{uid}"
+    elif REQUIRE_AUTH:
+        await ws.close(code=4001, reason="Giriş gerekli")
+        return
+    elif not UUID_RE.match(session_id or ""):
         await ws.close(code=4000, reason="Geçersiz session ID formatı")
         return
     await ws.accept()
