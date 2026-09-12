@@ -3,10 +3,9 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
-import { m, AnimatePresence } from "motion/react";
+import { m } from "motion/react";
 import { toast } from "sonner";
 import { ScheduleSidebar } from "./schedule-sidebar";
-import { CourseSelectorModal } from "./course-selector-modal";
 import { ScheduleGrid } from "./schedule-grid";
 import { api } from "@/lib/api";
 import type { CourseInfo } from "@/lib/api";
@@ -79,19 +78,18 @@ function timeToMinutes(t: string): number {
 export function ScheduleBuilder() {
   // Departments
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
-  const [selectedDept, setSelectedDept] = useState<DepartmentItem | null>(null);
+
   const [deptLoading, setDeptLoading] = useState(true);
 
   // Courses for selected dept
-  const [deptCourses, setDeptCourses] = useState<CourseInfo[]>([]);
-  const [coursesLoading, setCoursesLoading] = useState(false);
+
 
   // Selected courses (the user's schedule)
   const [selected, setSelected] = useState<SelectedCourse[]>([]);
   const [nextColorIdx, setNextColorIdx] = useState(0);
 
   // Modal
-  const [modalOpen, setModalOpen] = useState(false);
+
 
   // Router for export navigation
   const router = useRouter();
@@ -157,13 +155,6 @@ export function ScheduleBuilder() {
     }
   }, [selected, nextColorIdx, storageKey]);
 
-  // Department change handler — resets courses before setting dept
-  const handleDeptChange = useCallback((dept: DepartmentItem | null) => {
-    setDeptCourses([]);
-    setCoursesLoading(!!dept);
-    setSelectedDept(dept);
-  }, []);
-
   // Load departments on mount
   useEffect(() => {
     let cancelled = false;
@@ -183,49 +174,6 @@ export function ScheduleBuilder() {
     };
   }, []);
 
-  // Load courses when department changes
-  useEffect(() => {
-    if (!selectedDept) return;
-    let cancelled = false;
-    api
-      .getCourses(selectedDept.bransKoduId)
-      .then((data) => {
-        if (!cancelled) setDeptCourses(data);
-      })
-      .catch(() => {
-        if (!cancelled) toast.error("Dersler yüklenemedi");
-      })
-      .finally(() => {
-        if (!cancelled) setCoursesLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedDept]);
-
-  // Grouped courses: course_code prefix → unique course names
-  const groupedCourses = useMemo(() => {
-    const map = new Map<string, CourseInfo[]>();
-    for (const c of deptCourses) {
-      const prefix = c.course_code.replace(/\s*\d.*$/, "").trim();
-      const arr = map.get(prefix) ?? [];
-      arr.push(c);
-      map.set(prefix, arr);
-    }
-    return map;
-  }, [deptCourses]);
-
-  // Unique course codes (e.g., "BLG 212E") with first matching CourseInfo
-  const uniqueCourses = useMemo(() => {
-    const seen = new Map<string, CourseInfo>();
-    for (const c of deptCourses) {
-      if (!seen.has(c.course_code)) {
-        seen.set(c.course_code, c);
-      }
-    }
-    return seen;
-  }, [deptCourses]);
-
   // Conflicts
   const conflicts = useMemo(() => detectConflicts(selected), [selected]);
 
@@ -243,7 +191,8 @@ export function ScheduleBuilder() {
       };
       setSelected((prev) => [...prev, newCourse]);
       setNextColorIdx((prev) => prev + 1);
-      setModalOpen(false);
+      // Modal kapatma çağrısı kaldırıldı: arama sonuçları açık kalıyor,
+      // böylece aynı dersin başka section'ı veya sıradaki ders arka arkaya eklenebiliyor.
 
       // Check for conflicts after adding
       const newConflicts = detectConflicts([...selected, newCourse]);
@@ -252,28 +201,6 @@ export function ScheduleBuilder() {
       }
     },
     [selected, nextColorIdx],
-  );
-
-  // CRN ile doğrudan ekle (ders alanı seçmeye gerek yok — global lookup)
-  const addByCrn = useCallback(
-    async (rawCrn: string) => {
-      const crn = rawCrn.trim();
-      if (!/^\d{5}$/.test(crn)) {
-        toast.error("CRN 5 haneli sayısal olmalı");
-        return;
-      }
-      if (selected.some((s) => s.course.crn === crn)) {
-        toast.warning("Bu CRN zaten ekli");
-        return;
-      }
-      const info = await api.lookupCRN(crn);
-      if (!info || !info.sessions?.length) {
-        toast.error(`CRN ${crn} bulunamadı`);
-        return;
-      }
-      addCourse(info);
-    },
-    [selected, addCourse],
   );
 
   // Remove course
@@ -306,17 +233,14 @@ export function ScheduleBuilder() {
         transition={{ duration: 0.4, ease: "easeOut" }}
         className="flex flex-col gap-6 lg:flex-row"
       >
-        {/* Sidebar */}
-        <div className="w-full shrink-0 lg:w-[340px]">
+        {/* Sidebar — arama kutusu section detaylarını taşıdığı için biraz genişledi */}
+        <div className="w-full shrink-0 lg:w-[400px]">
           <ScheduleSidebar
             departments={departments}
-            selectedDept={selectedDept}
-            onDeptChange={handleDeptChange}
             deptLoading={deptLoading}
             selectedCourses={selected}
             onRemoveCourse={removeCourse}
-            onAddCourse={() => setModalOpen(true)}
-            onAddByCrn={addByCrn}
+            onAddCourse={addCourse}
             conflicts={conflicts}
             onExport={exportSchedule}
           />
@@ -331,23 +255,6 @@ export function ScheduleBuilder() {
           />
         </div>
       </m.div>
-
-      {/* Course Selector Modal */}
-      <AnimatePresence>
-        {modalOpen && (
-          <CourseSelectorModal
-            open={modalOpen}
-            onClose={() => setModalOpen(false)}
-            deptCourses={deptCourses}
-            groupedCourses={groupedCourses}
-            uniqueCourses={uniqueCourses}
-            coursesLoading={coursesLoading}
-            selectedDept={selectedDept}
-            onSelectCourse={addCourse}
-            selectedCRNs={new Set(selected.map((s) => s.course.crn))}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 }

@@ -1,0 +1,3 @@
+[     497ms] [WARNING] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview @ https://moved-rattler-15.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:18
+[     526ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://itu-otostop.vercel.app/icon-192.png:0
+[     527ms] [WARNING] Error while trying to use the following icon from the Manifest: https://itu-otostop.vercel.app/icon-192.png (Download error or resource isn't a valid image) @ https://itu-otostop.vercel.app/schedule:0
