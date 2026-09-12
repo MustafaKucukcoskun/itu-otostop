@@ -7,11 +7,22 @@ const isPublicRoute = createRouteMatcher([
   "/api(.*)",
 ]);
 
-export default clerkMiddleware(async (auth, request) => {
-  if (!isPublicRoute(request)) {
-    await auth.protect();
-  }
-});
+export default clerkMiddleware(
+  async (auth, request) => {
+    if (!isPublicRoute(request)) {
+      await auth.protect();
+    }
+  },
+  {
+    // Giriş yapmamış kullanıcı, uygulamanın KENDİ Türkçe giriş sayfasına gitsin.
+    // Bu ayar olmadan middleware signInUrl'i çözemiyor ve kullanıcıyı Clerk'in
+    // barındırdığı İngilizce hesap portalına (accounts.dev) atıyordu — yani
+    // providers.tsx'teki Türkçe özelleştirme hiç görünmüyordu.
+    // ClerkProvider'ın signInUrl prop'u yalnızca istemci tarafında geçerli;
+    // middleware onu görmüyor, bu yüzden burada ayrıca verilmesi gerekiyor.
+    signInUrl: "/sign-in",
+  },
+);
 
 export const config = {
   matcher: [
