@@ -226,15 +226,18 @@ export function ScheduleBuilder() {
   }, [selected, router, userId]);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+    /* Uygulama kabuğu: sayfa aşağı büyümek yerine ekran yüksekliğinde sabit
+       kalır. Kenar çubuğu kendi içinde kayar, takvim kalan TÜM alanı doldurur.
+       Mobilde bu kilit açılır ve normal belge akışına dönülür. */
+    <div className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 lg:h-[calc(100vh-3.5rem)] lg:overflow-hidden">
       <m.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
-        className="flex flex-col gap-6 lg:flex-row"
+        className="flex h-full flex-col gap-4 lg:flex-row lg:gap-6"
       >
-        {/* Sidebar — arama kutusu section detaylarını taşıdığı için biraz genişledi */}
-        <div className="w-full shrink-0 lg:w-[400px]">
+        {/* Kenar çubuğu — kendi kaydırmasıyla, sayfayı uzatmaz */}
+        <div className="w-full shrink-0 lg:w-[400px] lg:min-h-0 lg:overflow-y-auto lg:pr-1">
           <ScheduleSidebar
             departments={departments}
             deptLoading={deptLoading}
@@ -246,8 +249,8 @@ export function ScheduleBuilder() {
           />
         </div>
 
-        {/* Grid */}
-        <div className="min-w-0 flex-1">
+        {/* Takvim — kalan genişliği VE yüksekliği doldurur */}
+        <div className="min-h-0 min-w-0 flex-1 max-lg:h-[32rem]">
           <ScheduleGrid
             selectedCourses={selected}
             onRemoveCourse={removeCourse}
