@@ -11,8 +11,13 @@ import { courseBlockStyle } from "@/lib/course-colors";
 
 const MIN_HOUR = 8;
 const MAX_HOUR = 19;
-const SLOT_HEIGHT = 48; // px per hour
 const TOTAL_HOURS = MAX_HOUR - MIN_HOUR;
+const TOTAL_MIN = TOTAL_HOURS * 60;
+
+// Izgara sabit 48px/saat ile ciziliyordu (toplam 528px) ve genis ekranda
+// kucucuk kaliyordu. Artik yuzde ile konumlaniyor: kapsayici ne kadar
+// yuksekse takvim o kadar buyuyor.
+const pct = (minFromStart: number) => (minFromStart / TOTAL_MIN) * 100;
 
 // ── Types ──
 
@@ -73,10 +78,8 @@ export function ScheduleGrid({
     return labels;
   }, []);
 
-  const gridHeight = TOTAL_HOURS * SLOT_HEIGHT;
-
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col border border-border bg-card">
       {/* Header row: days */}
       <div className="grid grid-cols-[60px_repeat(5,1fr)] border-b border-border">
         <div className="border-r border-border p-2" />
@@ -91,17 +94,13 @@ export function ScheduleGrid({
       </div>
 
       {/* Grid body */}
-      <div className="relative grid grid-cols-[60px_repeat(5,1fr)]">
+      <div className="relative grid min-h-0 flex-1 grid-cols-[60px_repeat(5,1fr)]">
         {/* Time labels column */}
-        <div className="border-r border-border" style={{ height: gridHeight }}>
+        <div className="flex flex-col border-r border-border">
           {timeLabels.map((label) => (
             <div
               key={label}
-              className="flex items-start justify-end pr-2 text-[10px] font-mono text-muted-foreground/60"
-              style={{
-                height: SLOT_HEIGHT,
-                paddingTop: 2,
-              }}
+              className="flex flex-1 items-start justify-end pr-2 pt-0.5 font-mono text-[10px] text-muted-foreground/60"
             >
               {label}
             </div>
@@ -113,14 +112,13 @@ export function ScheduleGrid({
           <div
             key={dayIdx}
             className="relative border-r border-border/50 last:border-r-0"
-            style={{ height: gridHeight }}
           >
             {/* Hour grid lines */}
             {timeLabels.map((_, i) => (
               <div
                 key={i}
                 className="absolute left-0 right-0 border-t border-border/30"
-                style={{ top: i * SLOT_HEIGHT }}
+                style={{ top: `${pct(i * 60)}%` }}
               />
             ))}
 
@@ -128,10 +126,9 @@ export function ScheduleGrid({
             {blocks
               .filter((b) => b.day === dayIdx)
               .map((block) => {
-                const topPx =
-                  ((block.startMin - MIN_HOUR * 60) / 60) * SLOT_HEIGHT;
-                const heightPx =
-                  ((block.endMin - block.startMin) / 60) * SLOT_HEIGHT;
+                const durationMin = block.endMin - block.startMin;
+                const topPct = pct(block.startMin - MIN_HOUR * 60);
+                const heightPct = pct(durationMin);
                 const color = courseBlockStyle(block.colorIndex);
 
                 return (
@@ -143,8 +140,9 @@ export function ScheduleGrid({
                     transition={{ type: "spring", stiffness: 300, damping: 30 }}
                     className="absolute inset-x-1 z-10 cursor-pointer overflow-hidden border transition-[filter] hover:brightness-110"
                     style={{
-                      top: topPx,
-                      height: Math.max(heightPx, 28),
+                      top: `${topPct}%`,
+                      height: `${heightPct}%`,
+                      minHeight: 28,
                       background: color.background,
                       borderColor: color.borderColor,
                       borderLeftWidth: 3,
@@ -157,12 +155,12 @@ export function ScheduleGrid({
                       <span className="truncate text-[11px] font-bold leading-tight text-foreground">
                         {block.courseCode}
                       </span>
-                      {heightPx > 40 && (
+                      {durationMin >= 50 && (
                         <span className="mt-0.5 text-[9px] text-muted-foreground truncate">
                           {block.instructor.split(" ").slice(0, 2).join(" ")}
                         </span>
                       )}
-                      {heightPx > 56 && (
+                      {durationMin >= 80 && (
                         <span className="mt-0.5 text-[9px] font-mono text-muted-foreground/60 truncate">
                           {block.building} {block.room}
                         </span>
