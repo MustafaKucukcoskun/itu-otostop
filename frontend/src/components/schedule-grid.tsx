@@ -27,6 +27,11 @@ interface ScheduleGridProps {
   conflicts: string[];
 }
 
+interface PositionedBlock extends GridBlock {
+  colIndex: number;
+  colCount: number;
+}
+
 interface GridBlock {
   crn: string;
   courseCode: string;
@@ -40,6 +45,55 @@ interface GridBlock {
 }
 
 // ── Helpers ──
+
+/** Çakışan blokları yan yana yerleştirmek için kolon ataması.
+ *
+ * Bloklar sütunun tamamını kaplıyordu; aynı saatte iki ders varsa biri
+ * diğerinin ALTINDA kalıyor ve görünmüyordu. Çakışma listesi uyarsa da
+ * kullanıcı dersi göremiyordu — planlama aracında kabul edilemez.
+ *
+ * Standart takvim yaklaşımı: birbiriyle örtüşen bloklar bir "küme" oluşturur,
+ * küme içinde her blok çakışmadığı ilk kolona yerleşir, genişlik kolon
+ * sayısına bölünür.
+ */
+function layoutOverlaps(items: GridBlock[]): PositionedBlock[] {
+  const sorted = [...items].sort(
+    (a, b) => a.startMin - b.startMin || a.endMin - b.endMin,
+  );
+  const out: PositionedBlock[] = [];
+  let cluster: GridBlock[] = [];
+  let clusterEnd = -1;
+
+  const flush = () => {
+    if (cluster.length === 0) return;
+    const cols: GridBlock[][] = [];
+    for (const b of cluster) {
+      let placed = false;
+      for (const col of cols) {
+        if (col[col.length - 1].endMin <= b.startMin) {
+          col.push(b);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) cols.push([b]);
+    }
+    cols.forEach((col, ci) =>
+      col.forEach((b) => out.push({ ...b, colIndex: ci, colCount: cols.length })),
+    );
+    cluster = [];
+    clusterEnd = -1;
+  };
+
+  for (const b of sorted) {
+    if (cluster.length > 0 && b.startMin >= clusterEnd) flush();
+    cluster.push(b);
+    clusterEnd = Math.max(clusterEnd, b.endMin);
+  }
+  flush();
+  return out;
+}
+
 
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(":").map(Number);
@@ -123,8 +177,7 @@ export function ScheduleGrid({
             ))}
 
             {/* Course blocks for this day */}
-            {blocks
-              .filter((b) => b.day === dayIdx)
+            {layoutOverlaps(blocks.filter((b) => b.day === dayIdx))
               .map((block) => {
                 const durationMin = block.endMin - block.startMin;
                 const topPct = pct(block.startMin - MIN_HOUR * 60);
@@ -138,11 +191,13 @@ export function ScheduleGrid({
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                    className="absolute inset-x-1 z-10 cursor-pointer overflow-hidden border transition-[filter] hover:brightness-110"
+                    className="absolute z-10 cursor-pointer overflow-hidden border transition-[filter] hover:brightness-110"
                     style={{
                       top: `${topPct}%`,
                       height: `${heightPct}%`,
                       minHeight: 28,
+                      left: `calc(${(block.colIndex / block.colCount) * 100}% + 2px)`,
+                      width: `calc(${100 / block.colCount}% - 4px)`,
                       background: color.background,
                       borderColor: color.borderColor,
                       borderLeftWidth: 3,
