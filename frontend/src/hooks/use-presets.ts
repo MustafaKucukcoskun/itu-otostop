@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
+import { toast } from "sonner";
 import { PresetService } from "@/lib/preset-service";
 
 export interface Preset {
@@ -117,6 +118,13 @@ export function usePresets() {
             );
             saveLocal(withCloudId);
             setPresets(withCloudId);
+          } else {
+            // Sessizce yutmak, bulut kapalıyken kullanıcının "kaydettim" sanmasına
+            // ve preset'i başka cihazda bulamamasına yol açıyordu.
+            toast.warning(
+              `"${preset.name}" buluta kaydedilemedi — yalnızca bu tarayıcıda duruyor`,
+              { duration: 6000 },
+            );
           }
         });
       }
@@ -134,7 +142,14 @@ export function usePresets() {
 
       // Cloud sync
       if (userId) {
-        PresetService.deletePreset(userId, id);
+        PresetService.deletePreset(userId, id).then((ok) => {
+          if (!ok) {
+            toast.warning(
+              "Preset buluttan silinemedi — başka cihazda görünmeye devam edebilir",
+              { duration: 6000 },
+            );
+          }
+        });
       }
     },
     [presets, userId],
