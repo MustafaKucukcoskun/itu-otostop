@@ -52,7 +52,8 @@ export function useWebSocket() {
   const [completionTick, setCompletionTick] = useState(0);
   const logIdRef = useRef(0);
 
-  const connect = useCallback(() => {
+  // Clerk token'ı asenkron alındığı için connect de asenkron.
+  const connect = useCallback(async () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     // CONNECTING durumda kalmış eski bağlantıyı kapat
     if (wsRef.current?.readyState === WebSocket.CONNECTING) {
@@ -61,7 +62,7 @@ export function useWebSocket() {
     }
 
     try {
-      const ws = createWebSocket();
+      const ws = await createWebSocket();
 
       ws.onopen = () => {
         setConnected(true);
