@@ -8,7 +8,7 @@ Engine timing/yardımcı fonksiyonları için birim testleri (Faz 4 — test ba�
 
 import pytest
 
-from engine import TrendAnalyzer, ChangeDetector
+from engine import TrendAnalyzer, ChangeDetector, RegistrationEngine
 from main import _token_preview
 
 
@@ -87,3 +87,55 @@ def test_token_preview_long_masks_middle():
     out = _token_preview("eyJhbGc_SECRET_9999")
     assert out == "eyJh…9999"
     assert "SECRET" not in out  # ortadaki gizli kısım sızmamalı
+
+
+# ── Tetik öncesi hazırlık (eşzamanlılık: tetikten sonra iş kalmamalı) ──
+
+
+def _body_text(prepped):
+    body = prepped.body
+    return body.decode() if isinstance(body, bytes) else body
+
+
+def test_prepare_fire_caches_prepared_request():
+    """Tetikten ÖNCE istek inşa edilmeli; tetik anında yalnızca send() kalmalı."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345", "67890"])
+    eng._prepare_fire()
+    assert eng._prepped is not None
+    body = _body_text(eng._prepped)
+    assert "12345" in body
+    assert "67890" in body
+
+
+def test_prepare_fire_marks_crns_pending():
+    """CRN sonuç sözlüğü de tetikten önce doldurulmalı."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng._prepare_fire()
+    assert eng._crn_results["12345"]["status"] == "pending"
+
+
+def test_prepare_fire_is_idempotent_for_same_crn_list():
+    """Aynı CRN listesi için tekrar hazırlık yeni nesne üretmemeli (boşa iş yok)."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng._prepare_fire()
+    first = eng._prepped
+    eng._prepare_fire()
+    assert eng._prepped is first
+
+
+def test_request_for_returns_cached_when_crn_list_unchanged():
+    """CRN listesi değişmediyse hazır istek yeniden inşa edilmemeli."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng._prepare_fire()
+    assert eng._request_for(["12345"]) is eng._prepped
+
+
+def test_request_for_rebuilds_when_crn_list_changed():
+    """CRN listesi değiştiyse (başarılı ders düştü) yeni istek inşa edilmeli."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345", "67890"])
+    eng._prepare_fire()
+    first = eng._prepped
+    got = eng._request_for(["67890"])
+    assert got is not first
+    assert "67890" in _body_text(got)
+    assert "12345" not in _body_text(got)

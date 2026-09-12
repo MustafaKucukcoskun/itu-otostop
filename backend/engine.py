@@ -169,6 +169,9 @@ class RegistrationEngine:
         self._cal_samples: list[tuple[float, float, float, str]] = []  # (offset, rtt, timestamp, source)
         self._crn_results: dict[str, dict] = {}
         self._trigger_time: Optional[float] = None
+        # Tetik öncesi hazırlanan istek (eşzamanlılık: tetikten sonra iş kalmasın)
+        self._prepped: Optional[requests.PreparedRequest] = None
+        self._prepped_for: Optional[list[str]] = None
 
         # Ölçüm tabanlı zamanlama
         self._last_ntp_delay: Optional[float] = None  # Son NTP delay (sn)
@@ -684,6 +687,34 @@ class RegistrationEngine:
         )
         return self.session.prepare_request(req)
 
+    def _prepare_fire(self):
+        """Tetikten ÖNCE yapılabilecek her şeyi yap.
+
+        Ölçüm (2026-09-12): tetikten sonra istek inşa etmek, eşzamanlı kullanıcı
+        başına ~1.4ms gecikme ekliyor — 15 kullanıcıda medyan 26ms, 100'de 173ms.
+        Bu hazırlık tetikten önce çalıştığında tetik anında geriye yalnızca
+        session.send() kalır ve gecikme kullanıcı sayısından bağımsızlaşır.
+        """
+        if self._prepped is not None and self._prepped_for == self.ecrn_list:
+            return
+        kalan = list(self.ecrn_list)
+        for crn in kalan:
+            self._crn_results.setdefault(crn, {"status": "pending", "message": "Bekliyor"})
+        self._prepped = self._build_request(kalan)
+        self._prepped_for = kalan
+
+    def _request_for(self, ecrn_list: list[str]) -> requests.PreparedRequest:
+        """Hazır istek bu CRN listesiyle eşleşiyorsa onu kullan; değilse yeniden inşa et.
+
+        Kayıt döngüsünde başarılı CRN'ler listeden düştükçe istek yenilenmeli;
+        ama ilk (en kritik) istekte hazır olan doğrudan kullanılır.
+        """
+        if self._prepped is not None and self._prepped_for == ecrn_list:
+            return self._prepped
+        self._prepped = self._build_request(ecrn_list)
+        self._prepped_for = list(ecrn_list)
+        return self._prepped
+
     # ── Dry-Run Simülasyonu ──
 
     def _kayit_yap_dry_run(self):
@@ -795,11 +826,10 @@ class RegistrationEngine:
         basarisiz = {}
         aralik = self.retry_aralik
 
-        # CRN sonuçlarını başlat
-        for crn in kalan:
-            self._crn_results[crn] = {"status": "pending", "message": "Bekliyor"}
-
-        prepped = self._build_request(kalan)
+        # CRN sonuçları + istek tetikten ÖNCE hazırlanmış olmalı.
+        # _prepare_fire idempotent: hazırsa hiçbir şey yapmaz, değilse burada hazırlar.
+        self._prepare_fire()
+        prepped = self._request_for(kalan)
         ilk = True
         crn_degisti = False
 
@@ -812,7 +842,7 @@ class RegistrationEngine:
 
             if not ilk:
                 if crn_degisti:
-                    prepped = self._build_request(kalan)
+                    prepped = self._request_for(kalan)
                     crn_degisti = False
 
             try:
@@ -1068,6 +1098,12 @@ class RegistrationEngine:
                 else:
                     self._kayit_yap()
                 return
+
+            # 3b. TETİK ÖNCESİ HAZIRLIK — eşzamanlılık için kritik.
+            # İstek inşası ve CRN sözlüğü burada, beklemeye girmeden önce yapılır;
+            # tetik anında geriye yalnızca session.send() kalır.
+            self._prepare_fire()
+            self._log("📦 İstek tetik öncesi hazırlandı (gönderim anında ek iş yok)")
 
             # 4. Bekleme döngüsü (sürekli kalibrasyon ile)
             self._set_phase("waiting")
