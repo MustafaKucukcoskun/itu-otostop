@@ -138,6 +138,11 @@ async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   const token = await clerkToken();
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    // Cloud Run'ın session affinity'si bir ÇEREZE dayanıyor. fetch varsayılanda
+    // cross-origin isteklerde çerez göndermez; bu yüzden yapışkanlık hiç
+    // çalışmıyordu ve aynı kullanıcının istekleri farklı instance'lara dağılıyordu.
+    // Oturum durumu bellekte tutulduğu için bu, ayarların kaybolması demekti.
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       "X-Session-ID": getSessionId(),
