@@ -182,3 +182,32 @@ Analizde tespit edilen sorunlar (satır numaraları 2026-06-13 itibarıyla):
 - [ ] Dashboard sol sütun boşluğu; komut paleti (Cmd+K) fikri
 - [ ] Frontend testi yok
 - [ ] `.github/copilot-instructions.md` hâlâ tek dosyalı scripti anlatıyor (yanıltıcı)
+
+---
+
+## Faz 7 — Kayıt Günü Hazırlığı (2026-09-12)
+
+### KRİTİK: tek instance bir doğruluk şartı, maliyet tercihi değil
+- [x] `max-instances 1` sabitlendi. Oturum durumu bellekte; Cloud Run session affinity
+      **bu mimaride çalışamaz**: affinity çerezi `SameSite=None` taşımıyor, frontend
+      (vercel.app) ve backend (run.app) farklı siteler, tarayıcı çerezi göndermiyor.
+- [x] 3 instance ile ölçüldü: aynı kullanıcının 8 ardışık okuması ÜÇ farklı sonuç verdi
+      (yeni yazılan / başka instance'taki eski / hiç oturumu olmayan boş).
+- [x] `credentials: "include"` eklendi — gerekli ama **yeterli değil**, çerez yine gitmiyor.
+- [ ] Yatay ölçekleme için ortak oturum deposu veya kullanıcı başına konteyner gerekir (kayıt sonrası iş).
+
+### Kapasite gerçeği (Cloud Run'da gerçek engine ile ölçüldü)
+- 15 kullanıcı → yayılım ~5ms | 30 → ~10ms | 50 → ~32ms | 70 → ~78ms
+- CPU artırmak İŞE YARAMIYOR (2→8 vCPU, %4 iyileşme) — darboğaz GIL, işlemci değil
+- Buffer ~11ms (σ_obs 4.08ms + σ_asimetri 3.1ms baskın); σ_obs'u iyileştirmek
+      100.000+ OBS isteği ister, ölçüldü ve **değmez** diye karar verildi
+- Sonuç: **~50 kullanıcıya kadar 50ms bütçesi içinde**, 60+ için başlık yok
+
+### Zamanlanmış ısıtma
+- [x] `warm-up` / `scale-down` Cloud Run Jobs + 4 Cloud Scheduler tetikleyicisi
+- [x] Uçtan uca test edildi (Scheduler → Job → gcloud → servis)
+- 15 Eyl 06:00 ısın → 18 Eyl 18:00 küçül (kayıt: 15-18 Eylül)
+- 27 Eyl 20:00 ısın → 9 Eki 18:00 küçül (ders bırakıp yazılma: 28 Eyl - 9 Eki)
+- **İTÜ tarihleri her yıl kayar — her dönem takvimi kontrol edip cron'ları güncelle.**
+  Resmî kaynak `takvim.sis.itu.edu.tr`; toplayıcı siteler yanlış (Ekim'deki çekilmeyi
+  "add/drop" sanıyorlar).
