@@ -535,6 +535,22 @@ async def get_courses(brans_kodu_id: int):
     return [_course_to_dict(c) for c in courses]
 
 
+@app.get("/api/search-courses")
+@limiter.limit("30/minute")
+async def search_courses(request: Request, q: str = Query("", max_length=60)):
+    """Ders adına veya koduna göre ara (Türkçe karaktersiz yazım da çalışır).
+
+    Hız sınırlı: bu uç gerektiğinde OBS'ye istek atıyor, açık bir proxy
+    olarak kötüye kullanılmamalı.
+    """
+    svc = get_obs_service()
+    try:
+        results = svc.search_courses(q)
+    except Exception:
+        raise HTTPException(502, "Ders araması başarısız")
+    return [_course_to_dict(c) for c in results]
+
+
 @app.get("/api/crn-lookup/{crn}")
 async def lookup_crn(crn: str):
     service = get_obs_service()

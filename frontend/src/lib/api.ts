@@ -197,6 +197,10 @@ export const api = {
 
   getCourses: (bransKoduId: number) =>
     fetchAPI<CourseInfo[]>(`/api/courses/${bransKoduId}`),
+
+  /** Ders adına/koduna göre arama — Türkçe karaktersiz yazım da çalışır */
+  searchCourses: (q: string) =>
+    fetchAPI<CourseInfo[]>(`/api/search-courses?q=${encodeURIComponent(q)}`),
 };
 
 // ── WebSocket ──

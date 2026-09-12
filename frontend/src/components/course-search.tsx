@@ -136,16 +136,30 @@ export function CourseSearch({
           return;
         }
 
-        const deptCode = parsed.kind === "unknown" ? "" : parsed.dept;
-        const dept = deptIndex.get(norm(deptCode));
+        // Serbest metin (ör. "akiskanlar") → ders ADINA göre ara.
+        // Eskiden burada "Anlaşılmadı" deniyordu; kod ezberlemeyen öğrenci
+        // için bu çıkmaz sokaktı.
+        if (parsed.kind === "unknown") {
+          const found = await api.searchCourses(query.trim());
+          if (runIdRef.current !== id) return;
+          setResult({
+            kind: "sections",
+            heading: `"${query.trim()}"`,
+            sections: found,
+          });
+          if (found.length === 0) {
+            setMessage(
+              "Sonuç yok. Kısa bir kök dene (ör. “mekani”), ya da CRN/ders kodu yaz.",
+            );
+          }
+          return;
+        }
+
+        const dept = deptIndex.get(norm(parsed.dept));
         if (!dept) {
           if (runIdRef.current !== id) return;
           setResult({ kind: "none" });
-          setMessage(
-            parsed.kind === "unknown"
-              ? "Anlaşılmadı — CRN (5 hane), ders kodu (MAT 103) veya alan (MAT) yaz"
-              : `"${deptCode}" diye bir ders alanı yok`,
-          );
+          setMessage(`"${parsed.dept}" diye bir ders alanı yok`);
           return;
         }
 
@@ -207,8 +221,8 @@ export function CourseSearch({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="CRN, ders kodu veya alan ara…"
-            aria-label="Ders ara: CRN, ders kodu veya ders alanı"
+            placeholder="CRN, ders kodu veya ders adı ara…"
+            aria-label="Ders ara: CRN, ders kodu, ders adı veya ders alanı"
             className="pl-9 font-mono"
             autoComplete="off"
             spellCheck={false}
@@ -218,7 +232,7 @@ export function CourseSearch({
           )}
         </div>
         <p className="mt-2 font-mono text-[10px] tracking-wide text-muted-foreground/70">
-          örn. 15261 · MAT 103 · BLG
+          örn. 15261 · MAT 103 · akiskanlar
         </p>
       </div>
 
