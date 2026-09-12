@@ -14,6 +14,8 @@ interface CountdownTimerProps {
   targetTime: string | null;
   /** Süreç iptal edilerek mi bitti? Tamamlanmadan ayrı gösterilir. */
   cancelled?: boolean;
+  /** İptal istendi, motor henüz durmadı — ara durum. */
+  cancelling?: boolean;
   onTargetTimeChange: (v: string) => void;
   countdown: number | null;
   phase: string;
@@ -24,6 +26,7 @@ interface CountdownTimerProps {
 export function CountdownTimer({
   targetTime,
   cancelled = false,
+  cancelling = false,
   onTargetTimeChange,
   countdown,
   phase,
@@ -77,6 +80,10 @@ export function CountdownTimer({
 
   // Split countdown into main part + fractional (ms) part — ms shown in primary
   const display = useMemo(() => {
+    // İptal istendi ama motor kapanıyor: geri sayıma devam etmek de,
+    // boş ekrana dönmek de yanlış. Olanı söyle.
+    if (cancelling && phase !== "done")
+      return { main: "DURDURULUYOR", ms: "" };
     if (localCountdown === null || localCountdown <= 0) {
       if (phase === "registering") return { main: "KAYIT YAPILIYOR", ms: "" };
       if (phase === "done")
@@ -99,7 +106,7 @@ export function CountdownTimer({
       main: `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`,
       ms: `.${ms}`,
     };
-  }, [localCountdown, phase, targetTime, cancelled]);
+  }, [localCountdown, phase, targetTime, cancelled, cancelling]);
 
   const isIdle = phase === "idle";
   const isActive =
@@ -118,7 +125,9 @@ export function CountdownTimer({
   const showTimeEditor =
     configLoaded && mounted && isIdle && (!hasTarget || editing) && !disabled;
 
-  const phaseLabel = isActive
+  const phaseLabel = cancelling && !isDone
+    ? "İptal ediliyor"
+    : isActive
     ? "Hedefe kalan"
     : isRegistering
       ? "Kayıt devam ediyor"
