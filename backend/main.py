@@ -51,6 +51,13 @@ class SessionState:
     last_active: float = 0.0
     # Engine başlat/sıfırla TOCTOU yarışını önler (check-then-act atomik)
     lock: threading.Lock = field(default_factory=threading.Lock)
+    # İzole konteyner devraldığında yerel motor susturulur; kullanıcı sayfayı
+    # yenilerse /api/register/status onun eski halini verirdi ("waiting, sonuç
+    # yok") — konteyner dersi almış olsa bile. Konteynerden akan olaylar burada
+    # aynalanır ve durum ucu bunları kullanır.
+    remote_phase: str = ""
+    remote_running: bool = False
+    remote_results: dict = field(default_factory=dict)
 
 
 sessions: dict[str, SessionState] = {}
@@ -96,6 +103,10 @@ broker = IsolationBroker(
 )
 # Konteyner gelmediğinde kullanıcıyı bir kez uyar (her turda değil)
 _fallback_notified: set[str] = set()
+
+# Teşhis ucu anahtarı. Boşsa uç tamamen kapalı: kimin kayıt yaptığı bilgisi
+# herkese açık olmamalı. Kayıt günü "ne oluyor" sorusunu cevaplamak için var.
+ISOLATION_DIAG_KEY = os.getenv("ISOLATION_DIAG_KEY", "").strip()
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -308,8 +319,36 @@ async def _isolation_supervisor():
     Hata YUTULUR: konteyner açılamazsa yerel motor zaten bekliyor ve ateşleyecek.
     Bu döngünün çökmesi kaydı bozmamalı.
     """
+    tur = 0
     while True:
         try:
+            # ── DEVİR ANI ÖNCE ──
+            # Zaman-kritik: 8 saniyelik pencere, 2 saniyelik tur. Başlatmalar
+            # ise 900 saniyelik pencerede ve 40 kullanıcıda onlarca saniye
+            # sürebilir; devri onların arkasında bekletmek pencereyi kaçırır.
+            # Konteyner nabzını sürdürüyorsa yerel motor çekilir; nabzı
+            # kesilmişse sözü geri alınır ve yerel motor ateşler. Asıl felaket
+            # ateşleyenin HİÇ olmaması, çift ateşleme değil.
+            for sid in broker.handover_due():
+                broker.mark_stood_down(sid)  # kararı bir kez ver
+                session = sessions.get(sid)
+                if broker.remote_alive(sid):
+                    if session and session.engine:
+                        session.engine.stand_down()
+                else:
+                    broker.revoke(sid)
+                    broker.claim_local(sid)
+                    if session and session.engine:
+                        # Yeniden görünür olmalı: ateşlemeyi kullanıcı görsün
+                        session.engine.unmute()
+                    await broadcast(sid, {
+                        "type": "log",
+                        "data": {"message": "İzole konteynerin nabzı kesildi — "
+                                            "kayıt ana sunucudan yapılıyor",
+                                 "level": "warning"},
+                        "timestamp": time.time(),
+                    })
+
             if _launcher is not None:
                 loop = asyncio.get_running_loop()
                 for sid, ticket in broker.due_for_launch():
@@ -319,14 +358,15 @@ async def _isolation_supervisor():
                             None, _launcher.launch, sid, ticket, 1800
                         )
                     except Exception as e:
-                        broker.mark_launched(sid, error=str(e))
-                        await broadcast(sid, {
-                            "type": "log",
-                            "data": {"message": f"İzole konteyner açılamadı, "
-                                                f"ana sunucudan devam ediliyor ({e})",
-                                     "level": "warning"},
-                            "timestamp": time.time(),
-                        })
+                        tekrar = broker.launch_failed(sid, str(e))
+                        if not tekrar:
+                            await broadcast(sid, {
+                                "type": "log",
+                                "data": {"message": f"İzole konteyner açılamadı, "
+                                                    f"ana sunucudan devam ediliyor ({e})",
+                                         "level": "warning"},
+                                "timestamp": time.time(),
+                            })
 
             # Konteyner zamanında sahiplenmediyse kullanıcıyı bir kez bilgilendir.
             # Ateşleme yine olur — yerel motor çekilmediği için görevde.
@@ -341,6 +381,10 @@ async def _isolation_supervisor():
                              "level": "warning"},
                     "timestamp": time.time(),
                 })
+            # Biten kayıtları periyodik temizle (~her 5 dakikada bir)
+            tur += 1
+            if tur % 150 == 0:
+                broker.purge_finished()
         except Exception:
             pass
         await asyncio.sleep(2)
@@ -360,14 +404,19 @@ async def internal_config(payload: dict):
     session = sessions.get(sid)
     if not session:
         raise HTTPException(404, "Oturum bulunamadı")
+    # Oturumun GÜNCEL değerleri değil, YEREL MOTORUN kopyası verilir.
+    # Kullanıcı başlattıktan sonra CRN listesini değiştirirse yerel motor
+    # kendi kopyasını kullanmaya devam eder; konteyner oturumun güncel
+    # değerini alsaydı hangisinin ateşlediğine göre farklı ders alınırdı.
+    src = session.engine or session
     return {
-        "token": session.token,
-        "ecrn_list": session.ecrn_list,
-        "scrn_list": session.scrn_list,
-        "kayit_saati": session.kayit_saati,
-        "max_deneme": session.max_deneme,
-        "retry_aralik": session.retry_aralik,
-        "dry_run": session.dry_run,
+        "token": src.token,
+        "ecrn_list": list(src.ecrn_list),
+        "scrn_list": list(src.scrn_list),
+        "kayit_saati": src.kayit_saati,
+        "max_deneme": src.max_deneme,
+        "retry_aralik": src.retry_aralik,
+        "dry_run": src.dry_run,
     }
 
 
@@ -380,16 +429,55 @@ async def internal_claim(payload: dict):
     sid = str(payload.get("session_id", ""))
     granted = broker.claim_remote(sid, str(payload.get("ticket", "")))
     if granted:
+        # Yerel motor BURADA çekilmez. Çekilseydi ve konteyner sonra ölseydi
+        # kimse ateşlemezdi. Çekilme hedefe ~8s kala, konteynerin nabzı
+        # doğrulandıktan sonra _isolation_supervisor() içinde yapılır.
+        # Ama SUSTURULUR: bundan sonra kullanıcının gördüğü akış konteynerindir,
+        # yoksa iki motorun logları iç içe geçer.
         session = sessions.get(sid)
         if session and session.engine:
-            session.engine.stand_down()
+            session.engine.mute()
         await broadcast(sid, {
             "type": "log",
-            "data": {"message": "İzole konteyner kaydı üstlendi "
+            "data": {"message": "İzole konteyner hazır ve kaydı üstlendi "
                                 "(bu kullanıcıya özel sunucu)", "level": "success"},
             "timestamp": time.time(),
         })
     return {"granted": granted}
+
+
+@app.post("/internal/heartbeat")
+async def internal_heartbeat(payload: dict):
+    """Konteyner hayatta olduğunu bildirir, karşılığında durumunu öğrenir.
+
+    İki yönlü: ana servis konteynerin yaşadığını görür (yoksa sözünü geri alıp
+    yerel motora devreder), konteyner de iptal/geri-alma bayraklarını görüp
+    kendini durdurur.
+    """
+    sid = str(payload.get("session_id", ""))
+    status = broker.heartbeat(sid, str(payload.get("ticket", "")))
+    if status is None:
+        raise HTTPException(403, "Geçersiz bilet")
+    return status
+
+
+@app.get("/internal/diag")
+async def internal_diag(request: Request):
+    """İzolasyon durumunun canlı dökümü (bilet ve token İÇERMEZ).
+
+    Kayıt gününde "konteyner kalktı mı, sahiplendi mi, nabzı atıyor mu"
+    sorusunu tek bakışta cevaplar.
+    """
+    if not ISOLATION_DIAG_KEY:
+        raise HTTPException(404, "Bulunamadı")
+    if request.headers.get("X-Diag-Key", "") != ISOLATION_DIAG_KEY:
+        raise HTTPException(403, "Yetkisiz")
+    return {
+        "isolation": ISOLATION_ENABLED,
+        "launcher": _launcher is not None,
+        "oturum_sayisi": len(sessions),
+        "kayitlar": broker.snapshot(),
+    }
 
 
 @app.post("/internal/events")
@@ -401,10 +489,35 @@ async def internal_events(payload: dict):
     events = payload.get("events") or []
     if not isinstance(events, list):
         raise HTTPException(400, "events listesi bekleniyor")
+    session = sessions.get(sid)
     for ev in events[:200]:
-        if isinstance(ev, dict):
-            await broadcast(sid, ev)
+        if not isinstance(ev, dict):
+            continue
+        if session is not None:
+            _mirror_remote_event(session, ev)
+        await broadcast(sid, ev)
     return {"ok": True}
+
+
+def _mirror_remote_event(session: "SessionState", ev: dict) -> None:
+    """Konteynerin olaylarını oturuma yansıt (sayfa yenilenince görünsün)."""
+    tip = ev.get("type")
+    data = ev.get("data") or {}
+    if not isinstance(data, dict):
+        return
+    if tip == "state":
+        session.remote_phase = str(data.get("phase") or session.remote_phase)
+        session.remote_running = bool(data.get("running"))
+    elif tip == "crn_update":
+        sonuc = data.get("results")
+        if isinstance(sonuc, dict):
+            session.remote_results = sonuc
+    elif tip == "done":
+        session.remote_phase = "done"
+        session.remote_running = False
+        sonuc = data.get("results")
+        if isinstance(sonuc, dict):
+            session.remote_results = sonuc
 
 
 def _poll_task_done(task: asyncio.Task):
@@ -560,6 +673,10 @@ async def start_registration(request: Request):
     # İzole konteyneri sıraya al. Yerel motor yukarıda ZATEN başladı ve
     # kalibre olup bekleyecek; konteyner hazır olup sahiplenirse yerel motor
     # çekilir, olmazsa bugünkü davranış aynen sürer.
+    session.remote_phase = ""
+    session.remote_running = False
+    session.remote_results = {}
+
     if ISOLATION_ENABLED:
         try:
             target = session.engine._saat_to_epoch(session.kayit_saati)
@@ -577,11 +694,19 @@ async def cancel_registration(request: Request):
     session_id = get_session_id(request)
     session = get_session(session_id)
 
-    if not session.engine or not session.engine.is_running:
+    yerel_calisiyor = bool(session.engine and session.engine.is_running)
+    if yerel_calisiyor:
+        session.engine.cancel()
+
+    # İzole konteyner devralmış olabilir; o zaman yerel motor çoktan durmuştur
+    # ve eski kod burada 404 dönüyordu — kullanıcı iptal edemiyor, konteyner
+    # yine de kaydediyordu. Kayıt SİLİNMEZ: bilet geçerli kalmalı ki konteyner
+    # nabız atıp iptali öğrenebilsin.
+    uzak_var = broker.request_cancel(session_id)
+
+    if not yerel_calisiyor and not uzak_var:
         raise HTTPException(404, "Çalışan kayıt yok")
-    session.engine.cancel()
-    # Bileti geçersiz kıl: geç kalkan konteyner iptal edilmiş kaydı ateşlemesin
-    broker.release(session_id)
+
     _fallback_notified.discard(session_id)
     return {"status": "cancelled"}
 
@@ -603,6 +728,9 @@ async def reset_registration(request: Request):
     if session.poll_task and not session.poll_task.done():
         session.poll_task.cancel()
     session.poll_task = None
+    session.remote_phase = ""
+    session.remote_running = False
+    session.remote_results = {}
     broker.release(session_id)
     _fallback_notified.discard(session_id)
     return {"status": "reset", "message": "Engine state sıfırlandı"}
@@ -615,6 +743,23 @@ async def registration_status(request: Request):
 
     if not session.engine:
         return RegistrationState()
+
+    # Konteyner devraldıysa gerçek durum ONDA; yerel motor susturulmuş halde
+    # bekliyor ve eski fazını gösterirdi.
+    if broker.owner_of(session_id) == "remote" and session.remote_phase:
+        uzak = []
+        for crn, info in (session.remote_results or {}).items():
+            try:
+                st = CRNStatus(info.get("status", "pending"))
+            except (ValueError, AttributeError):
+                st = CRNStatus.PENDING
+            uzak.append(CRNResultItem(crn=crn, status=st,
+                                      message=(info or {}).get("message", "")))
+        return RegistrationState(
+            phase=session.remote_phase,
+            running=session.remote_running,
+            crn_results=uzak,
+        )
 
     crn_results = []
     for crn, info in session.engine.crn_results.items():
