@@ -211,3 +211,49 @@ Analizde tespit edilen sorunlar (satır numaraları 2026-06-13 itibarıyla):
 - **İTÜ tarihleri her yıl kayar — her dönem takvimi kontrol edip cron'ları güncelle.**
   Resmî kaynak `takvim.sis.itu.edu.tr`; toplayıcı siteler yanlış (Ekim'deki çekilmeyi
   "add/drop" sanıyorlar).
+
+---
+
+## Faz 8 — Kayıt Başına İzole Konteyner (2026-09-13)
+
+**Amaç:** GIL çekişmesini bitirmek. Faz 7'de ölçülen tavan (~50 kullanıcı /
+50ms bütçe) kullanıcı başına ayrı konteynerle tamamen kalkıyor.
+
+### Ölçümler (europe-west3, gerçek Cloud Run)
+- Konteyner provisioning: ilk +10s, **medyan +70s**, 40 eşzamanlı istekte yayılım 62s
+- 40 eşzamanlı çalıştırma: **40/40 kabul, 0 hata** (kota engeli yok)
+- Tek çalıştırma × 40 paralel görev de aynı: yayılım 62.1s → model farketmiyor
+- Konteyner içi: import+init+TLS **0.8s**, `calibrate()` **7.0s**, `_rtt_stats(10)` 0.4s
+- **Sonuç: istek → ateşlemeye hazır ~19-20s.** Hedeften 900s önce başlatılıyor (45× pay).
+
+### Tasarım — izolasyon yalnızca EKLER
+- [x] Yerel motor **sökülmedi**. Her kayıt bugünkü gibi kalibre olup bekliyor.
+- [x] İzole konteyner yanında açılıyor; **hazır olduğunu kanıtlayana kadar
+      kaydı üstlenmiyor** (önce kalibre olur, sonra T-180s'de sahiplenir).
+- [x] Sahiplik geçince yerel motor `stand_down()` ile çekiliyor (busy-wait'e hiç girmiyor).
+- [x] Konteyner kalkmazsa / kalibre olamazsa / geç kalırsa sahiplik geçmiyor →
+      yerel motor bugünkü gibi ateşliyor. **Tek ateşleyici garantisi** `IsolationBroker`'da.
+- [x] OBS token'ı görev env'ine KONULMUYOR (Cloud Run çalıştırma kaydında günlerce durur);
+      konteyner tek kullanımlık biletle `/internal/config`'ten HTTPS ile çekiyor.
+
+### Dosyalar
+- `isolation.py` — sahiplik/zamanlama çekirdeği (23 test)
+- `job_launcher.py` — Run Admin API v2 istemcisi (6 test)
+- `isolated_runner.py` — konteyner giriş noktası
+- `engine.py` — `stand_down()` / `_wait_should_continue()` eklendi (6 test)
+- `main.py` — `_isolation_supervisor()` + `/internal/{config,claim,events}` (10 test)
+
+### Canlı doğrulama
+- [x] Servis hesabı görevi başlatabiliyor (IAM ampirik doğrulandı)
+- [x] Konteyner açıldı, yapılandırmayı çekti, kalibre oldu, sahiplendi
+- [ ] Gerçek OBS token'lı tam ateşleme testi — kayıt gününde izlenecek
+
+### Maliyet
+40 kullanıcı × 900s × 1 vCPU = 36.000 vCPU-s. Aylık ücretsiz kota 240.000 vCPU-s
+ve 450.000 GiB-s. Bellek: 40 × 900s × 0.5GiB = 18.000 GiB-s. **Ücretsiz kotanın
+içinde (~6× pay).** Ders seçimi ayda birkaç gün olduğu için ek maliyet yok.
+
+### Operasyon
+- `ISOLATION=true` ile açılır/kapanır. Kapatmak bugünkü davranışa anında döner.
+- Görev imajı servis imajıyla **aynı** olmalı: servisi yeniden dağıtınca
+  `itu-otostop-kayit` görevini de yeni imaja güncelle.

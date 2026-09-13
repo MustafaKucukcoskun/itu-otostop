@@ -28,6 +28,8 @@ from models import (
 )
 from auth import ClerkVerifier
 from engine import RegistrationEngine
+from isolation import IsolationBroker
+from job_launcher import JobLauncher, JobLauncherConfig
 from obs_course_service import get_obs_service, CourseInfo as OBSCourseInfo
 
 
@@ -74,6 +76,27 @@ UUID_RE = re.compile(
 )
 
 # Rate limiter (IP bazlı)
+# ── İzole konteyner (kayıt başına ayrı Cloud Run görevi) ──
+#
+# Tek konteynerde N kullanıcı aynı anda ateşlediğinde GIL busy-wait thread'lerini
+# sıraya sokuyor (ölçüm: 100 kullanıcıda en kötü +47ms). Her kayda ayrı konteyner
+# vermek bunu bitirir.
+#
+# TASARIM: yerel motor SÖKÜLMEZ. Her kayıt bugünkü gibi yerelde de kalibre olup
+# bekler; izole konteyner yanında açılır ve hazır olduğunu kanıtlayınca sahipliği
+# alır — o anda yerel motor sessizce çekilir (stand_down). Konteyner kalkmazsa,
+# kalibre olamazsa veya geç kalırsa sahiplik hiç geçmez ve yerel motor bugünkü
+# gibi ateşler. Yani izolasyon yalnızca EKLER, hiçbir şeyi tehlikeye atmaz.
+ISOLATION_ENABLED = os.getenv("ISOLATION", "").lower() in ("1", "true", "yes")
+_job_cfg = JobLauncherConfig.from_env() if ISOLATION_ENABLED else None
+_launcher = JobLauncher(_job_cfg) if _job_cfg else None
+broker = IsolationBroker(
+    lead=float(os.getenv("ISOLATION_LEAD", "900")),
+    ready_deadline=float(os.getenv("ISOLATION_READY_DEADLINE", "120")),
+)
+# Konteyner gelmediğinde kullanıcıyı bir kez uyar (her turda değil)
+_fallback_notified: set[str] = set()
+
 limiter = Limiter(key_func=get_remote_address)
 
 
@@ -154,7 +177,15 @@ async def lifespan(app: FastAPI):
             await asyncio.get_running_loop().run_in_executor(None, _clerk._keys)
         except Exception:
             pass  # Clerk geçici erişilemezse ilk istekte tekrar denenir
+
+    sup: Optional[asyncio.Task] = None
+    if ISOLATION_ENABLED:
+        sup = asyncio.create_task(_isolation_supervisor())
+
     yield
+
+    if sup is not None:
+        sup.cancel()
     # Shutdown: cancel all running engines
     for sid, s in sessions.items():
         if s.engine and s.engine.is_running:
@@ -267,6 +298,113 @@ async def poll_engine_events(session_id: str):
     remaining = engine.get_events()
     for event in remaining:
         await broadcast(session_id, event)
+
+
+# ── İzolasyon denetleyicisi ──
+
+async def _isolation_supervisor():
+    """Zamanı gelen kayıtlar için izole konteyner açar.
+
+    Hata YUTULUR: konteyner açılamazsa yerel motor zaten bekliyor ve ateşleyecek.
+    Bu döngünün çökmesi kaydı bozmamalı.
+    """
+    while True:
+        try:
+            if _launcher is not None:
+                loop = asyncio.get_running_loop()
+                for sid, ticket in broker.due_for_launch():
+                    broker.mark_launched(sid)
+                    try:
+                        await loop.run_in_executor(
+                            None, _launcher.launch, sid, ticket, 1800
+                        )
+                    except Exception as e:
+                        broker.mark_launched(sid, error=str(e))
+                        await broadcast(sid, {
+                            "type": "log",
+                            "data": {"message": f"İzole konteyner açılamadı, "
+                                                f"ana sunucudan devam ediliyor ({e})",
+                                     "level": "warning"},
+                            "timestamp": time.time(),
+                        })
+
+            # Konteyner zamanında sahiplenmediyse kullanıcıyı bir kez bilgilendir.
+            # Ateşleme yine olur — yerel motor çekilmediği için görevde.
+            for sid in broker.fallback_due():
+                if sid in _fallback_notified:
+                    continue
+                _fallback_notified.add(sid)
+                await broadcast(sid, {
+                    "type": "log",
+                    "data": {"message": "İzole konteyner yetişmedi — "
+                                        "kayıt ana sunucudan yapılacak",
+                             "level": "warning"},
+                    "timestamp": time.time(),
+                })
+        except Exception:
+            pass
+        await asyncio.sleep(2)
+
+
+# ── İzole konteyner uçları (bilet ile kimlik doğrular, Clerk gerektirmez) ──
+# Rate limit UYGULANMAZ: tüm konteynerler aynı NAT IP'sinden çıkar, IP bazlı
+# limit hepsini birden keserdi.
+
+@app.post("/internal/config")
+async def internal_config(payload: dict):
+    """Konteynere yapılandırmayı verir. OBS token'ı yalnızca burada, HTTPS ile
+    aktarılır; Cloud Run çalıştırma kaydına hiç yazılmaz."""
+    sid = str(payload.get("session_id", ""))
+    if not broker.verify_ticket(sid, str(payload.get("ticket", ""))):
+        raise HTTPException(403, "Geçersiz bilet")
+    session = sessions.get(sid)
+    if not session:
+        raise HTTPException(404, "Oturum bulunamadı")
+    return {
+        "token": session.token,
+        "ecrn_list": session.ecrn_list,
+        "scrn_list": session.scrn_list,
+        "kayit_saati": session.kayit_saati,
+        "max_deneme": session.max_deneme,
+        "retry_aralik": session.retry_aralik,
+        "dry_run": session.dry_run,
+    }
+
+
+@app.post("/internal/claim")
+async def internal_claim(payload: dict):
+    """Konteyner kaydı üstlenir; başarılıysa yerel motor çekilir.
+
+    Tek ateşleyici garantisi buradadır: broker sahipliği yalnızca bir kez verir.
+    """
+    sid = str(payload.get("session_id", ""))
+    granted = broker.claim_remote(sid, str(payload.get("ticket", "")))
+    if granted:
+        session = sessions.get(sid)
+        if session and session.engine:
+            session.engine.stand_down()
+        await broadcast(sid, {
+            "type": "log",
+            "data": {"message": "İzole konteyner kaydı üstlendi "
+                                "(bu kullanıcıya özel sunucu)", "level": "success"},
+            "timestamp": time.time(),
+        })
+    return {"granted": granted}
+
+
+@app.post("/internal/events")
+async def internal_events(payload: dict):
+    """Konteynerdeki motorun olaylarını kullanıcının WebSocket'ine aktarır."""
+    sid = str(payload.get("session_id", ""))
+    if not broker.verify_ticket(sid, str(payload.get("ticket", ""))):
+        raise HTTPException(403, "Geçersiz bilet")
+    events = payload.get("events") or []
+    if not isinstance(events, list):
+        raise HTTPException(400, "events listesi bekleniyor")
+    for ev in events[:200]:
+        if isinstance(ev, dict):
+            await broadcast(sid, ev)
+    return {"ok": True}
 
 
 def _poll_task_done(task: asyncio.Task):
@@ -419,6 +557,18 @@ async def start_registration(request: Request):
     session.poll_task = asyncio.create_task(poll_engine_events(session_id))
     session.poll_task.add_done_callback(_poll_task_done)
 
+    # İzole konteyneri sıraya al. Yerel motor yukarıda ZATEN başladı ve
+    # kalibre olup bekleyecek; konteyner hazır olup sahiplenirse yerel motor
+    # çekilir, olmazsa bugünkü davranış aynen sürer.
+    if ISOLATION_ENABLED:
+        try:
+            target = session.engine._saat_to_epoch(session.kayit_saati)
+            broker.register(session_id, target)
+            _fallback_notified.discard(session_id)
+        except Exception as e:
+            # İzolasyon kurulamadıysa kayıt yine de çalışır — sessizce geç
+            print(f"[izolasyon] sıraya alınamadı ({session_id[:8]}): {e}", flush=True)
+
     return {"status": "started", "message": "Kayıt başlatıldı"}
 
 
@@ -430,6 +580,9 @@ async def cancel_registration(request: Request):
     if not session.engine or not session.engine.is_running:
         raise HTTPException(404, "Çalışan kayıt yok")
     session.engine.cancel()
+    # Bileti geçersiz kıl: geç kalkan konteyner iptal edilmiş kaydı ateşlemesin
+    broker.release(session_id)
+    _fallback_notified.discard(session_id)
     return {"status": "cancelled"}
 
 
@@ -450,6 +603,8 @@ async def reset_registration(request: Request):
     if session.poll_task and not session.poll_task.done():
         session.poll_task.cancel()
     session.poll_task = None
+    broker.release(session_id)
+    _fallback_notified.discard(session_id)
     return {"status": "reset", "message": "Engine state sıfırlandı"}
 
 

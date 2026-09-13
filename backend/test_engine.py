@@ -162,3 +162,74 @@ def test_done_payload_carries_results():
     eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
     eng._prepare_fire()
     assert eng._done_payload()["results"]["12345"]["status"] == "pending"
+
+
+# ── Çekilme (izole konteyner devraldığında) ──
+
+
+def test_stand_down_is_clear_by_default():
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    assert eng.stood_down is False
+
+
+def test_stand_down_sets_flag():
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng.stand_down()
+    assert eng.stood_down is True
+
+
+def test_stand_down_is_not_a_cancellation():
+    """Kullanıcı iptal etmedi — arayüz 'iptal edildi' ekranı göstermemeli.
+
+    Kullanıcı daha önce gereksiz iptal ekranından şikâyet etmişti; devir
+    sessiz olmalı, hata gibi görünmemeli.
+    """
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng.stand_down()
+    payload = eng._done_payload()
+    assert payload["cancelled"] is False
+    assert payload["stood_down"] is True
+
+
+def test_cancel_still_reports_cancelled():
+    """Çekilme eklenirken gerçek iptal bozulmamalı."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng.cancel()
+    payload = eng._done_payload()
+    assert payload["cancelled"] is True
+    assert payload["stood_down"] is False
+
+
+def test_stand_down_stops_the_wait_loop():
+    """Çekilen motor busy-wait'e girmemeli — GIL'i boşuna meşgul etmesin."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng.stand_down()
+    assert eng._wait_should_continue() is False
+
+
+def test_wait_loop_continues_when_nothing_set():
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    assert eng._wait_should_continue() is True
+
+
+def test_stood_down_engine_does_not_announce_completion():
+    """Çekilme bitiş DEĞİLDİR — kayıt izole konteynerde sürüyor.
+
+    done yayınlansaydı arayüz "KAYIT TAMAMLANDI" modalını açardı; kullanıcı
+    dersi alınmadan alınmış sanırdı.
+    """
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng.stand_down()
+    assert eng._should_announce_done() is False
+
+
+def test_normal_finish_announces_completion():
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    assert eng._should_announce_done() is True
+
+
+def test_cancelled_engine_still_announces_done():
+    """İptalde done gitmeli — arayüz 'iptal edildi' ekranını ondan biliyor."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng.cancel()
+    assert eng._should_announce_done() is True

@@ -168,6 +168,11 @@ export function useWebSocket() {
               break;
 
             case "done": {
+              // İzole konteyner devraldıysa bu "done" yerel motorun çekilmesidir,
+              // kaydın bitişi DEĞİL — kayıt konteynerde sürüyor. Gerçek bitiş
+              // oradan aktarılacak. (Backend bunu zaten yayınlamıyor; bu, eski
+              // bir sürüme karşı ikinci savunma katmanı.)
+              if (event.data.stood_down === true) break;
               const wasCancelled = event.data.cancelled === true;
               setDone(true);
               setCancelled(wasCancelled);
