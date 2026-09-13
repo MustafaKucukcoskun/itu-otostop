@@ -162,6 +162,9 @@ class RegistrationEngine:
 
         self._events: queue.Queue = queue.Queue()
         self._cancelled = threading.Event()
+        # İzole konteyner kaydı üstlendiğinde bu motor sessizce çekilir.
+        # İptalden AYRI tutulur: kullanıcı iptal etmedi, sadece devredildi.
+        self._stood_down = threading.Event()
         self._running = False
         self._phase = "idle"
         self._current_attempt = 0
@@ -249,6 +252,32 @@ class RegistrationEngine:
     def cancel(self):
         self._cancelled.set()
         self._log("İptal edildi", "warning")
+
+    @property
+    def stood_down(self) -> bool:
+        return self._stood_down.is_set()
+
+    def stand_down(self):
+        """İzole konteyner devraldı — ateşlemeden çekil.
+
+        Busy-wait'e girilmeden çağrılırsa bu motor CPU'yu boşuna meşgul etmez;
+        eşzamanlı kullanıcılarda GIL çekişmesini azaltan asıl kazanç budur.
+        """
+        self._stood_down.set()
+
+    def _should_announce_done(self) -> bool:
+        """Bitiş olayı yayınlansın mı?
+
+        Çekilme bir bitiş değildir: kayıt izole konteynerde sürüyor. done
+        yayınlansaydı arayüz 'KAYIT TAMAMLANDI' modalını açar, kullanıcı dersi
+        alınmadan alınmış sanırdı. İptalde ise done gitmeli — arayüz iptal
+        ekranını ondan öğreniyor.
+        """
+        return not self._stood_down.is_set()
+
+    def _wait_should_continue(self) -> bool:
+        """Bekleme döngüsü sürsün mü? İptal veya devir varsa hayır."""
+        return not self._cancelled.is_set() and not self._stood_down.is_set()
 
     def _best_calibration(self) -> Optional[CalibrationData]:
         """Tüm ölçüm havuzundan en düşük RTT'li sample'ı seç (en güvenilir offset)."""
@@ -713,6 +742,7 @@ class RegistrationEngine:
         return {
             "results": dict(self._crn_results),
             "cancelled": self._cancelled.is_set(),
+            "stood_down": self._stood_down.is_set(),
         }
 
     def _request_for(self, ecrn_list: list[str]) -> requests.PreparedRequest:
@@ -1149,7 +1179,7 @@ class RegistrationEngine:
                     return new_trigger
                 return final_trigger
 
-            while not self._cancelled.is_set():
+            while self._wait_should_continue():
                 now = time.time()
                 kalan = final_trigger - now
 
@@ -1251,6 +1281,10 @@ class RegistrationEngine:
             if self._cancelled.is_set():
                 return
 
+            if self._stood_down.is_set():
+                self._log("İzole konteyner kaydı üstlendi — bu motor çekildi", "info")
+                return
+
             # 5. KAYIT
             self._set_phase("registering")
             fark_ms = (time.time() - hedef) * 1000
@@ -1267,8 +1301,12 @@ class RegistrationEngine:
         finally:
             gc.enable()  # GC'yi tekrar aç
             self._set_timer_resolution(False)
-            self._set_phase("done")
-            self._emit("done", self._done_payload())
+            if self._should_announce_done():
+                self._set_phase("done")
+                self._emit("done", self._done_payload())
+            else:
+                # Çekildik: sessizce sus. Arayüzü konteynerin olayları sürdürür.
+                self._log("Kayıt izole konteynerde sürüyor", "info")
             self._running = False  # MUST be last — poll_engine_events checks this flag
 
     # ── Token testi ──
