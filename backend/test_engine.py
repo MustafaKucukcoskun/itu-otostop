@@ -233,3 +233,44 @@ def test_cancelled_engine_still_announces_done():
     eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
     eng.cancel()
     assert eng._should_announce_done() is True
+
+
+# ── Susturma (konteyner devraldığında çift log akışını önler) ──
+
+
+def test_engine_is_not_muted_by_default():
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng._emit("log", {"message": "merhaba"})
+    assert len(eng.get_events()) == 1
+
+
+def test_muted_engine_emits_nothing():
+    """Konteyner sahiplenince yerel motor beklemeye devam eder ama susar.
+
+    Susmasaydı kullanıcı T-180s'den itibaren iki ayrı motorun loglarını iç
+    içe görürdü ve faz göstergesi titrerdi.
+    """
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng.mute()
+    eng._emit("log", {"message": "gorunmemeli"})
+    eng._emit("countdown", {"remaining": 5})
+    assert eng.get_events() == []
+
+
+def test_unmute_restores_emission():
+    """Söz geri alınırsa yerel motor yeniden görünür olmalı — yoksa
+    kullanıcı ateşlemeyi hiç göremez."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng.mute()
+    eng.unmute()
+    eng._emit("log", {"message": "geri geldi"})
+    assert len(eng.get_events()) == 1
+
+
+def test_mute_does_not_stop_the_wait_loop():
+    """Susmak çekilmek DEĞİLDİR: motor beklemeye devam eder ki konteyner
+    ölürse ateşleyebilsin."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng.mute()
+    assert eng._wait_should_continue() is True
+    assert eng.stood_down is False

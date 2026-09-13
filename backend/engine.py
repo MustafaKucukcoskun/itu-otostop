@@ -165,6 +165,11 @@ class RegistrationEngine:
         # İzole konteyner kaydı üstlendiğinde bu motor sessizce çekilir.
         # İptalden AYRI tutulur: kullanıcı iptal etmedi, sadece devredildi.
         self._stood_down = threading.Event()
+        # Konteyner sahiplenince bu motor beklemeye DEVAM eder ama susar:
+        # aksi halde kullanıcı iki motorun loglarını iç içe görür ve faz
+        # göstergesi titrer. Susmak çekilmek değildir — söz geri alınırsa
+        # unmute() ile yeniden görünür olur ve ateşler.
+        self._muted = threading.Event()
         self._running = False
         self._phase = "idle"
         self._current_attempt = 0
@@ -204,7 +209,20 @@ class RegistrationEngine:
 
     # ── Event emitter ──
 
+    @property
+    def muted(self) -> bool:
+        return self._muted.is_set()
+
+    def mute(self):
+        """Olay yayınını durdur (bekleme ve ateşleme yeteneği korunur)."""
+        self._muted.set()
+
+    def unmute(self):
+        self._muted.clear()
+
     def _emit(self, event_type: str, data: dict | None = None):
+        if self._muted.is_set():
+            return
         self._events.put({
             "type": event_type,
             "data": data or {},
