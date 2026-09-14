@@ -257,3 +257,52 @@ içinde (~6× pay).** Ders seçimi ayda birkaç gün olduğu için ek maliyet yo
 - `ISOLATION=true` ile açılır/kapanır. Kapatmak bugünkü davranışa anında döner.
 - Görev imajı servis imajıyla **aynı** olmalı: servisi yeniden dağıtınca
   `itu-otostop-kayit` görevini de yeni imaja güncelle.
+
+---
+
+## Faz 8b — Devir Güvenliği (2026-09-13)
+
+Faz 8'in ardından baştan sona edge case analizi yapıldı. Dört gerçek hata çıktı.
+
+### Bulunan hatalar
+1. **İptal çalışmıyordu.** Konteyner devralınca yerel motor duruyordu,
+   `/api/register/cancel` 404 dönüyordu. Kullanıcı iptal edemiyor, konteyner
+   yine de kaydediyordu. → İptal broker'a yazılıyor, nabızla konteynere gidiyor.
+2. **Kimse ateşlemeyebilirdi.** Yerel motor T-180s'de çekiliyordu; konteyner
+   sonra ölürse ateşleyen kalmıyordu. → Çekilme T-8s'ye alındı ve nabız şartına
+   bağlandı. Sahiplik artık "hak" değil "söz".
+3. **Çift ateşleme (ağ kopması).** Konteyner ulaşamazken sözünü tuttuğunu
+   sanıyor, ana servis onu ölü sayıp yerel motora devrediyordu. → Simetri
+   kuralı: konteyner de 10sn rapor veremediyse çekiliyor.
+4. **Geç sahiplenme.** → Hedefe 20sn'den az kalmışsa reddediliyor.
+
+### Ayrıca düzeltilenler
+- Yerel motor sahiplenmede susturuluyor (iki motorun logları iç içe geçiyordu)
+- Konteyner durumu oturuma aynalanıyor (sayfa yenileyince sonuç görünüyor)
+- Konteyner motorun anlık görüntüsünü alıyor (aynı CRN listesi garantisi)
+- Başlatma hatasında 3 deneme; devir denetimi başlatmaların önüne alındı
+- Biten kayıtlar periyodik temizleniyor
+- `/internal/diag` — anahtarla korumalı canlı durum dökümü
+
+### Canlı doğrulama (gerçek OBS token'ı, dry-run)
+- [x] **A — geç kayıt:** hedefe 20sn'den az kalınca konteyner sahiplenmedi,
+      yerel motor ateşledi ve BAŞARDI. Tek ateşleyici. *(geçerli token)*
+- [x] **B — tam akış:** sahiplenme T-179.9s, nabız 2sn'de bir, devir T-5.6s,
+      konteyner ateşledi ve BAŞARDI. Sayfa yenilense konteynerin sonucu
+      görünüyor (durum aynası çalışıyor). *(geçerli token)*
+- [x] **E — konteyner söz verip ÖLÜYOR (en kritik):** nabız donuk kaldı
+      (132→172sn yaşlandı), ana servis **T-7.1s'de sözü geri aldı**, sahiplik
+      yerel motora döndü. Felaket senaryosu kapalı.
+- [x] **D — iki kullanıcı aynı anda:** ayrı konteynerler, bağımsız sahiplenme,
+      devirler kendi T-8s'lerinde (aralarında 40sn) — biri diğerini etkilemedi.
+- [x] **Simetri kuralı sahada:** bileti geçersizleşen konteyner nabzı 403
+      alınca kendini geri çekti.
+- [ ] **C — devir sonrası iptalin konteynere ulaşması:** iptal broker'a yazıldı
+      ve uç 200 döndü, ama o sırada token süresi dolduğu için konteyner çoktan
+      çıkmıştı; nabızla öğrenip durması CANLI gözlenemedi. 4 birim/uç testi
+      kapsıyor. Taze token'la tekrarlanmalı.
+
+### Sayılar tek yerde tutulmalı
+`isolation.py` ve `isolated_runner.py` aynı eşikleri kullanıyor:
+`HEARTBEAT_MAX_AGE=10`, `HANDOVER_WINDOW/GUARD=8`. Birini değiştirirken
+diğerini de değiştir — simetri bozulursa çift ateşleme veya hiç ateşleme olur.

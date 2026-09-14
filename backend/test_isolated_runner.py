@@ -174,3 +174,40 @@ def test_wait_tolerates_unreachable_control_service(ortam, monkeypatch):
 
     monkeypatch.setattr(ir, "beat", bazen_none)
     assert ir.wait_until_claim_time(ortam() + 5000) is True
+
+
+# ══════════════════════════════════════════════════════════════
+# 403 (kayıt yok) ile ağ kopması AYNI ŞEY DEĞİL
+# ══════════════════════════════════════════════════════════════
+
+
+def test_rejected_heartbeat_stands_down_immediately(ortam):
+    """403 kesin bir cevaptır: ana servis bu kaydı tanımıyor (sıfırlandı).
+
+    Ağ kopmasından farkı, belirsizlik olmaması. Hemen çekilmeli — 10 saniye
+    beklenirse ve bu arada hedef gelirse, kullanıcının SİLDİĞİ kayıt ateşlenir.
+    """
+    motor = SahteMotor()
+    _kos(motor, target=ortam() + 100, beat_sonuclari=[ir.REDDEDILDI], saat=ortam, max_tur=1)
+    assert motor.cancelled is True
+
+
+def test_rejected_heartbeat_ignores_the_handover_guard(ortam):
+    """HATA SENARYOSU: kullanıcı hedefe 5sn kala sıfırladı.
+
+    Ağ belirsizliği koruması burada uygulanmamalı; aksi halde konteyner
+    sıfırlanmış kaydı ateşler.
+    """
+    motor = SahteMotor()
+    _kos(motor, target=ortam() + 5, beat_sonuclari=[ir.REDDEDILDI], saat=ortam,
+         tik=0.2, max_tur=3)
+    assert motor.cancelled is True
+
+
+def test_network_outage_still_respects_the_guard(ortam):
+    """Ağ kopmasında belirsizlik var; devir anı geçtiyse söz tutulur."""
+    motor = SahteMotor()
+    _kos(motor, target=ortam() + 16,
+         beat_sonuclari=[{"cancelled": False, "revoked": False}, None],
+         saat=ortam, tik=2.0, max_tur=20)
+    assert motor.cancelled is False
