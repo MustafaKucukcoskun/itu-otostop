@@ -59,12 +59,15 @@ interface TokenInputProps {
   token: string;
   onTokenChange: (token: string) => void;
   tokenValid: boolean | null;
+  /** Kayıt saati "HH:MM:SS" — token'ın o ana yetip yetmediğini söyleyebilmek için */
+  kayitSaati?: string;
 }
 
 export function TokenInput({
   token,
   onTokenChange,
   tokenValid,
+  kayitSaati,
 }: TokenInputProps) {
   const [show, setShow] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -106,6 +109,30 @@ export function TokenInput({
       ms: diff,
     };
   }, [jwtInfo, now]);
+
+  /**
+   * Token kayıt saatine YETİYOR MU?
+   *
+   * "6 saat sonra sona erecek" tek başına sakin bir bilgi; asıl soru ateşleme
+   * anında hayatta olup olmayacağı. Akşam kurulan bir kayıt ertesi gün
+   * ateşlerken token çoktan ölmüş olabilir ve kullanıcı bunu ancak dersi
+   * kaybettikten sonra öğrenir.
+   */
+  const targetWarning = useMemo(() => {
+    if (!jwtInfo?.exp || !kayitSaati) return null;
+    const m = kayitSaati.match(/^(\d{2}):(\d{2}):(\d{2})$/);
+    if (!m) return null;
+    const hedef = new Date(now);
+    hedef.setHours(Number(m[1]), Number(m[2]), Number(m[3]), 0);
+    // Kayıt saati geçmişse yarın kastediliyor olabilir; ikisini de kontrol et
+    const adaylar = [hedef.getTime()];
+    if (hedef.getTime() < now) adaylar.push(hedef.getTime() + 86_400_000);
+    const enYakin = adaylar.find((t) => t >= now) ?? adaylar[0];
+    const pay = 2 * 60 * 1000; // yeniden denemeler için
+    if (jwtInfo.exp.getTime() > enYakin + pay) return null;
+    const eksik = enYakin - jwtInfo.exp.getTime();
+    return `Bu token kayıt saatine YETMİYOR — ${formatRelativeTime(eksik)} önce sona eriyor. Kayıt saatine yakın yeni token al.`;
+  }, [jwtInfo, kayitSaati, now]);
 
   // Server validation overrides client-side JWT decode
   const expiryStatus = useMemo(() => {
@@ -205,6 +232,23 @@ export function TokenInput({
             )}
           </button>
         </div>
+
+        {/* Token kayıt saatine yetmiyor — en sessiz ders kaybı sebebi.
+            Ayrı ve yüksek sesli gösterilir; "6 saat sonra sona erecek"
+            satırının yanında sakin durursa fark edilmez. */}
+        <AnimatePresence>
+          {token && targetWarning && (
+            <m.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="flex items-start gap-2 border-l-2 border-destructive bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive"
+            >
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{targetWarning}</span>
+            </m.div>
+          )}
+        </AnimatePresence>
 
         {/* Token Expiry Indicator */}
         <AnimatePresence>

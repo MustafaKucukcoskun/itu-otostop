@@ -29,6 +29,7 @@ from models import (
 from auth import ClerkVerifier
 from engine import RegistrationEngine
 from isolation import IsolationBroker
+from token_expiry import expires_before, remaining_after_target
 from job_launcher import JobLauncher, JobLauncherConfig
 from obs_course_service import get_obs_service, CourseInfo as OBSCourseInfo
 
@@ -114,7 +115,36 @@ ISOLATION_DIAG_KEY = os.getenv("ISOLATION_DIAG_KEY", "").strip()
 # 90 kullanıcı bu hızda 45 saniyede açılır — 900 saniyelik pencereye sığar.
 LAUNCH_PER_TICK = int(os.getenv("ISOLATION_LAUNCH_PER_TICK", "4"))
 
-limiter = Limiter(key_func=get_remote_address)
+def rate_limit_key(request: Request) -> str:
+    """Hız limitinin kime uygulanacağı.
+
+    IP BAŞINA DEĞİL, KİMLİK BAŞINA. Kampüs WiFi'si, yurt ağı ve mobil
+    operatörlerin CGNAT'ı yüzünden onlarca öğrenci aynı çıkış IP'sinden çıkar.
+    /api/register/start dakikada 6 istekle sınırlı olduğu için, IP başına
+    sayıldığında aynı dakikada başlatan 7. öğrenci 429 alır ve kaydı HİÇ
+    başlamaz — kayıt gününde doğrudan ders kaybı demektir.
+
+    Kimlik çıkarılamazsa IP'ye düşülür; anonim istekler yine sınırlı kalır.
+    Clerk'e ulaşılamaması istek reddine yol açmamalı, o yüzden hata yutulur.
+    """
+    try:
+        uid = clerk_user_id(request.headers.get("Authorization"))
+    except Exception:
+        uid = None
+    if uid:
+        return f"u:{uid}"
+    return f"ip:{get_remote_address(request)}"
+
+
+limiter = Limiter(key_func=rate_limit_key)
+
+# Hız limitleri ortamdan ayarlanabilir: kayıt gününde gerekirse gevşetilebilir,
+# yük testinde kaldırılabilir. Kimlik başına sayıldığı için varsayılanlar
+# tek kullanıcı için cömert, kötüye kullanım için dar.
+LIMIT_START = os.getenv("RATE_LIMIT_START", "6/minute")
+LIMIT_CALIBRATE = os.getenv("RATE_LIMIT_CALIBRATE", "6/minute")
+LIMIT_TOKEN_TEST = os.getenv("RATE_LIMIT_TOKEN_TEST", "10/minute")
+LIMIT_SEARCH = os.getenv("RATE_LIMIT_SEARCH", "30/minute")
 
 
 def _cleanup_sessions():
@@ -594,7 +624,7 @@ def _config_response(session: SessionState) -> ConfigResponse:
 
 
 @app.post("/api/test-token", response_model=TokenTestResult)
-@limiter.limit("10/minute")
+@limiter.limit(LIMIT_TOKEN_TEST)
 async def test_token(request: Request):
     session_id = get_session_id(request)
     session = get_session(session_id)
@@ -610,7 +640,7 @@ async def test_token(request: Request):
 
 
 @app.post("/api/calibrate", response_model=CalibrationResult)
-@limiter.limit("6/minute")
+@limiter.limit(LIMIT_CALIBRATE)
 async def calibrate(request: Request):
     session_id = get_session_id(request)
     session = get_session(session_id)
@@ -634,7 +664,7 @@ async def calibrate(request: Request):
 
 
 @app.post("/api/register/start")
-@limiter.limit("6/minute")
+@limiter.limit(LIMIT_START)
 async def start_registration(request: Request):
     session_id = get_session_id(request)
     session = get_session(session_id)
@@ -645,6 +675,23 @@ async def start_registration(request: Request):
         raise HTTPException(400, "CRN listesi boş")
     if not session.kayit_saati:
         raise HTTPException(400, "Kayıt saati ayarlanmamış")
+
+    # Token ateşleme anında ölü olacaksa kaydı HİÇ başlatma.
+    # Motorun token kontrolü yalnızca BAŞLANGIÇTA çalışır; akşam kurulan bir
+    # kayıt ertesi gün ateşlerken token çoktan ölmüş olabilir ve kullanıcı
+    # bunu ancak dersi kaybettikten sonra öğrenir.
+    try:
+        hedef_epoch = RegistrationEngine._saat_to_epoch(session.kayit_saati)
+    except Exception:
+        hedef_epoch = None
+    if hedef_epoch is not None and expires_before(session.token, hedef_epoch):
+        kalan = remaining_after_target(session.token, hedef_epoch)
+        raise HTTPException(
+            400,
+            "Token kayıt saatinden önce sona eriyor"
+            + (f" ({abs(kalan) / 60:.0f} dakika erken)" if kalan is not None else "")
+            + ". OBS'den yeni token alıp tekrar dene.",
+        )
 
     # Check-then-act'i lock altında atomik yap (eşzamanlı start çift engine'i önler).
     # Kritik bölüm kısa ve await içermez → event loop'u bloke etmez.
@@ -846,7 +893,7 @@ async def get_courses(brans_kodu_id: int):
 
 
 @app.get("/api/search-courses")
-@limiter.limit("30/minute")
+@limiter.limit(LIMIT_SEARCH)
 async def search_courses(request: Request, q: str = Query("", max_length=60)):
     """Ders adına veya koduna göre ara (Türkçe karaktersiz yazım da çalışır).
 
