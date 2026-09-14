@@ -335,3 +335,16 @@ def test_new_registration_clears_previous_container_results(client, kayit):
     client.post("/api/register/reset", headers={"X-Session-ID": sid})
     assert session.remote_results == {}
     assert session.remote_phase == ""
+
+
+def test_config_carries_the_service_computed_target(client, kayit):
+    """Servis ve konteyner hedef epoch'unu AYRI AYRI hesaplamamalı.
+
+    `_saat_to_epoch` "bugünün HH:MM:SS"ini verir ve ertesi güne sarmaz. Servis
+    23:59'da, konteyner 00:01'de hesaplarsa aradaki fark 24 saat olur; sahiplenme
+    ve devir zamanlaması tamamen kayar. Servis kendi hesabını gönderir.
+    """
+    sid, ticket, _ = kayit
+    r = client.post("/internal/config", json={"session_id": sid, "ticket": ticket})
+    hedef = r.json().get("target_epoch")
+    assert hedef == main.broker.target_of(sid)

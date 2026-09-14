@@ -302,7 +302,7 @@ def test_handover_reported_once(broker):
     ticket = broker.register("s1", target_epoch=broker.clock() + 800)
     broker.claim_remote("s1", ticket)
     broker.clock.advance(795)
-    broker.mark_stood_down("s1")
+    broker.mark_handover_decided("s1")
     assert broker.handover_due() == []
 
 

@@ -66,7 +66,9 @@ class _Entry:
     last_heartbeat: float = 0.0
     revoked: bool = False
     cancelled: bool = False
-    stood_down: bool = False
+    # "Devir kararı verildi" demek — yerel motorun çekildiği anlamına GELMEZ.
+    # Nabız ölüyse karar, sözü geri alıp yereli göreve döndürmek olur.
+    handover_decided: bool = False
 
 
 @dataclass
@@ -202,15 +204,16 @@ class IsolationBroker:
                 e.session_id
                 for e in self._entries.values()
                 if e.owner == "remote"
-                and not e.stood_down
+                and not e.handover_decided
                 and (e.target_epoch - now) <= self.handover_window
             ]
 
-    def mark_stood_down(self, session_id: str) -> None:
+    def mark_handover_decided(self, session_id: str) -> None:
+        """Devir kararı bir kez verilir (çekilme ya da geri alma)."""
         with self._lock:
             e = self._entries.get(session_id)
             if e is not None:
-                e.stood_down = True
+                e.handover_decided = True
 
     def revoke(self, session_id: str) -> None:
         """Konteynerin ateşleme sözünü geri al — yerel motor devralabilsin.
@@ -324,7 +327,7 @@ class IsolationBroker:
                     "owner": e.owner,
                     "revoked": e.revoked,
                     "cancelled": e.cancelled,
-                    "stood_down": e.stood_down,
+                    "devir_karari": e.handover_decided,
                     "nabiz_yasi_sn": (
                         round(now - e.last_heartbeat, 1) if e.last_heartbeat else None
                     ),

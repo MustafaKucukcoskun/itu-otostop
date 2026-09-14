@@ -330,7 +330,7 @@ async def _isolation_supervisor():
             # kesilmişse sözü geri alınır ve yerel motor ateşler. Asıl felaket
             # ateşleyenin HİÇ olmaması, çift ateşleme değil.
             for sid in broker.handover_due():
-                broker.mark_stood_down(sid)  # kararı bir kez ver
+                broker.mark_handover_decided(sid)  # kararı bir kez ver
                 session = sessions.get(sid)
                 if broker.remote_alive(sid):
                     if session and session.engine:
@@ -417,6 +417,10 @@ async def internal_config(payload: dict):
         "max_deneme": src.max_deneme,
         "retry_aralik": src.retry_aralik,
         "dry_run": src.dry_run,
+        # Hedef epoch'u servis hesaplar ve GÖNDERİR. Konteyner kendi
+        # hesaplasaydı `_saat_to_epoch` "bugünün HH:MM:SS"i olduğu için gece
+        # yarısını geçen bir kayıtta 24 saat ayrışabilirlerdi.
+        "target_epoch": broker.target_of(sid),
     }
 
 

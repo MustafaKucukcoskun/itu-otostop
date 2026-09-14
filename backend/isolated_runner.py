@@ -88,12 +88,24 @@ def claim() -> bool:
     return False
 
 
-def beat() -> dict | None:
-    """Tek nabız. None → ulaşılamadı ya da bilet geçersiz."""
+# Ana servis "bu kaydı tanımıyorum" dedi (403). Ağ kopmasından AYRI tutulur:
+# burada belirsizlik yok, kayıt sıfırlanmış demektir.
+REDDEDILDI = "reddedildi"
+
+
+def beat():
+    """Tek nabız.
+
+    dict        → başarılı, durum bayrakları içinde
+    REDDEDILDI  → ana servis kaydı tanımıyor (sıfırlanmış)
+    None        → ulaşılamadı (belirsiz)
+    """
     try:
         r = _post("/internal/heartbeat", {}, timeout=5.0)
     except Exception:
         return None
+    if r.status_code == 403:
+        return REDDEDILDI
     if r.status_code != 200:
         return None
     return r.json()
@@ -122,7 +134,13 @@ def heartbeat_loop(engine: RegistrationEngine, target: float,
             return
 
         st = beat()
-        if st is not None:
+        if st is REDDEDILDI or st == REDDEDILDI:
+            # Kesin cevap: kayıt yok. Devir eşiği koruması UYGULANMAZ —
+            # beklersek kullanıcının sıfırladığı kayıt ateşlenebilir.
+            log("ana servis kaydı tanımıyor (sıfırlanmış) — motor durduruluyor")
+            engine.cancel()
+            return
+        if isinstance(st, dict):
             son_basarili = time.time()
             if st.get("cancelled"):
                 log("kullanıcı iptal etti — motor durduruluyor")
@@ -185,7 +203,10 @@ def wait_until_claim_time(target: float) -> bool:
         if kalan <= CLAIM_LEAD:
             return True
         st = beat()
-        if st is not None and (st.get("cancelled") or st.get("revoked")):
+        if st == REDDEDILDI:
+            log("bekleme sırasında kayıt sıfırlanmış — çıkılıyor")
+            return False
+        if isinstance(st, dict) and (st.get("cancelled") or st.get("revoked")):
             log("bekleme sırasında iptal edildi — çıkılıyor")
             return False
         time.sleep(min(10.0, max(0.5, kalan - CLAIM_LEAD)))
@@ -226,7 +247,9 @@ def main() -> int:
                                   "kayıt ana sunucudan yapılacak", "level": "warning"})
         return 1
 
-    target = engine._saat_to_epoch(cfg["kayit_saati"])
+    # Hedef epoch servisten gelir: sahiplenme ve devir zamanlamasında ikisinin
+    # aynı sayıyı kullanması şart. Ateşleme anını yine motor kendi hesaplar.
+    target = cfg.get("target_epoch") or engine._saat_to_epoch(cfg["kayit_saati"])
     notify("log", {
         "message": f"İzole konteyner hazır ve kalibre "
                    f"(offset {cal.server_offset*1000:+.1f}ms, "
