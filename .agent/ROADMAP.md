@@ -297,10 +297,17 @@ Faz 8'in ardından baştan sona edge case analizi yapıldı. Dört gerçek hata 
       devirler kendi T-8s'lerinde (aralarında 40sn) — biri diğerini etkilemedi.
 - [x] **Simetri kuralı sahada:** bileti geçersizleşen konteyner nabzı 403
       alınca kendini geri çekti.
-- [ ] **C — devir sonrası iptalin konteynere ulaşması:** iptal broker'a yazıldı
-      ve uç 200 döndü, ama o sırada token süresi dolduğu için konteyner çoktan
-      çıkmıştı; nabızla öğrenip durması CANLI gözlenemedi. 4 birim/uç testi
-      kapsıyor. Taze token'la tekrarlanmalı.
+- [x] **C — devir sonrası iptal (taze token'la tekrarlandı):** iptal HTTP **200**
+      döndü (eski kod 404 veriyordu), broker'da `cancelled=True`, konteyner bunu
+      nabızdan öğrenip motorunu durdurdu, CRN `pending` kaldı — **hiç ateşleme olmadı.**
+
+### Üretim imajıyla son doğrulama (2026-09-14, geçerli token)
+- [x] **Tam akış:** sahiplenme T-180s, nabız 0.1–2.0s, devir T-4.2s, konteyner
+      ateşledi → `success`. Nabız T-2s'de durdu (busy-wait'i bozmasın).
+- [x] **NİHAİ TEST — konteyner öldürüldü:** sahiplendikten sonra Cloud Run'dan
+      `executions cancel` ile öldürüldü. Nabız dondu (114→160sn), ana servis
+      **T-4.8s'de sözü geri aldı**, sahiplik yerele geçti ve **YEREL MOTOR
+      DERSİ ALDI** (`success`). Söz verip ölen konteyner ders kaybettirmiyor.
 
 ### Sayılar tek yerde tutulmalı
 `isolation.py` ve `isolated_runner.py` aynı eşikleri kullanıyor:
