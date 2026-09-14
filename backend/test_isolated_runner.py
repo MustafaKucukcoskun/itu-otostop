@@ -119,29 +119,41 @@ def test_brief_network_blip_does_not_abandon_the_registration(ortam):
     assert motor.cancelled is False
 
 
-def test_prolonged_outage_makes_container_stand_down(ortam):
-    """SİMETRİ KURALI: ana servis 10sn nabız gelmezse sözü geri alıp yerel
-    motora devrediyor. Konteyner de 10sn rapor veremediyse geri alındığını
-    VARSAYMALI — yoksa ikisi birden ateşler ve OBS ikisini de VAL16'lar.
+def test_prolonged_outage_does_NOT_abandon_the_registration(ortam):
+    """Ana servise ulaşılamıyorsa konteyner SÖZÜNÜ TUTAR.
+
+    İlk tasarımda tersiydi: "10sn rapor veremediysem geri alınmış olmalıyım"
+    diye çekiliyordu. Ama ana servis ÇÖKTÜYSE yerel motor da ölmüştür ve
+    çekilmek kesin ders kaybı demektir.
+
+    Sonuçları tartınca yön netleşti:
+      - servis çöktü, konteyner çekilir  → %100 kayıp
+      - servis sağlam, ikisi de ateşler  → ilki dersi alır, ikincisi VAL03
+        ("zaten kayıtlısın") alır, sonuç yine ders alınmış olur
+    Hiç ateşlememenin geri dönüşü yok; iki kez ateşlemenin var.
     """
     motor = SahteMotor()
     _kos(motor, target=ortam() + 100, beat_sonuclari=[None], saat=ortam, tik=2.0, max_tur=10)
-    assert motor.cancelled is True
+    assert motor.cancelled is False
 
 
-def test_outage_after_handover_point_does_not_abandon(ortam):
-    """Devir anı geçtiyse karar verilmiştir: yerel motor çekildi.
-
-    Konteyner bu noktadan sonra ağ yüzünden pes ederse kimse ateşlemez.
-    Sözünü tutup ateşlemeli.
-    """
+def test_outage_near_the_target_does_not_abandon(ortam):
+    """Hedefe yakın bir kopmada da söz tutulur — hangi anda olursa olsun."""
     motor = SahteMotor()
-    # Önce sağlam bir nabız, sonra ağ kopuyor. Hedef 16s ötede: kopma 10sn'yi
-    # aştığında hedefe yalnızca 4s kalmış olur — devir eşiğinin (8s) içinde.
     _kos(motor, target=ortam() + 16,
          beat_sonuclari=[{"cancelled": False, "revoked": False}, None],
          saat=ortam, tik=2.0, max_tur=20)
     assert motor.cancelled is False
+
+
+def test_explicit_signals_still_stop_the_container(ortam):
+    """Kural çevrildi ama AÇIK iptaller hâlâ durdurur: onlar ana servise
+    ULAŞABİLDİĞİMİZ durumlardır, belirsizlik içermezler."""
+    for bayrak in ({"cancelled": True, "revoked": False},
+                   {"cancelled": False, "revoked": True}):
+        motor = SahteMotor()
+        _kos(motor, target=ortam() + 100, beat_sonuclari=[bayrak], saat=ortam)
+        assert motor.cancelled is True, bayrak
 
 
 # ══════════════════════════════════════════════════════════════
@@ -211,3 +223,104 @@ def test_network_outage_still_respects_the_guard(ortam):
          beat_sonuclari=[{"cancelled": False, "revoked": False}, None],
          saat=ortam, tik=2.0, max_tur=20)
     assert motor.cancelled is False
+
+
+# ══════════════════════════════════════════════════════════════
+# Sahiplenme isteği: "reddedildi" ile "ulaşamadım" AYNI ŞEY DEĞİL
+# ══════════════════════════════════════════════════════════════
+#
+# Aynı ilke: ana servise ulaşamıyorsak servis çökmüş olabilir, o zaman yerel
+# motor da ölüdür ve çekilmek kesin ders kaybıdır. Açık ret ise belirsizlik
+# içermez — ulaşabildik ve "hayır" dedi.
+
+
+class SahteYanit:
+    def __init__(self, kod, govde=None):
+        self.status_code = kod
+        self._govde = govde or {}
+
+    def json(self):
+        return self._govde
+
+
+def test_claim_granted(monkeypatch):
+    monkeypatch.setattr(ir, "_post", lambda *a, **k: SahteYanit(200, {"granted": True}))
+    assert ir.claim() == ir.CLAIM_VERILDI
+
+
+def test_claim_explicitly_refused(monkeypatch):
+    """Ana servis ulaşılabilir ve 'hayır' diyor — yerel motor devralmış."""
+    monkeypatch.setattr(ir, "_post", lambda *a, **k: SahteYanit(200, {"granted": False}))
+    assert ir.claim() == ir.CLAIM_REDDEDILDI
+
+
+def test_claim_refused_on_403(monkeypatch):
+    """Kayıt sıfırlanmış — net cevap, ateşlenmemeli."""
+    monkeypatch.setattr(ir, "_post", lambda *a, **k: SahteYanit(403))
+    assert ir.claim() == ir.CLAIM_REDDEDILDI
+
+
+def test_claim_unreachable_on_network_error(monkeypatch):
+    """Ana servis çökmüş olabilir → yerel motor da ölü → ATEŞLEMELİYİZ."""
+    def patla(*a, **k):
+        raise OSError("baglanti yok")
+    monkeypatch.setattr(ir, "_post", patla)
+    assert ir.claim() == ir.CLAIM_ULASILAMADI
+
+
+def test_claim_unreachable_on_server_error(monkeypatch):
+    """5xx de ulaşılamama sayılır: servis ayakta ama cevap veremiyor."""
+    monkeypatch.setattr(ir, "_post", lambda *a, **k: SahteYanit(503))
+    assert ir.claim() == ir.CLAIM_ULASILAMADI
+
+
+def test_claim_result_decides_firing():
+    """main() bu üç sonucu ayırt etmeli: yalnızca açık ret ateşlemeyi durdurur."""
+    assert ir.ateslemeli(ir.CLAIM_VERILDI) is True
+    assert ir.ateslemeli(ir.CLAIM_ULASILAMADI) is True
+    assert ir.ateslemeli(ir.CLAIM_REDDEDILDI) is False
+
+
+# ══════════════════════════════════════════════════════════════
+# Yapılandırma çekme: geçici aksaklıkta pes etme
+# ══════════════════════════════════════════════════════════════
+
+
+def test_config_retries_on_transient_failure(ortam, monkeypatch):
+    """Konteyner hedeften 15 dakika önce açılıyor; ilk denemede ulaşamamak
+    vazgeçme sebebi değil. Pes ederse o kullanıcı izolasyonsuz kalır."""
+    denemeler = {"n": 0}
+
+    def bazen(*a, **k):
+        denemeler["n"] += 1
+        if denemeler["n"] < 3:
+            raise OSError("gecici hata")
+        return SahteYanit(200, {"token": "t", "ecrn_list": ["12345"],
+                                "kayit_saati": "14:00:00"})
+
+    monkeypatch.setattr(ir, "_post", bazen)
+    cfg = ir.fetch_config()
+    assert cfg is not None
+    assert cfg["ecrn_list"] == ["12345"]
+    assert denemeler["n"] == 3
+
+
+def test_config_gives_up_eventually(ortam, monkeypatch):
+    """Sonsuza kadar denemez — yerel motor zaten görevde."""
+    def hep_patla(*a, **k):
+        raise OSError("yok")
+    monkeypatch.setattr(ir, "_post", hep_patla)
+    assert ir.fetch_config() is None
+
+
+def test_config_does_not_retry_on_explicit_refusal(ortam, monkeypatch):
+    """403 net bir cevap: bilet geçersiz. Tekrar denemek anlamsız."""
+    denemeler = {"n": 0}
+
+    def reddet(*a, **k):
+        denemeler["n"] += 1
+        return SahteYanit(403)
+
+    monkeypatch.setattr(ir, "_post", reddet)
+    assert ir.fetch_config() is None
+    assert denemeler["n"] == 1

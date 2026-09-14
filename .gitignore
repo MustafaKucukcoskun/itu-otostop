@@ -72,3 +72,6 @@ calibration_guide.md
 
 # Playwright CLI test artefaktları
 .playwright-cli/
+
+# Windows / git-bash artefakti
+*.stackdump

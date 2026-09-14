@@ -826,6 +826,7 @@ function DashboardContent() {
                     setToken(t.replace(/^\s*bearer\s+/i, "").trim())
                   }
                   tokenValid={tokenValid}
+                  kayitSaati={kayitSaati ?? undefined}
                 />
               </Panel>
             </m.div>

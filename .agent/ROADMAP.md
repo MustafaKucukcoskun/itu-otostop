@@ -377,3 +377,64 @@ localStorage'daydı.
 - [ ] `frontend/sql/002_user_data.sql` → Supabase SQL Editor → RUN.
       Çalıştırılana kadar kod güvenle localStorage'a düşer ve silme
       başarısızlığını açıkça bildirir.
+
+---
+
+## Faz 10 — Baştan Sona Denetim (2026-09-15)
+
+Kullanıcı "dersi kaçırmanın kaç yolu var, hepsi kapalı mı" diye sordu. Her yolu
+çıkardım ve **dört gerçek hata** buldum.
+
+### 1. Plan buluta yazılmadan sayfa değişiyordu
+Plan değişikliği 800ms gecikmeyle buluta yazılıyor, ama "Kayıt Motoruna Aktar"
+sayfa değiştirdiği için `clearTimeout` bekleyen yazmayı iptal ediyordu. Ders
+eklenip hemen aktarılırsa buluta hiç gitmiyor, telefonda eksik görünüyordu.
+→ Bekleyen yazma `pagehide`, `visibilitychange` ve sökülmede boşaltılıyor.
+
+### 2. Token kayıt saatinden önce dolabiliyordu — EN SESSİZ KAYIP
+Motor token'ı yalnızca BAŞLARKEN kontrol ediyor. Akşam kurulan bir kayıt
+ertesi gün ateşlerken token gece ölmüş oluyor, OBS 401 dönüyor, ders gidiyor.
+Arayüz "6 saat sonra sona erecek" diyerek sakin görünüyordu çünkü bu değer
+kayıt saatiyle hiç karşılaştırılmıyordu.
+→ `token_expiry.py` + `/api/register/start` 400 ile reddediyor; arayüz de
+   ayrı ve kırmızı bir uyarı gösteriyor. Okunamayan `exp` engellemez.
+
+### 3. Belirsizlikte çekilme (yön yanlıştı)
+Konteyner ana servise ulaşamadığında "geri alınmış olmalıyım" deyip
+çekiliyordu. Ama servis ÇÖKTÜYSE yerel motor da ölüdür → kesin kayıp.
+→ Kural çevrildi: **belirsizlikte ateşle.** Üç yerde: nabız kopması,
+   sahiplenme isteğinin cevapsız kalması, yapılandırma çekmenin ilk denemede
+   tutmaması. Yalnızca NET cevaplar durdurur (iptal / geri alma / 403).
+
+### 4. Hız limiti IP başınaydı — KAYIT GÜNÜ DERS KAYBETTİRİRDİ
+`/api/register/start` dakikada 6 istek, IP başına. Kampüs WiFi'si, yurt ağı ve
+mobil CGNAT yüzünden onlarca öğrenci aynı IP'den çıkar; 7. öğrenci 429 alır ve
+kaydı HİÇ başlamaz. 40 oturumluk test bunu birebir üretti: 40'ın sadece 6'sı
+başlayabildi.
+→ Limit Clerk kimliğine bağlandı. Yeniden test: **40/40 başladı, 0 hata.**
+
+### 40 kullanıcı ölçek testi (ilk kez gerçek ölçekte)
+- 40 kayıt başlatıldı: **40/40, 0 hata** (limit düzeltmesinden sonra)
+- 40 konteyner açıldı: **40/40, 0 açılma hatası**, ~25 saniyede
+- 32 konteyner sahiplendi, 8'i geç kaldığı için reddedildi → **yerel motor
+  ateşledi, ders kaybı yok** (tasarlandığı davranış)
+- Kalibrasyon 40 konteynerde: 6.8–7.8 saniye
+
+### ÖLÇÜM: konteyner soğuk başlangıcı 40 eşzamanlıda 7 DAKİKAYA çıkıyor
+Önceki 70 saniyelik ölçüm basit bir probe imajıyla yapılmıştı; gerçek imaj
+(FastAPI + bağımlılıklar) çok daha yavaş. Geç kalan 8 konteyner isteğinden
+5-7 dakika sonra kalkmıştı.
+→ `ISOLATION_LEAD` 900 → **1800 saniye**. Gereken asgari 10 dakika
+   (7dk kalkma + 8sn kalibrasyon + 180sn sahiplenme payı); 30 dakika 20
+   dakika pay bırakıyor. Maliyet $0.65 → $1.30, önemsiz.
+
+### Güvenlik denetimi (GitHub)
+- Geçmişte hiç `.env.local`, anahtar dosyası, sertifika veya şifre yok
+- `frontend/.env` izleniyor ama yalnızca public backend URL'i içeriyor
+- `CLAUDE.md` gitignore'da (teşhis anahtarını içeriyor)
+- Tek "sır" eşleşmesi: arayüzdeki `Bearer eyJ...` örnek metni
+- Klasör yapısı temiz: `.agent/ backend/ calibration/ frontend/ scripts/`
+
+### KAYIT GÜNÜ KURALI
+**Kayıt penceresinde DAĞITIM YAPMA.** Durum bellekte; yeni sürüm konteyneri
+değiştirir ve bekleyen bütün motorları öldürür.

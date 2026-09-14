@@ -117,6 +117,7 @@ export function ScheduleBuilder() {
   // localStorage tamamen kaldırılmadı ama rolü değişti: artık yalnızca bulut
   // okunamadığında gösterilecek çevrimdışı önbellek.
   const cloudOkRef = useRef(false);
+  const bekleyenPlanRef = useRef<StoredPlan | null>(null);
 
   useEffect(() => {
     if (!userId || !storageKey) return;
@@ -213,11 +214,39 @@ export function ScheduleBuilder() {
     }
 
     if (!cloudOkRef.current) return; // bulut okunamadı → üzerine yazma
+
+    // Bekleyen yazma bir ref'te tutulur: aşağıdaki etki, bileşen sökülürken
+    // (ör. "Kayıt Motoruna Aktar" sayfa değiştirir) onu boşaltır. Yoksa
+    // clearTimeout yazmayı iptal ederdi ve ders buluta hiç gitmezdi —
+    // bilgisayarda görünür, telefonda görünmezdi.
+    bekleyenPlanRef.current = plan;
     const t = setTimeout(() => {
+      bekleyenPlanRef.current = null;
       void UserDataService.set(UserDataKeys.schedule, plan);
     }, 800);
     return () => clearTimeout(t);
   }, [selected, nextColorIdx, storageKey]);
+
+  // Bekleyen bulut yazmasını kaçırma: sayfa değişiminde, sekme kapanışında ve
+  // mobilde uygulama arka plana atıldığında boşalt.
+  useEffect(() => {
+    const bosalt = () => {
+      const plan = bekleyenPlanRef.current;
+      if (!plan) return;
+      bekleyenPlanRef.current = null;
+      void UserDataService.set(UserDataKeys.schedule, plan);
+    };
+    const gizlendi = () => {
+      if (document.visibilityState === "hidden") bosalt();
+    };
+    window.addEventListener("pagehide", bosalt);
+    document.addEventListener("visibilitychange", gizlendi);
+    return () => {
+      window.removeEventListener("pagehide", bosalt);
+      document.removeEventListener("visibilitychange", gizlendi);
+      bosalt(); // sökülme (sayfa değişimi) — en önemli durum
+    };
+  }, []);
 
   // Kontenjan localStorage'da ANLIK GÖRÜNTÜ olarak duruyor; günler önceki sayıyı
   // güncelmiş gibi göstermek kayıt gününde yanıltıcı olur. Sayfa açılışında bir

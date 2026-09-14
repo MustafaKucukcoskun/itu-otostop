@@ -348,3 +348,69 @@ def test_config_carries_the_service_computed_target(client, kayit):
     r = client.post("/internal/config", json={"session_id": sid, "ticket": ticket})
     hedef = r.json().get("target_epoch")
     assert hedef == main.broker.target_of(sid)
+
+
+# ══════════════════════════════════════════════════════════════
+# Token kayıt saatinden önce dolarsa kayıt BAŞLAMAMALI
+# ══════════════════════════════════════════════════════════════
+
+
+def _jwt_exp(saniye_sonra: int) -> str:
+    import base64, json, time
+    def b64(o):
+        return base64.urlsafe_b64encode(json.dumps(o).encode()).decode().rstrip("=")
+    return (b64({"alg": "HS256"}) + "." +
+            b64({"exp": int(time.time()) + saniye_sonra}) + ".imza")
+
+
+def _oturum_kur(sid, token, saat_offset_sn):
+    import datetime, zoneinfo
+    t = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Istanbul")) + \
+        datetime.timedelta(seconds=saat_offset_sn)
+    s = main.SessionState(token=token, ecrn_list=["12345"],
+                          kayit_saati=t.strftime("%H:%M:%S"))
+    main.sessions[sid] = s
+    return s
+
+
+def test_start_refused_when_token_dies_before_target(client):
+    """Ateşleme anında ölü olacak token'la kayıt başlatmak, kullanıcıyı
+    saatlerce bekletip 401 ile ders kaybettirmek demektir."""
+    sid = "44444444-4444-4444-8444-444444444444"
+    _oturum_kur(sid, _jwt_exp(600), 3600)  # token 10dk, kayıt 1 saat sonra
+    try:
+        r = client.post("/api/register/start", headers={"X-Session-ID": sid})
+        assert r.status_code == 400
+        assert "token" in r.json()["detail"].lower()
+    finally:
+        main.sessions.pop(sid, None)
+        main.broker.release(sid)
+
+
+def test_start_allowed_when_token_outlives_target(client):
+    sid = "55555555-5555-4555-8555-555555555555"
+    _oturum_kur(sid, _jwt_exp(7200), 600)  # token 2 saat, kayıt 10dk sonra
+    try:
+        r = client.post("/api/register/start", headers={"X-Session-ID": sid})
+        assert r.status_code != 400
+    finally:
+        s = main.sessions.get(sid)
+        if s and s.engine:
+            s.engine.cancel()
+        main.sessions.pop(sid, None)
+        main.broker.release(sid)
+
+
+def test_start_not_blocked_when_exp_unreadable(client):
+    """exp okunamayan token yüzünden kullanıcı engellenmemeli."""
+    sid = "66666666-6666-4666-8666-666666666666"
+    _oturum_kur(sid, "cozulemeyen.token.degeri", 600)
+    try:
+        r = client.post("/api/register/start", headers={"X-Session-ID": sid})
+        assert r.status_code != 400
+    finally:
+        s = main.sessions.get(sid)
+        if s and s.engine:
+            s.engine.cancel()
+        main.sessions.pop(sid, None)
+        main.broker.release(sid)

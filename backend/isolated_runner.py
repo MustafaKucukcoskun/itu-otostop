@@ -39,11 +39,10 @@ CLAIM_LEAD = float(os.getenv("OTOSTOP_CLAIM_LEAD", "180"))
 HEARTBEAT_INTERVAL = float(os.getenv("OTOSTOP_HEARTBEAT_INTERVAL", "2"))
 HEARTBEAT_STOP = float(os.getenv("OTOSTOP_HEARTBEAT_STOP", "2"))
 
-# Ana servisin nabzı ölü saydığı yaş ve devir eşiği. Bu iki sayı isolation.py
-# ile AYNI olmalı: konteyner "ana servis beni ölü saymış olmalı" kararını bu
-# simetriyle verir.
+# Ana servise bu kadar süredir ulaşılamıyorsa loga bir uyarı düşülür.
+# Ateşlemeyi ENGELLEMEZ: servis çökmüşse yerel motor da ölmüştür ve çekilmek
+# kesin ders kaybı olur (bkz. heartbeat_loop).
 HEARTBEAT_MAX_AGE = float(os.getenv("OTOSTOP_HEARTBEAT_MAX_AGE", "10"))
-HANDOVER_GUARD = float(os.getenv("OTOSTOP_HANDOVER_GUARD", "8"))
 
 SESSION_ID = os.getenv("OTOSTOP_SESSION_ID", "")
 TICKET = os.getenv("OTOSTOP_TICKET", "")
@@ -62,30 +61,73 @@ def _post(path: str, payload: dict, timeout: float = 10.0) -> requests.Response:
     )
 
 
+# Yapılandırma çekme denemeleri. Konteyner hedeften ~15 dakika önce açıldığı
+# için bolca vakit var; ilk denemede ulaşamamak vazgeçme sebebi değil.
+CONFIG_DENEME = int(os.getenv("OTOSTOP_CONFIG_DENEME", "5"))
+CONFIG_BEKLE = float(os.getenv("OTOSTOP_CONFIG_BEKLE", "3"))
+
+
 def fetch_config() -> dict | None:
-    """Yapılandırmayı (OBS token dahil) ana servisten çeker. Sahiplik ALMAZ."""
-    try:
-        r = _post("/internal/config", {})
-    except Exception as e:
-        log(f"config isteği başarısız: {e}")
-        return None
-    if r.status_code != 200:
-        log(f"config reddedildi: HTTP {r.status_code}")
-        return None
-    return r.json()
+    """Yapılandırmayı (OBS token dahil) ana servisten çeker. Sahiplik ALMAZ.
+
+    Geçici hatada yeniden dener; 403 gibi NET bir ret alınca hemen bırakır.
+    Sonunda başaramazsa None döner ve konteyner kapanır — yerel motor zaten
+    görevde olduğu için kullanıcı kaydı yine yapılır, sadece izolasyonsuz.
+    """
+    for deneme in range(1, CONFIG_DENEME + 1):
+        try:
+            r = _post("/internal/config", {})
+        except Exception as e:
+            log(f"config isteği başarısız ({deneme}/{CONFIG_DENEME}): {e}")
+            if deneme < CONFIG_DENEME:
+                time.sleep(CONFIG_BEKLE)
+            continue
+        if r.status_code == 200:
+            return r.json()
+        if r.status_code in (400, 401, 403, 404):
+            # Net cevap: bilet geçersiz ya da oturum yok. Tekrar denemek anlamsız.
+            log(f"config reddedildi: HTTP {r.status_code}")
+            return None
+        log(f"config cevapsız ({deneme}/{CONFIG_DENEME}): HTTP {r.status_code}")
+        if deneme < CONFIG_DENEME:
+            time.sleep(CONFIG_BEKLE)
+    return None
 
 
-def claim() -> bool:
-    """Ateşleme sözü ver. False → ana servis devralmış, çekiliyoruz."""
+# Sahiplenme isteğinin üç olası sonucu. "Reddedildi" ile "ulaşamadım" AYNI
+# ŞEY DEĞİLDİR ve eskiden ikisi de çekilmeye yol açıyordu — ana servis
+# çöktüğünde yerel motor da öldüğü için bu kesin ders kaybı demekti.
+CLAIM_VERILDI = "verildi"
+CLAIM_REDDEDILDI = "reddedildi"
+CLAIM_ULASILAMADI = "ulasilamadi"
+
+
+def claim() -> str:
+    """Ateşleme sözü iste.
+
+    CLAIM_VERILDI      → söz bizde, ateşle
+    CLAIM_REDDEDILDI   → ana servis ulaşılabilir ve "hayır" dedi (yerel motor
+                         devralmış ya da kayıt sıfırlanmış) — çekil
+    CLAIM_ULASILAMADI  → cevap alınamadı; servis çökmüş olabilir, o hâlde yerel
+                         motor da ölüdür. Ateşle.
+    """
     try:
         r = _post("/internal/claim", {})
     except Exception as e:
-        log(f"claim isteği başarısız: {e}")
-        return False
+        log(f"claim isteği başarısız ({e}) — ana servis çökmüş olabilir")
+        return CLAIM_ULASILAMADI
     if r.status_code == 200:
-        return bool(r.json().get("granted"))
-    log(f"claim reddedildi: HTTP {r.status_code}")
-    return False
+        return CLAIM_VERILDI if r.json().get("granted") else CLAIM_REDDEDILDI
+    if r.status_code == 403:
+        log("claim reddedildi: kayıt tanınmıyor (sıfırlanmış)")
+        return CLAIM_REDDEDILDI
+    log(f"claim cevapsız: HTTP {r.status_code} — ulaşılamadı sayılıyor")
+    return CLAIM_ULASILAMADI
+
+
+def ateslemeli(sonuc: str) -> bool:
+    """Yalnızca AÇIK ret ateşlemeyi durdurur; belirsizlikte ateşlenir."""
+    return sonuc != CLAIM_REDDEDILDI
 
 
 # Ana servis "bu kaydı tanımıyorum" dedi (403). Ağ kopmasından AYRI tutulur:
@@ -128,6 +170,7 @@ def heartbeat_loop(engine: RegistrationEngine, target: float,
     thread'in uyanması tetiği kaydırabilir.
     """
     son_basarili = time.time()
+    uyarildi = False
     while not stop.is_set():
         if (target - time.time()) <= HEARTBEAT_STOP:
             log("nabız durduruldu (tetik yaklaştı)")
@@ -142,6 +185,7 @@ def heartbeat_loop(engine: RegistrationEngine, target: float,
             return
         if isinstance(st, dict):
             son_basarili = time.time()
+            uyarildi = False
             if st.get("cancelled"):
                 log("kullanıcı iptal etti — motor durduruluyor")
                 engine.cancel()
@@ -151,19 +195,24 @@ def heartbeat_loop(engine: RegistrationEngine, target: float,
                 engine.cancel()
                 return
         else:
-            # SİMETRİ: ana servis HEARTBEAT_MAX_AGE nabızsız kalınca sözü geri
-            # alıp yerel motora devrediyor. O kadar süredir rapor veremiyorsak
-            # geri alınmış SAYMALIYIZ; yoksa ikimiz de ateşler ve OBS her iki
-            # isteği de VAL16 ile düşürür.
-            simdi = time.time()
-            yas = simdi - son_basarili
-            if yas > HEARTBEAT_MAX_AGE and (target - simdi) > HANDOVER_GUARD:
-                log(f"{yas:.0f}sn'dir ana servise ulaşılamıyor — geri alınmış "
-                    f"sayılıp çekiliyorum (yerel motor ateşleyecek)")
-                engine.cancel()
-                return
-            # Devir anı geçtiyse çekilme YOK: karar verilmiş, yerel motor
-            # çoktan durmuş olabilir. Sözü tutup ateşlemek tek doğru davranış.
+            # ULAŞILAMIYOR — ama SÖZÜMÜZÜ TUTUYORUZ.
+            #
+            # İlk tasarımda burada çekiliyorduk ("10sn rapor veremediysem geri
+            # alınmış olmalıyım"). Yanlıştı: ana servis ÇÖKTÜYSE yerel motor da
+            # onunla birlikte ölmüştür ve çekilmek kesin ders kaybı demektir.
+            #
+            #   servis çöktü + çekilirsek  → %100 kayıp
+            #   servis sağlam + ikimiz de ateşlersek → ilki dersi alır,
+            #     ikincisi VAL03 ("zaten kayıtlısın") alır, ders yine alınmış olur
+            #
+            # Hiç ateşlememenin geri dönüşü yok, iki kez ateşlemenin var.
+            # Açık iptal (403 / cancelled / revoked) hâlâ bizi durdurur; onlar
+            # ana servise ULAŞABİLDİĞİMİZ durumlardır ve belirsizlik içermez.
+            yas = time.time() - son_basarili
+            if yas > HEARTBEAT_MAX_AGE and not uyarildi:
+                uyarildi = True
+                log(f"{yas:.0f}sn'dir ana servise ulaşılamıyor — sözü tutup "
+                    f"ateşlemeye devam ediyorum (çekilmek kesin kayıp olurdu)")
 
         stop.wait(HEARTBEAT_INTERVAL)
 
@@ -260,11 +309,16 @@ def main() -> int:
     if not wait_until_claim_time(target):
         return 0
 
-    if not claim():
+    sonuc = claim()
+    if not ateslemeli(sonuc):
         log("söz verilemedi (ana servis devralmış) — çekiliyorum")
         return 0
 
-    log(f"sahiplik alındı, hedefe {target - time.time():.1f}s")
+    if sonuc == CLAIM_ULASILAMADI:
+        log(f"ana servise ulaşılamadı — yine de ateşliyorum, hedefe "
+            f"{target - time.time():.1f}s (çekilmek kesin kayıp olurdu)")
+    else:
+        log(f"sahiplik alındı, hedefe {target - time.time():.1f}s")
 
     # ── Ateşle ──
     stop = threading.Event()
