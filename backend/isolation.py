@@ -49,8 +49,10 @@ DEFAULT_HANDOVER_WINDOW = 8.0
 # Nabız bu kadar eskiyse konteyner ölü sayılır.
 DEFAULT_HEARTBEAT_MAX_AGE = 10.0
 
-# Konteyner açma isteği en fazla bu kadar denenir.
-MAX_LAUNCH_ATTEMPTS = 3
+# Konteyner açma isteği en fazla bu kadar denenir. 429 (hız sınırı) geçici
+# olduğu için cömert tutuldu; denemeler denetleyicinin 2 saniyelik turlarına
+# yayılır, yani ~12 saniyelik bir pencere.
+MAX_LAUNCH_ATTEMPTS = 6
 
 
 @dataclass
@@ -242,11 +244,17 @@ class IsolationBroker:
 
     # ── Zamanlama ──
 
-    def due_for_launch(self) -> list[tuple[str, str]]:
-        """Konteyneri şimdi açılması gereken (session_id, bilet) çiftleri."""
+    def due_for_launch(self, limit: Optional[int] = None) -> list[tuple[str, str]]:
+        """Konteyneri şimdi açılması gereken (session_id, bilet) çiftleri.
+
+        `limit` verilirse en fazla o kadarı döner. ÖLÇÜM (europe-west3):
+        Run Admin API token-bucket uyguluyor (kova ~60, dolum ~2/sn). 100 isteği
+        birden ya da saniyede 5 atınca %39'u 429 aldı; saniyede 2'de 40/40 geçti.
+        Kayıt düşmez, sadece yayılır — 900 saniyelik pencerede bolca yer var.
+        """
         now = self.clock()
         with self._lock:
-            return [
+            hazir = [
                 (e.session_id, e.ticket)
                 for e in self._entries.values()
                 if not e.launched
@@ -254,6 +262,7 @@ class IsolationBroker:
                 and not e.cancelled
                 and (e.target_epoch - now) <= self.lead
             ]
+        return hazir if limit is None else hazir[:limit]
 
     def mark_launched(self, session_id: str, error: str = "") -> None:
         with self._lock:

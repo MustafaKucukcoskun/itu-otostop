@@ -71,9 +71,12 @@ export function PresetManager({
     toast.success(`"${preset.name}" yüklendi`);
   };
 
-  const handleDelete = (e: React.MouseEvent, preset: Preset) => {
+  const handleDelete = async (e: React.MouseEvent, preset: Preset) => {
     e.stopPropagation();
-    deletePreset(preset.id);
+    // Silme bulutta tamamlanmadan "silindi" demek yanıltıcıydı: bulut silmesi
+    // sessizce başarısız olduğunda kullanıcı onayı görüyor ama şablon sayfa
+    // yenilenince geri geliyordu.
+    await deletePreset(preset.id);
     toast.info(`"${preset.name}" silindi`);
   };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 import { PresetService } from "@/lib/preset-service";
@@ -19,6 +19,14 @@ export interface Preset {
 const STORAGE_KEY = "otostop-presets";
 const OWNER_KEY = "otostop-presets-owner";
 
+/**
+ * GİRİŞ YAPMIŞ KULLANICIDA BULUT TEK DOĞRULUK KAYNAĞIDIR.
+ *
+ * localStorage yalnızca iki iş yapar: giriş yapmamış kullanıcı için tek cihazlık
+ * saklama, ve giriş yapmış kullanıcı için buluta ulaşılamadığında gösterilecek
+ * salt-okunur önbellek. Şablon listesi asla yerelden buluta doğru "tamir"
+ * edilmez — eski sürüm bunu yapıyordu ve şablonları çoğaltıyordu.
+ */
 function loadLocal(): Preset[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -32,7 +40,7 @@ function saveLocal(presets: Preset[]) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
   } catch {
-    /* localStorage full or unavailable */
+    /* localStorage dolu veya kapalı */
   }
 }
 
@@ -41,67 +49,91 @@ export function usePresets() {
   const userId = user?.id ?? null;
 
   const [presets, setPresets] = useState<Preset[]>([]);
-  const [cloudLoaded, setCloudLoaded] = useState(false);
+  const loadedForRef = useRef<string | null>(null);
 
-  // Load presets — cloud if logged in, localStorage fallback
+  /** Buluttan tazele; başarılıysa true. */
+  const refreshFromCloud = useCallback(async (uid: string) => {
+    const cloud = await PresetService.getUserPresets(uid);
+    if (cloud === null) return false; // buluta ulaşılamadı
+    setPresets(cloud);
+    saveLocal(cloud);
+    return true;
+  }, []);
+
   useEffect(() => {
-    if (userId && !cloudLoaded) {
-      // Kullanıcı değişimi kontrolü — eski kullanıcının localStorage'ı yeni kullanıcıya taşınmasın
-      const lastOwner = localStorage.getItem(OWNER_KEY);
-      const isUserSwitch = lastOwner !== null && lastOwner !== userId;
-
-      PresetService.getUserPresets(userId).then((cloud) => {
-        if (cloud.length > 0) {
-          setPresets(cloud);
-          saveLocal(cloud); // keep local in sync
-        } else if (!isUserSwitch) {
-          // İlk giriş (aynı kullanıcı): localStorage preset'lerini cloud'a taşı
-          const local = loadLocal();
-          if (local.length > 0) {
-            setPresets(local);
-            // Upload each to cloud
-            local.forEach((p) =>
-              PresetService.savePreset(userId, {
-                name: p.name,
-                ecrn_list: p.ecrn_list,
-                scrn_list: p.scrn_list,
-                kayit_saati: p.kayit_saati,
-                max_deneme: p.max_deneme,
-                retry_aralik: p.retry_aralik,
-              }),
-            );
-          } else {
-            setPresets([]);
-          }
-        } else {
-          // Kullanıcı değişti ve cloud boş — temiz başla
-          saveLocal([]);
-          setPresets([]);
-        }
-        localStorage.setItem(OWNER_KEY, userId);
-        setCloudLoaded(true);
-      });
-    } else if (!userId) {
-      setPresets(loadLocal()); // eslint-disable-line react-hooks/set-state-in-effect -- SSR + conditional reload
+    if (!userId) {
+      // Giriş yok: tek cihazlık yerel liste
+      if (loadedForRef.current !== null) loadedForRef.current = null;
+      setPresets(loadLocal()); // eslint-disable-line react-hooks/set-state-in-effect -- SSR + kullanıcı değişimi
+      return;
     }
-  }, [userId, cloudLoaded]);
+    if (loadedForRef.current === userId) return;
+    loadedForRef.current = userId;
+
+    (async () => {
+      const cloud = await PresetService.getUserPresets(userId);
+
+      if (cloud === null) {
+        // Buluta ulaşılamadı. Yerel önbelleği göster ama ona GÜVENME:
+        // yeniden yükleme yapılmaz, yoksa her ağ hatası şablonları çoğaltır.
+        const lastOwner = localStorage.getItem(OWNER_KEY);
+        setPresets(lastOwner === userId ? loadLocal() : []);
+        loadedForRef.current = null; // bir dahaki sefere yeniden dene
+        toast.warning("Şablonlar buluttan okunamadı — çevrimdışı görünüm", {
+          duration: 5000,
+        });
+        return;
+      }
+
+      if (cloud.length > 0) {
+        setPresets(cloud);
+        saveLocal(cloud);
+        localStorage.setItem(OWNER_KEY, userId);
+        return;
+      }
+
+      // Bulut GERÇEKTEN boş. Bu kullanıcıya ait yerel şablonlar varsa bir
+      // defaya mahsus taşı — ve taşıdıktan sonra BULUTTAN YENİDEN OKU.
+      // Eski sürüm okumuyordu: yerelde eski rastgele id kalıyordu, silme o id
+      // ile buluta gidip hiçbir satır silmiyordu ve şablon geri geliyordu.
+      const lastOwner = localStorage.getItem(OWNER_KEY);
+      const local = lastOwner === userId ? loadLocal() : [];
+      if (local.length > 0) {
+        for (const p of local) {
+          await PresetService.savePreset(userId, {
+            name: p.name,
+            ecrn_list: p.ecrn_list,
+            scrn_list: p.scrn_list,
+            kayit_saati: p.kayit_saati,
+            max_deneme: p.max_deneme,
+            retry_aralik: p.retry_aralik,
+          });
+        }
+        await refreshFromCloud(userId);
+      } else {
+        setPresets([]);
+        saveLocal([]);
+      }
+      localStorage.setItem(OWNER_KEY, userId);
+    })();
+  }, [userId, refreshFromCloud]);
 
   const addPreset = useCallback(
-    (
-      name: string,
-      config: Omit<Preset, "id" | "name" | "created_at">,
-    ): Preset => {
+    (name: string, config: Omit<Preset, "id" | "name" | "created_at">): Preset => {
       const preset: Preset = {
         ...config,
         id: crypto.randomUUID(),
         name,
         created_at: Date.now(),
       };
-      const updated = [...presets, preset];
-      saveLocal(updated);
-      setPresets(updated);
 
-      // Cloud sync
+      // İyimser gösterim — bulut id'si gelince gerçeğiyle değiştirilir
+      setPresets((prev) => {
+        const next = [...prev, preset];
+        saveLocal(next);
+        return next;
+      });
+
       if (userId) {
         PresetService.savePreset(userId, {
           name: preset.name,
@@ -112,15 +144,15 @@ export function usePresets() {
           retry_aralik: preset.retry_aralik,
         }).then((cloudId) => {
           if (cloudId) {
-            // Update local preset with cloud UUID
-            const withCloudId = updated.map((p) =>
-              p.id === preset.id ? { ...p, id: cloudId } : p,
-            );
-            saveLocal(withCloudId);
-            setPresets(withCloudId);
+            // Bulut id'si YERELE YAZILIR. Yazılmazsa silme çalışmaz.
+            setPresets((prev) => {
+              const next = prev.map((p) =>
+                p.id === preset.id ? { ...p, id: cloudId } : p,
+              );
+              saveLocal(next);
+              return next;
+            });
           } else {
-            // Sessizce yutmak, bulut kapalıyken kullanıcının "kaydettim" sanmasına
-            // ve preset'i başka cihazda bulamamasına yol açıyordu.
             toast.warning(
               `"${preset.name}" buluta kaydedilemedi — yalnızca bu tarayıcıda duruyor`,
               { duration: 6000 },
@@ -131,25 +163,51 @@ export function usePresets() {
 
       return preset;
     },
-    [presets, userId],
+    [userId],
   );
 
   const deletePreset = useCallback(
-    (id: string) => {
-      const updated = presets.filter((p) => p.id !== id);
-      saveLocal(updated);
-      setPresets(updated);
+    async (id: string) => {
+      const hedef = presets.find((p) => p.id === id);
 
-      // Cloud sync
-      if (userId) {
-        PresetService.deletePreset(userId, id).then((ok) => {
-          if (!ok) {
-            toast.warning(
-              "Preset buluttan silinemedi — başka cihazda görünmeye devam edebilir",
-              { duration: 6000 },
-            );
-          }
-        });
+      // İyimser kaldır — ekran anında tepki versin
+      setPresets((prev) => {
+        const next = prev.filter((p) => p.id !== id);
+        saveLocal(next);
+        return next;
+      });
+
+      if (!userId || !hedef) return;
+
+      await PresetService.deletePreset(userId, id);
+
+      // SONUCU DOĞRULA. Silme "başarılı" görünüp hiçbir satır silmemiş olabilir:
+      // eski göç hatası yüzünden bazı şablonların yerel id'si bulut id'siyle
+      // uyuşmuyor. Kullanıcının gördüğü "silindi" mesajı gerçeği yansıtmalı.
+      let cloud = await PresetService.getUserPresets(userId);
+
+      if (cloud?.some((p) => p.id === id || p.name === hedef.name)) {
+        // id ile silinememiş — onarım yolu: ada göre sil
+        await PresetService.deletePresetsByName(userId, hedef.name);
+        cloud = await PresetService.getUserPresets(userId);
+      }
+
+      if (cloud === null) {
+        toast.warning(
+          "Şablon buluttan silinemedi — başka cihazda görünmeye devam edebilir",
+          { duration: 6000 },
+        );
+        return;
+      }
+
+      setPresets(cloud);
+      saveLocal(cloud);
+
+      if (cloud.some((p) => p.name === hedef.name)) {
+        toast.error(
+          `"${hedef.name}" buluttan silinemedi. Supabase'de 002_user_data.sql migration'ı çalıştırılmalı.`,
+          { duration: 8000 },
+        );
       }
     },
     [presets, userId],
@@ -157,70 +215,68 @@ export function usePresets() {
 
   const updatePreset = useCallback(
     (id: string, config: Partial<Omit<Preset, "id" | "created_at">>) => {
-      const updated = presets.map((p) =>
-        p.id === id ? { ...p, ...config } : p,
-      );
-      saveLocal(updated);
-      setPresets(updated);
+      setPresets((prev) => {
+        const next = prev.map((p) => (p.id === id ? { ...p, ...config } : p));
+        saveLocal(next);
+        return next;
+      });
     },
-    [presets],
+    [],
   );
 
-  // Export presets as JSON string
   const exportPresets = useCallback((): string => {
     return JSON.stringify(presets, null, 2);
   }, [presets]);
 
-  // Import presets from JSON string, returns count of imported
   const importPresets = useCallback(
     (json: string): number => {
       try {
         const parsed = JSON.parse(json);
         if (!Array.isArray(parsed)) return 0;
-        const existingIds = new Set(presets.map((p) => p.id));
-        const newPresets: Preset[] = [];
-        for (const p of parsed) {
-          if (
-            p.id &&
-            p.name &&
-            Array.isArray(p.ecrn_list) &&
-            !existingIds.has(p.id)
-          ) {
-            const preset: Preset = {
-              id: p.id,
-              name: p.name,
-              ecrn_list: p.ecrn_list || [],
-              scrn_list: p.scrn_list || [],
-              kayit_saati: p.kayit_saati || "",
-              max_deneme: p.max_deneme || 60,
-              retry_aralik: p.retry_aralik || 3.0,
-              created_at: p.created_at || Date.now(),
-            };
-            newPresets.push(preset);
+        const mevcut = new Set(presets.map((p) => p.name));
+        const yeniler = parsed.filter(
+          (p) => p?.name && Array.isArray(p.ecrn_list) && !mevcut.has(p.name),
+        );
+        if (yeniler.length === 0) return 0;
 
-            // Cloud sync
-            if (userId) {
-              PresetService.savePreset(userId, {
-                name: preset.name,
-                ecrn_list: preset.ecrn_list,
-                scrn_list: preset.scrn_list,
-                kayit_saati: preset.kayit_saati,
-                max_deneme: preset.max_deneme,
-                retry_aralik: preset.retry_aralik,
+        if (userId) {
+          // Buluta yaz, sonra buluttan oku — id'ler gerçek olsun
+          (async () => {
+            for (const p of yeniler) {
+              await PresetService.savePreset(userId, {
+                name: p.name,
+                ecrn_list: p.ecrn_list ?? [],
+                scrn_list: p.scrn_list ?? [],
+                kayit_saati: p.kayit_saati ?? "",
+                max_deneme: p.max_deneme ?? 60,
+                retry_aralik: p.retry_aralik ?? 3.0,
               });
             }
-          }
+            await refreshFromCloud(userId);
+          })();
+        } else {
+          const eklenecek: Preset[] = yeniler.map((p) => ({
+            id: crypto.randomUUID(),
+            name: p.name,
+            ecrn_list: p.ecrn_list ?? [],
+            scrn_list: p.scrn_list ?? [],
+            kayit_saati: p.kayit_saati ?? "",
+            max_deneme: p.max_deneme ?? 60,
+            retry_aralik: p.retry_aralik ?? 3.0,
+            created_at: p.created_at ?? Date.now(),
+          }));
+          setPresets((prev) => {
+            const next = [...prev, ...eklenecek];
+            saveLocal(next);
+            return next;
+          });
         }
-        if (newPresets.length === 0) return 0;
-        const updated = [...presets, ...newPresets];
-        saveLocal(updated);
-        setPresets(updated);
-        return newPresets.length;
+        return yeniler.length;
       } catch {
-        return -1; // parse error
+        return -1; // ayrıştırma hatası
       }
     },
-    [presets, userId],
+    [presets, userId, refreshFromCloud],
   );
 
   return {
