@@ -438,3 +438,71 @@ başlayabildi.
 ### KAYIT GÜNÜ KURALI
 **Kayıt penceresinde DAĞITIM YAPMA.** Durum bellekte; yeni sürüm konteyneri
 değiştirir ve bekleyen bütün motorları öldürür.
+
+---
+
+## Faz 11 — Çökme Sebepleri ve Motor Algoritması Denetimi (2026-09-15)
+
+Soru: ana servisi ne çökertebilir, motor algoritması doğru mu, istek erken
+veya gereksiz geç varıyor mu?
+
+### ÇÖKME SEBEPLERİ — üç tanesi bulundu ve kapatıldı
+
+**1. Event loop'u bloke eden senkron çağrı (EN CİDDİ).**
+`/api/search-courses` `search_courses()`'ı doğrudan çağırıyordu. Onbellek
+boşken bu 41 sıralı OBS isteği demek (~8sn, OBS yavaşsa çok daha fazla) ve tek
+uvicorn worker'ı olduğu için o sürede servis HİÇBİR şeye cevap veremez:
+WebSocket susar, `/internal/heartbeat` cevapsız kalır, izolasyon denetleyicisi
+çalışamaz (T-8s devir penceresi kaçar), Cloud Run sağlık yoklaması zaman
+aşımına uğrarsa instance yeniden başlar ve bekleyen tüm kayıtlar ölür.
+→ `asyncio.to_thread` + `SEARCH_CONCURRENCY` semaforu (thread havuzunu
+  tüketip konteyner başlatmayı geciktirmesin).
+→ `test_event_loop.py`: loop durmasını BEKÇİ GÖREVLE ölçüyor. İsteğin süresini
+  ölçmek yanıltıcıydı — ölçümden önceki `await` blokajı soğuruyordu. Bekçinin
+  kör olmadığını kanıtlayan ayrı bir test var.
+
+**2. Geri sayım olayları saniyede 180 üretiliyordu.**
+Bekleme döngüsü son 5 saniyede ~180 Hz dönüyor ve her turda yayın yapıyordu:
+tek motorda 902 olay. 32 konteyner bunu aktarınca ana servise saniyede ~5800
+olay — tam devir kararının verildiği anda. Yerel motorda daha kötü: yayın,
+tetiği vurması gereken thread'in içinde.
+→ 10 Hz'e kısıtlandı (`COUNTDOWN_INTERVAL`). 902 → ~50 olay.
+
+**3. Olay kuyruğu sınırsızdı (OOM).**
+Drenaj ölürse olaylar saatlerce birikir; 40 oturumda yüzlerce MB ve 1 GiB'lık
+konteyner OOM ile ölür.
+→ `EVENT_QUEUE_MAX=2000`, taşmada en eski düşer. `_emit` tetik yolunda
+  çağrıldığı için taşma dalı asla exception sızdırmaz.
+
+### MOTOR ALGORİTMASI — doğrulandı
+
+**Formülün işareti doğru.** `tetik = hedef + server_offset − rtt − obs_offset
++ buffer`. NTP `sunucu − yerel` verir ama kalibrasyonda `server_offset =
+-ntp_offset_raw` ile çevriliyor, yani `yerel − gerçek`. Türetme formülle
+birebir örtüşüyor. (Varsayımla değil, türeterek doğrulandı.)
+
+**Gerçek davranış: hedef+1ms'de gönder, OBS'e ~hedef+20ms'de var.**
+Formül hedeften 8.3ms ÖNCE ateşlemek istiyor ama koruma alt sınırı sıkıştırıyor.
+İki sonuç:
+- Hesaplanan buffer tetiği HİÇ etkilemiyor (sınır, buffer < ~20ms olduğu
+  sürece bağlayıcı; buffer 10.3ms).
+- 20ms gecikme DOĞRU tercih. Beklenen değer hesabı:
+
+  | varış | erken varma | beklenen kayıp | kazanç |
+  |---|---|---|---|
+  | hedef+20.3ms | %0.004 | 0.12 ms | — (şimdiki) |
+  | hedef+15ms | %0.179 | 5.4 ms | 5.3 ms |
+  | hedef+10.3ms | %2.275 | 68.3 ms | 10 ms |
+
+  VAL02 = 3 saniye debounce cezası. Daha erken ateşlemek beklenen değerde
+  zarar. **Alt sınırı bu hesabı yeniden yapmadan aşağı çekme.**
+
+**Tetik ile gönderim arasındaki iş ihmal edilebilir:** 2000 ölçümde medyan
+7 µs, en kötü 41 µs.
+
+**Koruma sınırları saat farkına duyarlı hale getirildi.** Sınırlar yerel
+saatteydi; saatimiz 20ms'den fazla ileri giderse erken varırdık ve bunu
+önleyecek offset telafisi tam da sıkıştırmayla atılıyordu. Artık ölçülen
+`server_offset` ile kaydırılıyorlar. Saat doğruyken davranış birebir aynı.
+
+196 test geçiyor.

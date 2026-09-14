@@ -146,6 +146,22 @@ LIMIT_CALIBRATE = os.getenv("RATE_LIMIT_CALIBRATE", "6/minute")
 LIMIT_TOKEN_TEST = os.getenv("RATE_LIMIT_TOKEN_TEST", "10/minute")
 LIMIT_SEARCH = os.getenv("RATE_LIMIT_SEARCH", "30/minute")
 
+# Aynı anda kaç ders araması OBS'ye çıkabilir.
+# Arama, önbellek boşken 41 senkron OBS isteği atıyor (~8sn). Bunlar thread'e
+# taşınıyor ama sınırsız bırakılırsa 40 kullanıcının aynı anda araması thread
+# havuzunu tüketir ve asyncio.to_thread kullanan DİĞER işler — konteyner
+# başlatma dahil — sıraya girer. Ayrıca kendi kullanıcımızla OBS'yi dövmeyiz.
+SEARCH_CONCURRENCY = int(os.getenv("SEARCH_CONCURRENCY", "4"))
+_search_sem: Optional[asyncio.Semaphore] = None
+
+
+def _search_semaphore() -> asyncio.Semaphore:
+    """Semafor ilk kullanımda kurulur: import anında çalışan bir event loop yok."""
+    global _search_sem
+    if _search_sem is None:
+        _search_sem = asyncio.Semaphore(SEARCH_CONCURRENCY)
+    return _search_sem
+
 
 def _cleanup_sessions():
     """Timeout olan ve engine çalışmayan session'ları temizle."""
@@ -901,8 +917,13 @@ async def search_courses(request: Request, q: str = Query("", max_length=60)):
     olarak kötüye kullanılmamalı.
     """
     svc = get_obs_service()
+    # THREAD'E TAŞINIR. Doğrudan çağrılırsa (eski hâli) önbellek boşken 41
+    # senkron OBS isteği event loop'u saniyelerce durdurur; o sürede WebSocket,
+    # /internal/heartbeat ve izolasyon denetleyicisi çalışamaz — T-8s devir
+    # penceresi kaçabilir ve Cloud Run sağlık yoklaması instance'ı öldürebilir.
     try:
-        results = svc.search_courses(q)
+        async with _search_semaphore():
+            results = await asyncio.to_thread(svc.search_courses, q)
     except Exception:
         raise HTTPException(502, "Ders araması başarısız")
     return [_course_to_dict(c) for c in results]
