@@ -108,6 +108,12 @@ _fallback_notified: set[str] = set()
 # herkese açık olmamalı. Kayıt günü "ne oluyor" sorusunu cevaplamak için var.
 ISOLATION_DIAG_KEY = os.getenv("ISOLATION_DIAG_KEY", "").strip()
 
+# Tur başına açılacak konteyner sayısı. Denetleyici 2 saniyede bir dönüyor,
+# yani 4 → saniyede 2. ÖLÇÜLDÜ (europe-west3): Run Admin API token-bucket
+# uyguluyor; saniyede 2'de 40/40 kabul, saniyede 5'te %39 oranında 429.
+# 90 kullanıcı bu hızda 45 saniyede açılır — 900 saniyelik pencereye sığar.
+LAUNCH_PER_TICK = int(os.getenv("ISOLATION_LAUNCH_PER_TICK", "4"))
+
 limiter = Limiter(key_func=get_remote_address)
 
 
@@ -351,7 +357,7 @@ async def _isolation_supervisor():
 
             if _launcher is not None:
                 loop = asyncio.get_running_loop()
-                for sid, ticket in broker.due_for_launch():
+                for sid, ticket in broker.due_for_launch(limit=LAUNCH_PER_TICK):
                     broker.mark_launched(sid)
                     try:
                         await loop.run_in_executor(

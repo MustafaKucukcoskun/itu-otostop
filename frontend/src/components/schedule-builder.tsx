@@ -15,6 +15,7 @@ import {
   scheduleExportKeyFor,
   LEGACY_SCHEDULE_SELECTED,
 } from "@/lib/storage-keys";
+import { UserDataService, UserDataKeys } from "@/lib/user-data-service";
 
 // ── Constants ──
 
@@ -31,6 +32,12 @@ const SELECTED_STORAGE_KEY = LEGACY_SCHEDULE_SELECTED;
 export interface SelectedCourse {
   course: CourseInfo;
   colorIndex: number;
+}
+
+/** Planın hem bulutta hem yerel önbellekte saklanan biçimi. */
+interface StoredPlan {
+  selected: SelectedCourse[];
+  nextColorIdx: number;
 }
 
 interface DepartmentItem {
@@ -101,7 +108,16 @@ export function ScheduleBuilder() {
   const storageKey = userId ? scheduleKeyFor(userId) : null;
   const restoredForRef = useRef<string | null>(null);
 
-  // Kullanıcı belli olunca (veya değişince) o kullanıcının planını geri yükle
+  // ── Planın kalıcılığı: BULUT ÖNCE ──
+  //
+  // Plan eskiden yalnızca localStorage'daydı, yani her cihazda ayrı bir plan
+  // oluşuyordu: telefondan giren kullanıcı bilgisayardaki planını göremiyordu.
+  // Plan kullanıcıya ait bir veridir; cihazda değil kimlikte durmalı.
+  //
+  // localStorage tamamen kaldırılmadı ama rolü değişti: artık yalnızca bulut
+  // okunamadığında gösterilecek çevrimdışı önbellek.
+  const cloudOkRef = useRef(false);
+
   useEffect(() => {
     if (!userId || !storageKey) return;
     if (restoredForRef.current === storageKey) return;
@@ -110,10 +126,12 @@ export function ScheduleBuilder() {
     setSelected([]);
     setNextColorIdx(0);
 
+    let iptal = false;
+
+    // Tek seferlik göç: kullanıcıya bağlı olmayan eski küresel anahtarı kapat.
+    // Sahibi olduğunu bildiğimiz durumda (son giriş yapan kullanıcı aynıysa)
+    // taşı, aksi halde sil — başkasının planını devralmaktansa boş başlamak doğru.
     try {
-      // Tek seferlik göç: kullanıcıya bağlı olmayan eski küresel anahtarı kapat.
-      // Sahibi olduğunu bildiğimiz durumda (son giriş yapan kullanıcı aynıysa) taşı,
-      // aksi halde sil — başkasının planını devralmaktansa boş başlamak doğru.
       const legacy = localStorage.getItem(SELECTED_STORAGE_KEY);
       if (legacy) {
         const lastUser = localStorage.getItem("otostop-last-user");
@@ -122,36 +140,83 @@ export function ScheduleBuilder() {
         }
         localStorage.removeItem(SELECTED_STORAGE_KEY);
       }
+    } catch {
+      /* localStorage kapalı — yoksay */
+    }
 
-      const raw = localStorage.getItem(storageKey);
-      if (raw) {
-        const parsed = JSON.parse(raw) as {
-          selected: SelectedCourse[];
-          nextColorIdx: number;
-        };
-        if (parsed.selected?.length) {
-          setSelected(parsed.selected);
-          setNextColorIdx(parsed.nextColorIdx ?? parsed.selected.length);
+    const yerelOku = (): StoredPlan | null => {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        return raw ? (JSON.parse(raw) as StoredPlan) : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const uygula = (plan: StoredPlan | null) => {
+      if (!plan?.selected?.length) return;
+      setSelected(plan.selected);
+      setNextColorIdx(plan.nextColorIdx ?? plan.selected.length);
+    };
+
+    (async () => {
+      const cloud = await UserDataService.get<StoredPlan>(UserDataKeys.schedule);
+      if (iptal) return;
+
+      if (cloud === undefined) {
+        // Buluta ULAŞILAMADI (kayıt yok değil). Önbelleği göster ama buluta
+        // yazma iznini KAPAT: yazsaydık geçici bir ağ hatasında bu cihazdaki
+        // eski plan, buluttaki gerçek planın üzerine yazılırdı.
+        uygula(yerelOku());
+        cloudOkRef.current = false;
+        restoredForRef.current = storageKey;
+        return;
+      }
+
+      cloudOkRef.current = true;
+
+      if (cloud?.selected?.length) {
+        uygula(cloud);
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(cloud));
+        } catch {
+          /* kota — yoksay */
+        }
+      } else {
+        // Bulutta plan yok. Bu cihazda varsa bir defaya mahsus yukarı taşı.
+        const yerel = yerelOku();
+        if (yerel?.selected?.length) {
+          uygula(yerel);
+          await UserDataService.set(UserDataKeys.schedule, yerel);
         }
       }
-    } catch {
-      /* bozuk veri — yoksay */
-    }
-    restoredForRef.current = storageKey;
+      restoredForRef.current = storageKey;
+    })();
+
+    return () => {
+      iptal = true;
+    };
   }, [userId, storageKey]);
 
-  // Persist on change (geri yükleme tamamlanmadan yazma — boş state ezmesin)
+  // Değişimde kaydet — önce yerel önbellek, sonra bulut (yazma yoğunluğunu
+  // azaltmak için gecikmeli). Geri yükleme tamamlanmadan yazılmaz; yoksa
+  // başlangıçtaki boş state gerçek planı ezer.
   useEffect(() => {
     if (!storageKey) return;
     if (restoredForRef.current !== storageKey) return;
+
+    const plan: StoredPlan = { selected, nextColorIdx };
     try {
-      localStorage.setItem(
-        storageKey,
-        JSON.stringify({ selected, nextColorIdx }),
-      );
+      localStorage.setItem(storageKey, JSON.stringify(plan));
     } catch {
       /* kota dolu vs. — yoksay */
     }
+
+    if (!cloudOkRef.current) return; // bulut okunamadı → üzerine yazma
+    const t = setTimeout(() => {
+      void UserDataService.set(UserDataKeys.schedule, plan);
+    }, 800);
+    return () => clearTimeout(t);
   }, [selected, nextColorIdx, storageKey]);
 
   // Kontenjan localStorage'da ANLIK GÖRÜNTÜ olarak duruyor; günler önceki sayıyı

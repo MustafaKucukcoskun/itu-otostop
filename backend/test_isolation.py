@@ -401,10 +401,11 @@ def test_launch_failure_allows_retry(broker):
     assert [s for s, _ in broker.due_for_launch()] == ["s1"]
 
 
-def test_launch_gives_up_after_three_attempts(broker):
+def test_launch_eventually_gives_up(broker):
     """Kalıcı hata Run API'sini 900 saniye boyunca dövmemeli."""
+    from isolation import MAX_LAUNCH_ATTEMPTS
     broker.register("s1", target_epoch=broker.clock() + 800)
-    for _ in range(3):
+    for _ in range(MAX_LAUNCH_ATTEMPTS):
         broker.mark_launched("s1")
         broker.launch_failed("s1", "503")
     assert broker.due_for_launch() == []
@@ -434,3 +435,49 @@ def test_purge_keeps_recently_fired_registrations(broker):
     """Yeni biten kayıt durmalı: kullanıcı hâlâ sonucu izliyor olabilir."""
     broker.register("s1", target_epoch=broker.clock() - 60)
     assert broker.purge_finished(older_than=3600.0) == []
+
+
+# ── Başlatma hızı sınırı ──
+# ÖLÇÜM (europe-west3, 2026-09-14): Run Admin API bir token-bucket uyguluyor —
+# kova ~60, dolum ~2/sn. 100 isteği aynı anda ya da saniyede 5 atınca %39'u
+# 429 aldı; saniyede 1 ve 2'de 40/40 kabul edildi.
+
+
+def test_due_for_launch_respects_a_limit(broker):
+    """Denetleyici her turda sınırlı sayıda konteyner açmalı.
+
+    Sınırsız olsaydı 90 kullanıcı aynı anda sıraya girdiğinde istekler
+    saniyede 5+ hızla giderdi ve Run API üçte birini 429 ile reddederdi.
+    """
+    for i in range(10):
+        broker.register(f"s{i}", target_epoch=broker.clock() + 800)
+    assert len(broker.due_for_launch(limit=4)) == 4
+
+
+def test_limit_none_returns_everything(broker):
+    for i in range(5):
+        broker.register(f"s{i}", target_epoch=broker.clock() + 800)
+    assert len(broker.due_for_launch()) == 5
+
+
+def test_limited_launches_drain_over_successive_ticks(broker):
+    """Sınır kayıt DÜŞÜRMEZ, yalnızca yayar: 900sn'lik pencerede bolca yer var."""
+    for i in range(10):
+        broker.register(f"s{i}", target_epoch=broker.clock() + 800)
+    acilan = []
+    for _ in range(3):
+        parti = broker.due_for_launch(limit=4)
+        for sid, _t in parti:
+            broker.mark_launched(sid)
+            acilan.append(sid)
+    assert len(acilan) == 10
+    assert len(set(acilan)) == 10  # hiçbiri iki kez açılmadı
+
+
+def test_rate_limit_error_is_retried_generously(broker):
+    """429 geçici bir durumdur; birkaç denemede geçer."""
+    broker.register("s1", target_epoch=broker.clock() + 800)
+    from isolation import MAX_LAUNCH_ATTEMPTS
+    for _ in range(MAX_LAUNCH_ATTEMPTS - 1):
+        broker.mark_launched("s1")
+        assert broker.launch_failed("s1", "429 Too Many Requests") is True

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { m, AnimatePresence } from "motion/react";
 import {
   Plus,
@@ -14,12 +14,19 @@ import {
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import type { CourseInfo } from "@/lib/api";
+import { UserDataService, UserDataKeys } from "@/lib/user-data-service";
 
-// ── CRN Labels (localStorage) ──
+// ── CRN etiketleri ──
+//
+// Etiketler kullanıcıya ait veridir; cihazda değil kimlikte durmalı. Eskiden
+// yalnızca localStorage'daydılar, yani telefonda hiç görünmüyorlardı.
+// localStorage çevrimdışı önbellek olarak kalıyor.
+
+type Labels = Record<string, string>;
 
 const LABELS_KEY = "otostop-crn-labels";
 
-function loadLabels(): Record<string, string> {
+function loadLocalLabels(): Labels {
   try {
     const raw = localStorage.getItem(LABELS_KEY);
     return raw ? JSON.parse(raw) : {};
@@ -28,14 +35,11 @@ function loadLabels(): Record<string, string> {
   }
 }
 
-function saveLabel(crn: string, label: string) {
+function saveLocalLabels(labels: Labels) {
   try {
-    const labels = loadLabels();
-    if (label) labels[crn] = label;
-    else delete labels[crn];
     localStorage.setItem(LABELS_KEY, JSON.stringify(labels));
   } catch {
-    /* ignore */
+    /* kota — yoksay */
   }
 }
 
@@ -103,8 +107,33 @@ export function CRNManager({
   const [input, setInput] = useState("");
   const [labels, setLabels] = useState<Record<string, string>>({});
 
+  // Bulut önce; ulaşılamazsa yerel önbellek gösterilir ve üzerine YAZILMAZ.
+  const labelsCloudOkRef = useRef(false);
   useEffect(() => {
-    setLabels(loadLabels());
+    let iptal = false;
+    (async () => {
+      const cloud = await UserDataService.get<Labels>(UserDataKeys.crnLabels);
+      if (iptal) return;
+      if (cloud === undefined) {
+        setLabels(loadLocalLabels()); // buluta ulaşılamadı
+        return;
+      }
+      labelsCloudOkRef.current = true;
+      if (cloud && Object.keys(cloud).length > 0) {
+        setLabels(cloud);
+        saveLocalLabels(cloud);
+      } else {
+        // Bulutta yok — bu cihazdakileri bir defaya mahsus yukarı taşı
+        const yerel = loadLocalLabels();
+        setLabels(yerel);
+        if (Object.keys(yerel).length > 0) {
+          await UserDataService.set(UserDataKeys.crnLabels, yerel);
+        }
+      }
+    })();
+    return () => {
+      iptal = true;
+    };
   }, []);
 
   const activeList = tab === "add" ? ecrnList : scrnList;
@@ -138,7 +167,16 @@ export function CRNManager({
       setActiveList([...activeList, crn]);
     }
     if (label) {
-      saveLabel(crn, label);
+      setLabels((prev) => {
+        const next = { ...prev };
+        if (label) next[crn] = label;
+        else delete next[crn];
+        saveLocalLabels(next);
+        if (labelsCloudOkRef.current) {
+          void UserDataService.set(UserDataKeys.crnLabels, next);
+        }
+        return next;
+      });
       setLabels((prev) => ({ ...prev, [crn]: label }));
     }
     setInput("");
