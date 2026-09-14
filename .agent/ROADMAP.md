@@ -306,3 +306,67 @@ Faz 8'in ardından baştan sona edge case analizi yapıldı. Dört gerçek hata 
 `isolation.py` ve `isolated_runner.py` aynı eşikleri kullanıyor:
 `HEARTBEAT_MAX_AGE=10`, `HANDOVER_WINDOW/GUARD=8`. Birini değiştirirken
 diğerini de değiştir — simetri bozulursa çift ateşleme veya hiç ateşleme olur.
+
+---
+
+## Faz 8c — Kapasite Tavanı Ölçüldü (2026-09-14)
+
+**Soru:** Kaç konteyner açacağız, kullanıcı sayısını bilmeden nasıl planlarız?
+
+**Cevap: planlamıyoruz.** Konteyner önceden ayrılmıyor; her aktif kayıt için
+hedeften 15 dk önce bir tane açılıyor, ateşleme bitince kapanıyor. Bilinmesi
+gereken tek şey sistemin ne hızda konteyner açabildiği.
+
+### Ölçüm (europe-west3, gerçek Run Admin API)
+| Deneme | Sonuç |
+|---|---|
+| 100 istek aynı anda | 63/100 kabul, **37 × HTTP 429** |
+| 100 istek, saniyede 5 | 61/100 kabul, 39 × 429 |
+| 40 istek, saniyede 2 | **40/40** |
+| 40 istek, saniyede 1 | **40/40** |
+| Toplam 229 çalıştırma | **0 hata** (CPU kotası sorun değil) |
+
+Yani Run Admin API bir **token-bucket** uyguluyor: kova ~60, dolum ~2/sn.
+Kova boşaldıktan sonra sürekli doluyor (70sn sonra 10/10, 30sn sonra 10/10).
+
+### Buna göre yapılan değişiklik
+- `ISOLATION_LAUNCH_PER_TICK=4` — denetleyici 2 saniyede bir döndüğü için
+  saniyede 2 konteyner. 90 kullanıcı 45 saniyede açılır; pencere 900 saniye.
+- `MAX_LAUNCH_ATTEMPTS` 3 → 6. 429 geçici olduğu için cömert tutuldu;
+  denemeler turlara yayılıyor (~12 saniyelik pencere).
+- Başlatma sınırı kayıt DÜŞÜRMEZ, yalnızca yayar.
+
+### Gerçek tavan
+Konteyner sayısı değil, **oturum sayısı** sınırlıyor: `MAX_SESSIONS=200`.
+Bir konteyner hiç açılamazsa yerel motor ateşliyor — kimse dışarıda kalmıyor.
+
+### Maliyet
+Konteyner yalnızca çalışırken ücretlendiriliyor: 40 kullanıcı × 900s × 1 vCPU
+= 36.000 vCPU-s ≈ **$0.65**, bellek $0.04. Ders seçimi başına ~$0.70.
+
+---
+
+## Faz 9 — Kullanıcı Verisi Buluta Taşındı (2026-09-14)
+
+İki kullanıcı şikâyetinin ortak kökü: plan, şablon ve CRN etiketleri
+localStorage'daydı.
+
+1. **Telefonda farklı plan.** Ders planı cihaz başına saklanıyordu.
+2. **Şablon silinmiyordu.** İlk göçte yerel şablonlar buluta yükleniyor ama
+   dönen bulut id'si yerele yazılmıyordu; silme eski id ile gidip hiçbir satır
+   silmiyor, sayfa yenilenince şablon geri geliyordu. `getUserPresets` hata
+   hâlinde `[]` döndürdüğü için her geçici ağ hatası da şablonları çoğaltıyordu.
+
+### Kurallar
+- Giriş yapmış kullanıcıda **bulut tek doğruluk kaynağı**; localStorage
+  yalnızca çevrimdışı önbellek.
+- Başarısız okuma boş değer değil `null`/`undefined` döner ve **yazmayı kapatır**
+  — eski bir cihaz buluttaki gerçeği ezemez.
+- Satır oluşturan her yazma sunucunun döndürdüğü id'yi saklar.
+- Silme bulut yeniden okunarak **doğrulanır**; id'si ayrışmış kayıtlar için
+  ada göre silmeye düşer. "Silindi" mesajı doğrulamadan sonra çıkar.
+
+### YAPILACAK (kullanıcı)
+- [ ] `frontend/sql/002_user_data.sql` → Supabase SQL Editor → RUN.
+      Çalıştırılana kadar kod güvenle localStorage'a düşer ve silme
+      başarısızlığını açıkça bildirir.
