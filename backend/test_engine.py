@@ -8,7 +8,7 @@ Engine timing/yardımcı fonksiyonları için birim testleri (Faz 4 — test ba�
 
 import pytest
 
-from engine import TrendAnalyzer, ChangeDetector, RegistrationEngine
+from engine import TrendAnalyzer, ChangeDetector, RegistrationEngine, EVENT_QUEUE_MAX
 from main import _token_preview
 
 
@@ -274,3 +274,174 @@ def test_mute_does_not_stop_the_wait_loop():
     eng.mute()
     assert eng._wait_should_continue() is True
     assert eng.stood_down is False
+
+
+# ── Geri sayım yayın hızı ──
+# Bekleme döngüsü son 5 saniyede saniyede ~180 tur atıyor ve her turda olay
+# yayınlıyordu: tek motorda 902 olay. 32 konteynerde ana servise saniyede
+# ~5800 olay demek — hem boşa iş, hem de DEVİR KARARININ verilmesi gereken
+# anda event loop'a yük. Arayüz saniyede 10'dan fazlasını zaten kullanamaz.
+
+
+def test_countdown_is_rate_limited():
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    t = 1000.0
+    assert eng._countdown_due(t) is True          # ilki hep geçer
+    assert eng._countdown_due(t + 0.01) is False  # 10ms sonra hayır
+    assert eng._countdown_due(t + 0.05) is False  # 50ms sonra hâlâ hayır
+
+
+def test_countdown_allowed_after_the_interval():
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    t = 1000.0
+    eng._countdown_due(t)
+    assert eng._countdown_due(t + 0.1) is True
+
+
+def test_countdown_rate_cuts_the_final_burst():
+    """Son 5 saniyedeki olay sayısı bir büyüklük mertebesi azalmalı."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    t = 1000.0
+    kalan, gecen = 5.0, 0.0
+    ham = gecti = 0
+    while kalan > 0.05:
+        ham += 1
+        if eng._countdown_due(t + gecen):
+            gecti += 1
+        adim = max(0, kalan - 0.05) if kalan <= 0.5 else (0.005 if kalan <= 5 else 1.0)
+        kalan -= adim
+        gecen += adim
+    assert ham > 800, ham          # döngü gerçekten hızlı dönüyor
+    assert gecti <= 60, gecti      # ama yayın 10 Hz ile sınırlı
+    assert gecti >= 40, gecti      # ve arayüz akıcı kalacak kadar sık
+
+
+def test_countdown_limiter_does_not_touch_other_events():
+    """Log, crn_update, done gibi olaylar kısılmamalı — onlar seyrek ve önemli."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    for _ in range(50):
+        eng._emit("log", {"message": "x"})
+    assert len(eng.get_events()) == 50
+
+
+# ══════════════════════════════════════════════════════════════
+# Koruma sınırı yerel saat hatasına karşı sağlam olmalı
+# ══════════════════════════════════════════════════════════════
+#
+# Gerçek davranış: formül hedeften ~8ms ÖNCE ateşlemek istiyor ama koruma
+# alt sınırı tetiği hedef+1ms'ye çekiyor; istek OBS'e hedef+20ms'de varıyor.
+# Bu bilinçli ve doğru bir seçim (erken varış 3sn ceza demek).
+#
+# AMA sınır BİZİM saatimize göreydi. Saatimiz ileri giderse gerçek zamanda
+# erken ateşleriz; geri kalırsa gereksiz geç kalırız. İkisini de ölçülen
+# server_offset ile düzeltiyoruz — normal durumda (offset~0) davranış aynı.
+
+
+def _motor():
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng._last_val02_delay = -999
+    return eng
+
+
+def test_floor_unchanged_when_clock_is_accurate():
+    """Saat doğruysa bugünkü davranış birebir korunmalı."""
+    eng = _motor()
+    hedef = 1_000_000.0
+    tetik = eng._apply_advanced_protection(hedef - 0.0083, hedef, server_offset=0.0)
+    assert abs(tetik - (hedef + 0.001)) < 1e-9
+
+
+def test_floor_moves_later_when_our_clock_runs_fast():
+    """Saatimiz 25ms ileriyse hedef+1ms'de ateşlemek GERÇEKTE hedef-24ms'dir
+    ve istek erken varır → VAL02. Sınır ileri kaymalı."""
+    eng = _motor()
+    hedef = 1_000_000.0
+    offset = 0.025  # server_offset = bizim saat - gerçek zaman
+    tetik = eng._apply_advanced_protection(hedef - 0.0083, hedef, server_offset=offset)
+    gercek_atesleme = tetik - offset
+    assert abs(gercek_atesleme - (hedef + 0.001)) < 1e-9
+
+
+def _formul(hedef, server_offset, rtt=0.020, obs_offset=-0.0007, buffer=0.0103):
+    """run() içindeki base_trigger hesabının birebir aynısı."""
+    return hedef + server_offset - rtt - obs_offset + buffer
+
+
+def test_floor_moves_earlier_when_our_clock_lags():
+    """Saatimiz 25ms geriyse sınır de 25ms geri kaymalı; yoksa gerçek zamanda
+    hedef+26ms'de ateşler ve 25ms'yi boşuna kaybederiz."""
+    eng = _motor()
+    hedef = 1_000_000.0
+    offset = -0.025
+    tetik = eng._apply_advanced_protection(_formul(hedef, offset), hedef,
+                                           server_offset=offset)
+    gercek_atesleme = tetik - offset
+    assert abs(gercek_atesleme - (hedef + 0.001)) < 1e-9
+
+
+def test_real_formula_is_always_clamped_at_normal_clock_error():
+    """Ölçülen saat hataları (±3ms) hep sınırla karşılanır — yani gerçek
+    davranış 'hedef+1ms'de gönder', varış ~hedef+20ms."""
+    eng = _motor()
+    hedef = 1_000_000.0
+    for offset in (-0.003, -0.001, 0.0, 0.001, 0.003):
+        tetik = eng._apply_advanced_protection(_formul(hedef, offset), hedef,
+                                               server_offset=offset)
+        assert abs((tetik - offset) - (hedef + 0.001)) < 1e-9, offset
+
+
+def test_ceiling_also_follows_the_clock():
+    """Üst sınır da aynı mantıkla kaymalı; yoksa saat hatasında erken kesilir."""
+    eng = _motor()
+    hedef = 1_000_000.0
+    offset = 0.030
+    tetik = eng._apply_advanced_protection(hedef + 5.0, hedef, server_offset=offset)
+    assert abs((tetik - offset) - (hedef + 0.200)) < 1e-9
+
+
+def test_value_between_bounds_is_untouched():
+    eng = _motor()
+    hedef = 1_000_000.0
+    istenen = hedef + 0.050
+    assert eng._apply_advanced_protection(istenen, hedef, server_offset=0.0) == istenen
+
+
+def test_offset_defaults_to_measured_calibration():
+    """Çağıran offset vermezse motor kendi ölçümünü kullanmalı."""
+    eng = _motor()
+    eng._cal_samples.append((0.012, 0.02, 1.0, "test"))
+    hedef = 1_000_000.0
+    tetik = eng._apply_advanced_protection(hedef - 0.0083, hedef)
+    assert abs((tetik - 0.012) - (hedef + 0.001)) < 1e-9
+
+
+# ── Olay kuyruğu sınırlı olmalı (OOM koruması) ──
+# Kuyruk sınırsızdı. Drenaj (poll_engine_events) herhangi bir sebeple ölürse
+# olaylar saatlerce birikir; 40 oturumda bu yüzlerce megabayt eder ve 1 GiB'lık
+# konteyner OOM ile ölür — yani bekleyen BÜTÜN kayıtlar kaybolur.
+# Olaylar geçicidir: eskisini düşürmek, servisi çökertmekten iyidir.
+
+
+def test_event_queue_is_bounded():
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    for i in range(EVENT_QUEUE_MAX + 500):
+        eng._emit("log", {"message": f"m{i}"})
+    assert eng._events.qsize() <= EVENT_QUEUE_MAX
+
+
+def test_newest_events_survive_when_queue_overflows():
+    """Taşmada EN ESKİ olay düşer; kullanıcı en güncel durumu görmeli."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    for i in range(EVENT_QUEUE_MAX + 100):
+        eng._emit("log", {"message": f"m{i}"})
+    olaylar = eng.get_events()
+    son = olaylar[-1]["data"]["message"]
+    assert son == f"m{EVENT_QUEUE_MAX + 99}"
+
+
+def test_overflow_does_not_raise():
+    """Taşma ateşlemeyi ASLA bozmamalı — _emit tetik yolunda çağrılıyor."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    for i in range(EVENT_QUEUE_MAX * 2):
+        eng._emit("countdown", {"remaining": i})  # exception atmamali
+    assert eng._events.qsize() <= EVENT_QUEUE_MAX

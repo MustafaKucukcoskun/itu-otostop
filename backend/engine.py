@@ -44,6 +44,17 @@ class OptimizedHTTPAdapter(requests.adapters.HTTPAdapter):
 
 
 OBS_URL = "https://obs.itu.edu.tr/api/ders-kayit/v21"
+
+# Geri sayım olayları arasındaki asgari süre. Bekleme döngüsü son saniyelerde
+# saniyede ~180 tur atıyor; her turda yayın yapmak boşa iştir ve eşzamanlı
+# kayıtlarda ana servisi en hassas anda yorar.
+COUNTDOWN_INTERVAL = 0.1
+
+# Olay kuyruğunun üst sınırı. Kuyruk sınırsızdı: drenaj (poll_engine_events)
+# herhangi bir sebeple ölürse olaylar saatlerce birikir ve 40 oturumda 1 GiB'lık
+# konteyner OOM ile ölür — bekleyen BÜTÜN kayıtlar kaybolur. Olaylar geçicidir;
+# en eskisini düşürmek servisi çökertmekten iyidir.
+EVENT_QUEUE_MAX = 2000
 OBS_BASE = "https://obs.itu.edu.tr"
 
 HATA_KODLARI = {
@@ -160,7 +171,7 @@ class RegistrationEngine:
         self._measurement_buffer = 0.025  # ölçüm tabanlı buffer (başlangıç)
         self.dry_run = dry_run
 
-        self._events: queue.Queue = queue.Queue()
+        self._events: queue.Queue = queue.Queue(maxsize=EVENT_QUEUE_MAX)
         self._cancelled = threading.Event()
         # İzole konteyner kaydı üstlendiğinde bu motor sessizce çekilir.
         # İptalden AYRI tutulur: kullanıcı iptal etmedi, sadece devredildi.
@@ -170,6 +181,8 @@ class RegistrationEngine:
         # göstergesi titrer. Susmak çekilmek değildir — söz geri alınırsa
         # unmute() ile yeniden görünür olur ve ateşler.
         self._muted = threading.Event()
+        # Geri sayım yayın kısıtlayıcısı (bkz. _countdown_due)
+        self._last_countdown = 0.0
         self._running = False
         self._phase = "idle"
         self._current_attempt = 0
@@ -220,14 +233,44 @@ class RegistrationEngine:
     def unmute(self):
         self._muted.clear()
 
+    def _countdown_due(self, now: float) -> bool:
+        """Geri sayım olayı yayınlansın mı? En fazla COUNTDOWN_INTERVAL'de bir.
+
+        Bekleme döngüsü son 5 saniyede saniyede ~180 tur atıyor ve her turda
+        yayın yapıyordu: tek motorda 902 olay, 32 konteynerde ana servise
+        saniyede ~5800 olay. Bu hem boşa iş, hem de DEVİR KARARININ verilmesi
+        gereken anda event loop'a yük bindiriyordu. Yerel motorda daha kötüsü:
+        yayın, tetiği vurması gereken thread'in içinde oluyor.
+
+        Arayüz saniyede 10 güncellemeden fazlasını zaten kullanamaz.
+        """
+        if (now - self._last_countdown) >= COUNTDOWN_INTERVAL:
+            self._last_countdown = now
+            return True
+        return False
+
     def _emit(self, event_type: str, data: dict | None = None):
         if self._muted.is_set():
             return
-        self._events.put({
+        olay = {
             "type": event_type,
             "data": data or {},
             "timestamp": time.time(),
-        })
+        }
+        try:
+            self._events.put_nowait(olay)
+        except queue.Full:
+            # Kuyruk dolu: EN ESKİ olayı düşür, yenisini koy. Kullanıcı için
+            # güncel durum eskisinden değerli. Bu yol tetik anında da
+            # çalışabildiği için ASLA exception sızdırmamalı.
+            try:
+                self._events.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._events.put_nowait(olay)
+            except queue.Full:
+                pass
 
     def _log(self, msg: str, level: str = "info"):
         self._emit("log", {"message": msg, "level": level})
@@ -309,20 +352,36 @@ class RegistrationEngine:
             ntp_offset=self._calibration.ntp_offset if self._calibration else 0.0,
         )
 
-    def _apply_advanced_protection(self, calculated_trigger: float, target_time: float) -> float:
+    def _apply_advanced_protection(
+        self,
+        calculated_trigger: float,
+        target_time: float,
+        server_offset: Optional[float] = None,
+    ) -> float:
         """Tetik zamanını güvenli pencereye sıkıştır.
 
-        Hedef: Paketin sunucuya varış zamanı [target + 0ms, target + 50ms]
-        Risk: Erken varış → VAL02 + 3sn ceza
-        Risk: Geç varış → kontenjan dolar
+        GERÇEK DAVRANIŞ (ölçüldü): formül hedeften ~8ms ÖNCE ateşlemek ister
+        ama alt sınır tetiği hedef+1ms'ye çeker; istek OBS'e ~hedef+20ms'de
+        varır. Bu bilinçli: erken varış VAL02 + 3sn ceza demek. Beklenen değer
+        hesabı bunu doğruluyor — hedef+10ms'yi hedefleseydik 10ms kazanıp
+        %2.3 ihtimalle 3 saniye kaybederdik (beklenen kayıp 68ms).
+        Dolayısıyla hesaplanan buffer pratikte tetiği etkilemez; sınır bağlar.
+
+        SINIRLAR YEREL SAATTE DEĞİL, GERÇEK ZAMANDA ANLAMLIDIR. `server_offset`
+        (= yerel saat − gerçek zaman) ile kaydırılırlar:
+          - saatimiz ileri giderse sınır ileri kayar → erken varış önlenir
+          - saatimiz geri kalırsa sınır geri kayar → gereksiz gecikme önlenir
+        Saat doğruyken (offset≈0) davranış bugünküyle birebir aynıdır.
         """
+        if server_offset is None:
+            best = self._best_calibration()
+            server_offset = best.server_offset if best else 0.0
+
         protected_trigger = calculated_trigger
 
-        # ALT SINIR: En erken gönderim zamanı.
-        # Paket sunucuya RTT/2 sonra ulaşır; offset ölçüm hatası ±RTT/2 olabilir.
-        # 1ms güvenlik payı ile VAL02 riskini minimize et.
-        # RTT tek yön (~24ms) zaten doğal güvenlik tamponu sağlar.
-        min_safe_time = target_time + 0.001
+        # ALT SINIR: paketin gerçek zamanda hedef+1ms'den önce yola çıkmaması.
+        # RTT tek yön (~20ms) zaten doğal güvenlik tamponu sağlar.
+        min_safe_time = target_time + 0.001 + server_offset
         if protected_trigger < min_safe_time:
             delay_ms = (min_safe_time - protected_trigger) * 1000
             if abs(delay_ms - self._last_val02_delay) > 1:  # Sadece değişince logla
@@ -331,7 +390,7 @@ class RegistrationEngine:
             protected_trigger = min_safe_time
 
         # ÜST SINIR: 200ms sonra kontenjan dolmuş olabilir.
-        latest_allowed = target_time + 0.200
+        latest_allowed = target_time + 0.200 + server_offset
         if protected_trigger > latest_allowed:
             self._log(f"⚠️ Geç varış koruması: {(protected_trigger - latest_allowed)*1000:.0f}ms öne çekildi", "warning")
             protected_trigger = latest_allowed
@@ -1201,8 +1260,9 @@ class RegistrationEngine:
                 now = time.time()
                 kalan = final_trigger - now
 
-                # Countdown event (her saniye)
-                self._emit("countdown", {"trigger_time": final_trigger, "remaining": kalan})
+                # Countdown event — 10 Hz ile sınırlı (bkz. _countdown_due)
+                if self._countdown_due(now):
+                    self._emit("countdown", {"trigger_time": final_trigger, "remaining": kalan})
 
                 # ── Periyodik hafif kalibrasyon (>25sn kala, her 30sn) ──
                 if kalan > 25 and (now - last_recal_time) >= RECAL_INTERVAL:
