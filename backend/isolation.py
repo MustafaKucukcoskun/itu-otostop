@@ -56,6 +56,10 @@ DEFAULT_HEARTBEAT_MAX_AGE = 10.0
 # yayılır, yani ~12 saniyelik bir pencere.
 MAX_LAUNCH_ATTEMPTS = 6
 
+# Hatırlanan kasıtlı silme sayısı. Sınır, uzun süre ayakta kalan bir serviste
+# belleğin sınırsız büyümesini engeller; en eski mezar taşı düşer.
+MAX_MEZAR = 5000
+
 
 @dataclass
 class _Entry:
@@ -83,6 +87,8 @@ class IsolationBroker:
     heartbeat_max_age: float = DEFAULT_HEARTBEAT_MAX_AGE
     clock: Callable[[], float] = time.time
     _entries: dict[str, _Entry] = field(default_factory=dict)
+    # Kasıtlı silmelerin hafızası — bkz. release().
+    _mezar: dict[str, float] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     # ── Kayıt ──
@@ -98,12 +104,31 @@ class IsolationBroker:
             self._entries[session_id] = _Entry(
                 session_id=session_id, target_epoch=target_epoch, ticket=ticket
             )
+            # Aynı kullanıcı yeniden başlattı: eski mezar taşı yeni kaydı gömmesin.
+            self._mezar.pop(session_id, None)
         return ticket
 
     def release(self, session_id: str) -> None:
-        """Kaydı tamamen sil (sıfırlama). Biletler geçersizleşir."""
+        """Kaydı tamamen sil (sıfırlama). Biletler geçersizleşir.
+
+        Silmeyi HATIRLARIZ. Yeniden başlamış bir ana servis hiçbir kaydı
+        tanımaz, dolayısıyla bilmediği bir bileti "silinmiş" sayamaz (bkz.
+        main.py soğuk başlangıç toleransı). Mezar taşı "unuttum" ile
+        "sildim" arasındaki farkı korur; böylece sıfırlama, tolerans
+        penceresinde bile kesin cevabını sürdürür ve kullanıcının
+        istemediği kayıt yapılmaz.
+        """
         with self._lock:
             self._entries.pop(session_id, None)
+            self._mezar[session_id] = time.time()
+            if len(self._mezar) > MAX_MEZAR:
+                eski = sorted(self._mezar.items(), key=lambda kv: kv[1])
+                for sid, _ in eski[: len(self._mezar) - MAX_MEZAR]:
+                    self._mezar.pop(sid, None)
+
+    def deliberately_released(self, session_id: str) -> bool:
+        """Bu kaydı biz mi sildik? (Yeniden başlamış servis hiçbirini bilmez.)"""
+        return session_id in self._mezar
 
     def target_of(self, session_id: str) -> Optional[float]:
         e = self._entries.get(session_id)
