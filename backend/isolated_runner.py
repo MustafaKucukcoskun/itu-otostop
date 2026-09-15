@@ -233,6 +233,30 @@ def hazirlik_loglarini_at(engine) -> None:
         pass
 
 
+def _stdout_yansit(events: list[dict]) -> None:
+    """Motorun log satırlarını konteynerin stdout'una da yaz.
+
+    Olay kuyruğu WebSocket'e akar ve oturum kapanınca kaybolur. 15 Eylül
+    14:00'daki ilk gerçek kayıttan sonra "istek tam olarak ne zaman vardı"
+    sorusu bu yüzden cevaplanamadı. Cloud Run stdout'u kalıcı; kayıt günü
+    adli incelemesinin tek dayanağı burası.
+
+    Basılan an DEĞİL, olayın KENDİ anı yazılır: aktarım 100ms kuantalı
+    yoklamayla çalışıyor, ikisi karışırsa ateşleme ölçümü 100ms bulanıklaşır.
+
+    Yazma hatası yutulur — stdout ateşlemeyi asla durdurmamalı.
+    """
+    for ev in events:
+        if ev.get("type") != "log":
+            continue        # geri sayım 10 Hz akıyor, stdout'u boğar
+        try:
+            mesaj = (ev.get("data") or {}).get("message", "")
+            print(f"[motor {float(ev.get('timestamp') or 0.0):.3f}] {mesaj}",
+                  flush=True)
+        except Exception:
+            pass
+
+
 def stream_events(engine: RegistrationEngine, thread: threading.Thread) -> None:
     """Motorun olay kuyruğunu ana servise aktarır (WebSocket'e oradan gider).
 
@@ -242,6 +266,7 @@ def stream_events(engine: RegistrationEngine, thread: threading.Thread) -> None:
     while True:
         events = engine.get_events()
         if events:
+            _stdout_yansit(events)
             try:
                 _post("/internal/events", {"events": events}, timeout=5.0)
             except Exception as e:
@@ -251,6 +276,7 @@ def stream_events(engine: RegistrationEngine, thread: threading.Thread) -> None:
         time.sleep(0.1)
 
     for ev in engine.get_events():  # son kalanlar
+        _stdout_yansit([ev])
         try:
             _post("/internal/events", {"events": [ev]}, timeout=5.0)
         except Exception:
