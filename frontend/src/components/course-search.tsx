@@ -244,9 +244,6 @@ export function CourseSearch({
             <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
           )}
         </div>
-        <p className="mt-2 font-mono text-[10px] tracking-wide text-muted-foreground/70">
-          örn. 15261 · MAT 103 · akiskanlar
-        </p>
       </div>
 
       {departmentsLoading && (
