@@ -217,6 +217,22 @@ def heartbeat_loop(engine: RegistrationEngine, target: float,
         stop.wait(HEARTBEAT_INTERVAL)
 
 
+def hazirlik_loglarini_at(engine) -> None:
+    """Sahiplenme öncesi birikmiş olayları at.
+
+    Konteyner açılışta kalibre olurken motorun kuyruğuna onlarca olay yazıyor,
+    ama olay akışı ancak sahiplenmeden SONRA başlıyor. Bu birikmiş yığın
+    kullanıcının canlı loguna toplu ve GERİYE DÖNÜK zaman damgalarıyla
+    düşüyordu ("kaydı üstlendi" satırından sonra 8 saniye öncesine ait
+    satırlar). Kullanıcı zaten tek satırlık özeti aldı; detay konteynerin
+    kendi Cloud Run logunda duruyor.
+    """
+    try:
+        engine.get_events()
+    except Exception:
+        pass
+
+
 def stream_events(engine: RegistrationEngine, thread: threading.Thread) -> None:
     """Motorun olay kuyruğunu ana servise aktarır (WebSocket'e oradan gider).
 
@@ -321,6 +337,9 @@ def main() -> int:
         log(f"sahiplik alındı, hedefe {target - time.time():.1f}s")
 
     # ── Ateşle ──
+    # Hazırlık kalibrasyonunun biriken logları kullanıcıya sırasız akmasın
+    hazirlik_loglarini_at(engine)
+
     stop = threading.Event()
     hb = threading.Thread(
         target=heartbeat_loop, args=(engine, target, stop), daemon=True

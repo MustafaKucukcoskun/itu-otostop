@@ -324,3 +324,38 @@ def test_config_does_not_retry_on_explicit_refusal(ortam, monkeypatch):
     monkeypatch.setattr(ir, "_post", reddet)
     assert ir.fetch_config() is None
     assert denemeler["n"] == 1
+
+
+# ══════════════════════════════════════════════════════════════
+# Hazırlık logları kullanıcıya sırasız akmamalı
+# ══════════════════════════════════════════════════════════════
+#
+# Konteyner açılışta kalibre olurken motorunun kuyruğuna onlarca olay yazıyor,
+# ama olay akışı ancak SAHİPLENMEDEN SONRA başlıyor. Sonuç: canlı logda
+# 05:43:19'daki "kaydı üstlendi" satırından sonra 05:43:11'e ait satırlar
+# geliyordu — kullanıcı için okunmaz bir karışıklık.
+#
+# Kullanıcı zaten tek satırlık özeti alıyor ("hazır ve kalibre, offset X").
+# Hazırlık detayı konteynerin kendi Cloud Run logunda duruyor.
+
+
+class KuyrukluMotor:
+    def __init__(self):
+        self.olaylar = [{"type": "log", "data": {"message": f"hazirlik {i}"}}
+                        for i in range(25)]
+
+    def get_events(self):
+        o, self.olaylar = self.olaylar, []
+        return o
+
+
+def test_readiness_logs_are_discarded_before_streaming():
+    m = KuyrukluMotor()
+    ir.hazirlik_loglarini_at(m)
+    assert m.get_events() == []
+
+
+def test_discard_is_safe_on_an_empty_queue():
+    m = KuyrukluMotor()
+    m.olaylar = []
+    ir.hazirlik_loglarini_at(m)   # patlamamali

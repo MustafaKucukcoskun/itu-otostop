@@ -100,7 +100,7 @@ _job_cfg = JobLauncherConfig.from_env() if ISOLATION_ENABLED else None
 _launcher = JobLauncher(_job_cfg) if _job_cfg else None
 broker = IsolationBroker(
     lead=float(os.getenv("ISOLATION_LEAD", "900")),
-    ready_deadline=float(os.getenv("ISOLATION_READY_DEADLINE", "120")),
+    min_claim_margin=float(os.getenv("ISOLATION_MIN_CLAIM_MARGIN", "20")),
 )
 # Konteyner gelmediğinde kullanıcıyı bir kez uyar (her turda değil)
 _fallback_notified: set[str] = set()
