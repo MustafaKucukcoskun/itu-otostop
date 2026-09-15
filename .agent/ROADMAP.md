@@ -421,12 +421,8 @@ başlayabildi.
 - Kalibrasyon 40 konteynerde: 6.8–7.8 saniye
 
 ### ÖLÇÜM: konteyner soğuk başlangıcı 40 eşzamanlıda 7 DAKİKAYA çıkıyor
-Önceki 70 saniyelik ölçüm basit bir probe imajıyla yapılmıştı; gerçek imaj
-(FastAPI + bağımlılıklar) çok daha yavaş. Geç kalan 8 konteyner isteğinden
-5-7 dakika sonra kalkmıştı.
-→ `ISOLATION_LEAD` 900 → **1800 saniye**. Gereken asgari 10 dakika
-   (7dk kalkma + 8sn kalibrasyon + 180sn sahiplenme payı); 30 dakika 20
-   dakika pay bırakıyor. Maliyet $0.65 → $1.30, önemsiz.
+*(Bu sonuç YANLIŞ çıktı — Faz 12'ye bakın. Gerçek sebep CPU kotasıymış.)*
+→ `ISOLATION_LEAD` 900 → **1800 saniye**. Maliyet $0.65 → $1.30, önemsiz.
 
 ### Güvenlik denetimi (GitHub)
 - Geçmişte hiç `.env.local`, anahtar dosyası, sertifika veya şifre yok
@@ -506,3 +502,77 @@ saatteydi; saatimiz 20ms'den fazla ileri giderse erken varırdık ve bunu
 `server_offset` ile kaydırılıyorlar. Saat doğruyken davranış birebir aynı.
 
 196 test geçiyor.
+
+---
+
+## Faz 12 — Asıl Darboğaz Bulundu: CPU Kotası (2026-09-15)
+
+Kullanıcı kritik bir düzeltme yaptı: **kullanıcılar başlata T-5/T-10 dakikada
+basıyor**, saatler önce değil. Bu, "konteyneri erken açalım" tasarımının
+dayandığı varsayımı çürüttü ve kökten yeniden ölçüm gerektirdi.
+
+### Önce: motor 5-10 dakikalık lead ile çalışıyor mu?
+**Evet.** Hazır olma süresi 8 saniye (token kontrolü 0.3 + kalibrasyon 7.2 +
+ısınma 0.1 + RTT 0.4). Kalibrasyon takvimi 5 dakikaya rahat sığıyor:
+T-300s ilk kalibrasyon, 30sn'de bir periyodik, T-20s son tam kalibrasyon.
+
+### Yanlış hipotez: imaj boyutu
+Göreve minimal imaj yapıldı (`engine.py` `models.py`'ı hiç kullanmıyor, yani
+pydantic bile gerekmiyor — sadece requests + ntplib + tzdata). Aynı koşullarda:
+
+| | Minimal imaj | Üretim imajı |
+|---|---|---|
+| Son konteyner | +28s | **+37s** |
+
+Fark 9 saniye. **Faz 11'de raporladığım "7 dakika" yanlıştı** — o rakam 40
+kullanıcı testinin log zamanlarından ÇIKARILMIŞTI, doğrudan ölçülmemişti.
+
+### Asıl sebep: bölgesel CPU kotası
+40 uzun yaşayan (180sn) konteyner açıldığında çalışan sayısı **tam 18'de**
+iki dakikadan uzun süre sabit kaldı, sonrakiler yer açıldıkça başladı.
+
+```
+Total CPU allocation per project per region
+  europe-west3 = 20000 milli vCPU = 20 vCPU
+```
+
+Ana servis 2 vCPU tutuyor → geriye **tam 18** kalıyor. Plato tesadüf değil,
+kotanın kendisiydi. Konteynerler yavaş kalkmıyordu, **sıra bekliyordu**.
+40 kullanıcı testindeki "32 sahiplendi, 8 yetişemedi" de bununla açıklanıyor
+(hedefler 5'er saniye kaymıştı, erken bitenler yer açtı).
+
+### Çözüm: kota artırımı — anında onaylandı
+Cloud Quotas API ile `CpuAllocPerProjectRegion` 20 → **64 vCPU** istendi ve
+**anında onaylandı**. Yeniden ölçüm: **40/40 konteyner aynı anda çalıştı.**
+
+Geriye 62 yuva kalıyor, 40 kullanıcıya birebir konteyner düşüyor.
+
+### Değerlendirilen ama gerekmeyen: kullanıcıları gruplama
+Kullanıcının önerisi (bir konteynere birkaç kullanıcı) teknik olarak
+doğruydu — GIL çekişmesi süreç başınadır, 3 kullanıcı bir konteynerde 1ms'nin
+altında kalır. Eski kotayla 18×3 = 54 kullanıcıyı karşılardı. Kota artışından
+sonra gereksiz kaldı; en kritik kod yoluna karmaşıklık eklemekten kaçınıldı.
+
+### GERÇEK SENARYO TESTİ — 40 kullanıcı, T-5 dakikada başlat
+Kullanıcının tarif ettiği davranışın birebir testi: 40 kullanıcı, hepsi aynı
+hedefe, hepsi hedeften 5 dakika önce başlat'a basıyor.
+
+```
+açılan konteyner : 40/40    0 hata
+SAHİPLENEN       : 40/40    ilk sahiplenme hedefe 178.2s kala
+devir kararı     : 40/40    T-6s'de, hepsi birden
+```
+
+Kota artışından önce bu 18'de tıkanıyordu. Artık T-5dk'da başlayan 40
+kullanıcının hepsi kendi izole konteynerini alıyor.
+
+Aynı test, token koruması için de canlı doğrulama oldu: süresi 1.4 dakika
+kalmış token'la 5 dakika sonrasına kayıt denendiğinde sistem
+`400 "Token kayıt saatinden önce sona eriyor (4 dakika erken)"` döndü.
+
+### Kayıt günü kontrol listesi
+1. `CpuAllocPerProjectRegion` = 64000 olduğunu doğrula. Konteynerler yavaş
+   kalkıyor gibi görünürse **önce kotaya bak**, başka bir şey arama.
+2. Kayıt penceresinde **dağıtım yapma** — durum bellekte, yeni sürüm bekleyen
+   bütün motorları öldürür.
+3. `/internal/diag` ile canlı durumu izle (anahtar: `X-Diag-Key`).
