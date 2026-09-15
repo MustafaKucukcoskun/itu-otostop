@@ -1077,6 +1077,46 @@ class RegistrationEngine:
                 self._log(f"  Başarısız: {c} — {s}", "error")
         if kalan:
             self._log(f"  Kalan: {kalan}", "warning")
+            self._finalize_pending(kalan)
+
+    def _finalize_all(self):
+        """Kaydın bittiği HER yolda çağrılır: kalan tüm CRN'leri karara bağlar.
+
+        _kayit_yap yalnızca kendi döngüsü tükenince finalize ediyordu; bekleme
+        sırasında iptal edilen bir kayıtta dersler "Bekliyor" olarak kalıyordu.
+        """
+        if self._crn_results:
+            self._finalize_pending(list(self._crn_results.keys()))
+
+    def _finalize_pending(self, kalan: list[str]):
+        """Karara bağlanmamış CRN'lere NİHAİ bir durum yaz.
+
+        Denemeler tükendiğinde yalnızca log yazılıyordu; _crn_results'taki
+        "Bekliyor" olduğu gibi kalıyordu. Kayıt bitmiş görünürken ders ekranda
+        hâlâ "Bekliyor" yazıyordu ve öğrenci dersi alıp almadığını anlayamıyordu.
+        Biten bir kaydın her CRN'i ne olduğunu söylemeli.
+
+        Karara bağlanmış sonuçlara DOKUNULMAZ: alınmış bir ders başarısız
+        yazılamaz.
+        """
+        iptal = self._cancelled.is_set()
+        degisti = False
+        for crn in kalan:
+            mevcut = self._crn_results.get(crn, {})
+            if mevcut.get("status") not in (None, "pending", "debounce"):
+                continue  # zaten karara bağlanmış
+            if iptal:
+                self._crn_results[crn] = {
+                    "status": "dropped", "message": "İptal edildi"
+                }
+            else:
+                self._crn_results[crn] = {
+                    "status": "error",
+                    "message": "Denemeler tükendi — kayıt alınamadı",
+                }
+            degisti = True
+        if degisti:
+            self._emit("crn_update", {"results": dict(self._crn_results)})
 
     # ── Saat yardımcısı ──
 
@@ -1380,6 +1420,8 @@ class RegistrationEngine:
             gc.enable()  # GC'yi tekrar aç
             self._set_timer_resolution(False)
             if self._should_announce_done():
+                # Hangi yoldan bittiysek bitelim, hiçbir ders "Bekliyor" kalmasın
+                self._finalize_all()
                 self._set_phase("done")
                 self._emit("done", self._done_payload())
             else:

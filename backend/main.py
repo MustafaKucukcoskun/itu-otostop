@@ -115,6 +115,11 @@ ISOLATION_DIAG_KEY = os.getenv("ISOLATION_DIAG_KEY", "").strip()
 # 90 kullanıcı bu hızda 45 saniyede açılır — 900 saniyelik pencereye sığar.
 LAUNCH_PER_TICK = int(os.getenv("ISOLATION_LAUNCH_PER_TICK", "4"))
 
+# Hedef saat bu kadar saniyeden fazla geçmişse kayıt başlatılmaz.
+# Birkaç dakika geç kalan kullanıcı yine de denesin; saatlerce geçmiş bir
+# hedef ise kesin bir yanlış anlamadır (bkz. start_registration).
+GECMIS_HEDEF_TOLERANSI = float(os.getenv("PAST_TARGET_TOLERANCE", "120"))
+
 def rate_limit_key(request: Request) -> str:
     """Hız limitinin kime uygulanacağı.
 
@@ -152,6 +157,10 @@ LIMIT_SEARCH = os.getenv("RATE_LIMIT_SEARCH", "30/minute")
 # havuzunu tüketir ve asyncio.to_thread kullanan DİĞER işler — konteyner
 # başlatma dahil — sıraya girer. Ayrıca kendi kullanıcımızla OBS'yi dövmeyiz.
 SEARCH_CONCURRENCY = int(os.getenv("SEARCH_CONCURRENCY", "4"))
+
+# Tek istekte sorgulanabilecek CRN sayısı. Ders planı en fazla 12 ECRN + birkaç
+# SCRN taşıyor; 50 fazlasıyla yeterli bir tavan.
+MAX_LOOKUP_CRNS = int(os.getenv("MAX_LOOKUP_CRNS", "50"))
 _search_sem: Optional[asyncio.Semaphore] = None
 
 
@@ -365,6 +374,27 @@ async def poll_engine_events(session_id: str):
 
 # ── İzolasyon denetleyicisi ──
 
+# Denetleyici hatalarının kısıtlı loglanması. Hata her turda (2 saniye)
+# tekrarlarsa log akışını boğar ve kayıt günü teşhisi imkânsızlaşır; ama hiç
+# loglamamak da en kritik döngüyü görünmez kılar. Yeni bir hata hemen,
+# tekrarlayan hata seyrek yazılır.
+_supervisor_err_state: dict = {"n": 0}
+SUPERVISOR_LOG_EVERY = 30  # ~1 dakika
+
+
+def _supervisor_error(e: Exception, state: dict, yaz=None) -> None:
+    yaz = yaz or (lambda m: print(m, flush=True))
+    imza = f"{type(e).__name__}: {e}"
+    if state.get("imza") != imza:
+        state["imza"] = imza
+        state["n"] = 1
+        yaz(f"[izolasyon-denetleyici] HATA: {imza}")
+        return
+    state["n"] = state.get("n", 0) + 1
+    if state["n"] % SUPERVISOR_LOG_EVERY == 0:
+        yaz(f"[izolasyon-denetleyici] HATA ({state['n']} kez): {imza}")
+
+
 async def _isolation_supervisor():
     """Zamanı gelen kayıtlar için izole konteyner açar.
 
@@ -437,8 +467,10 @@ async def _isolation_supervisor():
             tur += 1
             if tur % 150 == 0:
                 broker.purge_finished()
-        except Exception:
-            pass
+        except Exception as e:
+            # Sessizce yutmak en kritik döngüde kör nokta demekti: devir
+            # mantığı bozulsa konteynerler asla çekilmez ve biz öğrenemezdik.
+            _supervisor_error(e, _supervisor_err_state)
         await asyncio.sleep(2)
 
 
@@ -700,6 +732,22 @@ async def start_registration(request: Request):
         hedef_epoch = RegistrationEngine._saat_to_epoch(session.kayit_saati)
     except Exception:
         hedef_epoch = None
+    # Hedef saat çoktan geçmişse başlatma.
+    # Uygulamada TARİH kavramı yok: "10:00:00" her zaman BUGÜNÜN 10:00'u.
+    # Gece kurulum yapan kullanıcının hedefi saatlerce geçmiş olur; motor bunu
+    # "hedef geçti, hemen başla" diye yorumlayıp boşuna ateşler, VAL02 alır ve
+    # kullanıcı "başlatıldı" mesajını gördükten sonra hiçbir şey olmaz.
+    # (Yarına ayarlamak zaten mümkün değil: OBS token'ı 6 saatlik.)
+    # Birkaç dakikalık gecikme denemeye değer, o yüzden küçük bir pay bırakılır.
+    if hedef_epoch is not None:
+        gecikme = time.time() - hedef_epoch
+        if gecikme > GECMIS_HEDEF_TOLERANSI:
+            raise HTTPException(
+                400,
+                f"Kayıt saati ({session.kayit_saati}) {gecikme/60:.0f} dakika önce "
+                f"geçmiş. Saati bugünün ilerisi için ayarlayıp tekrar dene.",
+            )
+
     if hedef_epoch is not None and expires_before(session.token, hedef_epoch):
         kalan = remaining_after_target(session.token, hedef_epoch)
         raise HTTPException(
@@ -793,8 +841,13 @@ async def reset_registration(request: Request):
     if session.engine:
         if session.engine.is_running and session.engine_thread and session.engine_thread.is_alive():
             session.engine.cancel()
-            # Thread'in bitmesi için kısa süre bekle
-            session.engine_thread.join(timeout=3)
+            # Thread'in bitmesini BEKLERKEN event loop'u bloke etme.
+            # İptal bayrağı kalibrasyon sırasında (7 saniyelik ağ çağrısı)
+            # kontrol edilmediği için join tam 3 saniye sürebilir; bu uç 409
+            # durumunda frontend tarafından OTOMATİK çağrılıyor, yani kayıt
+            # anında 3 saniyelik bir donma demek — nabızlar cevapsız kalır ve
+            # T-8s devir penceresi kaçabilir.
+            await asyncio.to_thread(session.engine_thread.join, 3)
         session.engine._running = False
         session.engine = None
     session.engine_thread = None
@@ -929,22 +982,33 @@ async def search_courses(request: Request, q: str = Query("", max_length=60)):
     return [_course_to_dict(c) for c in results]
 
 
+# CRN sorgusu bulunamayan bir CRN icin TUM bolumleri tarayabiliyor. Arama ile
+# ayni semafor kullanilir: es zamanli taramalar thread havuzunu tuketip
+# konteyner baslatmayi geciktirmemeli.
+
 @app.get("/api/crn-lookup/{crn}")
-async def lookup_crn(crn: str):
+@limiter.limit(LIMIT_SEARCH)
+async def lookup_crn(request: Request, crn: str):
     service = get_obs_service()
-    result = await asyncio.to_thread(service.lookup_crn, crn)
+    async with _search_semaphore():
+        result = await asyncio.to_thread(service.lookup_crn, crn)
     if result is None:
         raise HTTPException(404, f"CRN {crn} bulunamadı")
     return _course_to_dict(result)
 
 
 @app.post("/api/crn-lookup")
-async def lookup_crns_batch(body: dict):
+@limiter.limit(LIMIT_SEARCH)
+async def lookup_crns_batch(request: Request, body: dict):
     crns = body.get("crns", [])
     if not crns:
         raise HTTPException(400, "CRN listesi boş")
+    if not isinstance(crns, list) or len(crns) > MAX_LOOKUP_CRNS:
+        # Sınırsızdı: büyük bir liste servisi ve OBS'yi dövmenin en kolay yolu.
+        raise HTTPException(400, f"En fazla {MAX_LOOKUP_CRNS} CRN sorgulanabilir")
     service = get_obs_service()
-    results = await asyncio.to_thread(service.lookup_crns, crns)
+    async with _search_semaphore():
+        results = await asyncio.to_thread(service.lookup_crns, crns)
     return {crn: _course_to_dict(info) if info else None for crn, info in results.items()}
 
 

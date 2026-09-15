@@ -445,3 +445,75 @@ def test_overflow_does_not_raise():
     for i in range(EVENT_QUEUE_MAX * 2):
         eng._emit("countdown", {"remaining": i})  # exception atmamali
     assert eng._events.qsize() <= EVENT_QUEUE_MAX
+
+
+# ══════════════════════════════════════════════════════════════
+# Denemeler tükendiğinde sonuç "Bekliyor" kalmamalı
+# ══════════════════════════════════════════════════════════════
+#
+# 60 denemenin hepsi VAL02 alırsa (sistem hiç açılmadı) kod yalnızca
+# "Kalan: [...]" diye logluyordu; _crn_results güncellenmiyordu. Ders ekranda
+# "Bekliyor" olarak kalıyor ve öğrenci kayıt gününde dersi alıp almadığını
+# anlayamıyordu. Bitmiş bir kaydın her CRN'i NİHAİ bir durum göstermeli.
+
+
+def test_exhausted_attempts_mark_remaining_crns_failed():
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345", "67890"])
+    eng._prepare_fire()
+    assert eng._crn_results["12345"]["status"] == "pending"
+
+    eng._finalize_pending(["12345", "67890"])
+
+    for crn in ("12345", "67890"):
+        assert eng._crn_results[crn]["status"] == "error"
+        assert "Bekliyor" not in eng._crn_results[crn]["message"]
+
+
+def test_cancelled_registration_is_marked_cancelled_not_failed():
+    """İptal başarısızlık değildir; kullanıcı ikisini ayırt edebilmeli."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng._prepare_fire()
+    eng.cancel()
+    eng._finalize_pending(["12345"])
+    assert eng._crn_results["12345"]["status"] == "dropped"
+    assert "ptal" in eng._crn_results["12345"]["message"]
+
+
+def test_finalize_does_not_overwrite_a_decided_result():
+    """Alınmış bir ders 'başarısız' yazılmamalı."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng._prepare_fire()
+    eng._crn_results["12345"] = {"status": "success", "message": "Kayıt başarılı"}
+    eng._finalize_pending(["12345"])
+    assert eng._crn_results["12345"]["status"] == "success"
+
+
+def test_finalize_emits_the_update():
+    """Arayüz son durumu görmeli."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng._prepare_fire()
+    eng.get_events()
+    eng._finalize_pending(["12345"])
+    tipler = [e["type"] for e in eng.get_events()]
+    assert "crn_update" in tipler
+
+
+def test_done_payload_never_reports_pending_after_finish():
+    """Biten bir kaydın done yükünde 'Bekliyor' kalmamalı — hangi yoldan
+    bitmiş olursa olsun (iptal, denemeler tükenmesi, hata)."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345", "67890"])
+    eng._prepare_fire()
+    eng._crn_results["12345"] = {"status": "success", "message": "Kayıt başarılı"}
+    eng.cancel()
+    eng._finalize_all()
+    yuk = eng._done_payload()
+    durumlar = {c: r["status"] for c, r in yuk["results"].items()}
+    assert durumlar["12345"] == "success"     # karara bağlanmış korunur
+    assert durumlar["67890"] != "pending"     # kalan nihai duruma geçer
+
+
+def test_finalize_all_is_safe_when_nothing_prepared():
+    """Token geçersizse _prepare_fire hiç çalışmaz; patlamamalı."""
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng._finalize_all()
+    assert eng._done_payload()["results"] == {}

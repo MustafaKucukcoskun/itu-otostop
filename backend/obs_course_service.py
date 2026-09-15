@@ -110,7 +110,19 @@ class OBSCourseService:
     - Popüler bölümler öncelikli arama
     """
 
-    def __init__(self, cache_ttl: int = 3600, max_cache_depts: int = 50):
+    def __init__(self, cache_ttl: int = 3600, max_cache_depts: int = 200,
+                 negative_ttl: float = 900.0):
+        """
+        max_cache_depts: ITÜ'de 177 bölüm var. Bu sayı bölüm sayısından KÜÇÜK
+            olursa tam tarama kendini yer: tarama sırasında ilk bölümler
+            sonrakiler tarafından atılır ve bir sonraki arama her şeyi baştan
+            indirir. Eski değer 50'ydi; ölçüm bulunamayan her CRN sorgusunun
+            OBS'e ~127 istek attığını ve 12 saniye sürdüğünü gösterdi.
+
+        negative_ttl: Bulunamayan CRN'ler bu süre boyunca hatırlanır. Aksi
+            halde yanlış yazılmış tek bir CRN her sorguda 177 bölümü yeniden
+            taratır — kayıt gününde ders planı sayfası bunu açılışta yapıyor.
+        """
         self.session = requests.Session()
         self.session.headers.update({
             "Accept": "*/*",
@@ -125,6 +137,9 @@ class OBSCourseService:
         self._departments_ts: float = 0
         self._dept_cache: OrderedDict[int, tuple[list[CourseInfo], float]] = OrderedDict()
         self._crn_index: dict[str, CourseInfo] = {}
+        self.negative_ttl = negative_ttl
+        # Bulunamamış CRN'ler: crn -> arama zamanı
+        self._not_found: dict[str, float] = {}
 
     # ── Department List ──
 
@@ -282,11 +297,16 @@ class OBSCourseService:
         """Toplu CRN arama (batch — daha verimli)."""
         results: dict[str, Optional[CourseInfo]] = {}
         missing: list[str] = []
+        simdi = time.time()
 
         # Check cache first
         for crn in crns:
             if crn in self._crn_index:
                 results[crn] = self._crn_index[crn]
+            elif (simdi - self._not_found.get(crn, 0)) < self.negative_ttl:
+                # Yakın zamanda arandı ve bulunamadı — 177 bölümü yeniden
+                # taramanın anlamı yok.
+                results[crn] = None
             else:
                 missing.append(crn)
 
@@ -329,10 +349,13 @@ class OBSCourseService:
                     results[crn] = self._crn_index[crn]
                 remaining -= found
 
-        # Mark unfound
+        # Mark unfound — ve bir daha tüm bölümleri taramamak için hatırla
         for crn in missing:
-            if crn not in results:
+            if crn not in results or results[crn] is None:
                 results[crn] = None
+                self._not_found[crn] = simdi
+            else:
+                self._not_found.pop(crn, None)
 
         return results
 

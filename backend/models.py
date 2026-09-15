@@ -24,6 +24,26 @@ class ConfigRequest(BaseModel):
     ecrn_list: list[str] = Field(..., description="Eklenecek CRN listesi", max_length=20)
     scrn_list: list[str] = Field(default_factory=list, description="Silinecek CRN listesi", max_length=20)
     kayit_saati: str = Field(default="", pattern=r"^(\d{2}:\d{2}:\d{2})?$")
+
+    @field_validator("kayit_saati")
+    @classmethod
+    def validate_time_range(cls, v: str) -> str:
+        """Saati ARALIK olarak da doğrula, sadece biçim olarak değil.
+
+        Düzenli ifade "25:00:00" ve "12:70:00" gibi değerleri kabul ediyordu.
+        Motor bunları `datetime.replace(hour=25)` ile patlatır; hata run()'ın
+        dış except'ine düşer ve kullanıcı "Kayıt başlatıldı" mesajını aldıktan
+        sonra sessizce hiçbir şey olmaz. Kayıt gününde yanlış yazılan bir saat
+        sessiz ders kaybı demektir — burada durdurulmalı.
+        """
+        if not v:
+            return v
+        saat, dakika, saniye = (int(x) for x in v.split(":"))
+        if not (0 <= saat <= 23 and 0 <= dakika <= 59 and 0 <= saniye <= 59):
+            raise ValueError(
+                f"Geçersiz kayıt saati: {v} (00:00:00 - 23:59:59 aralığında olmalı)"
+            )
+        return v
     max_deneme: int = Field(default=60, ge=1, le=300)
     retry_aralik: float = Field(default=3.0, ge=3.0, le=10.0)
     dry_run: bool = Field(default=False, description="Test modu — gerçek kayıt yapmaz")
