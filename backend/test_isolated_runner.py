@@ -389,3 +389,65 @@ def test_restart_during_wait_still_fires(ortam):
     motor = SahteMotor()
     _kos(motor, target=ortam() + 100, beat_sonuclari=[None], saat=ortam, max_tur=1)
     assert motor.cancelled is False
+
+
+# ══════════════════════════════════════════════════════════════
+# Kayıt günü adli inceleme: ateşleme anı stdout'ta kalmalı
+# ══════════════════════════════════════════════════════════════
+#
+# 15 Eylül 14:00'daki ilk gerçek kayıttan sonra "istek tam olarak ne zaman
+# vardı" sorusu cevaplanamadı: motorun log satırları yalnızca olay kuyruğuna
+# gidiyordu, oradan WebSocket'e — ve oturum kapanınca kayboluyordu. Konteynerin
+# stdout'u ise Cloud Run'da kalıcı. Olayın KENDİ timestamp'i basılır, basılma
+# anı değil; aktarım 100ms kuantalı olduğu için ikisi karışırsa ölçüm bozulur.
+
+
+class _Kuyruk:
+    def __init__(self, olaylar):
+        self.olaylar = list(olaylar)
+
+    def empty(self):
+        return not self.olaylar
+
+
+class _MotorStub:
+    def __init__(self, olaylar):
+        self._events = _Kuyruk(olaylar)
+        self.is_running = False
+
+    def get_events(self):
+        o, self._events.olaylar = self._events.olaylar, []
+        return o
+
+
+class _OluThread:
+    def is_alive(self):
+        return False
+
+
+def _stream(olaylar, monkeypatch, capsys):
+    monkeypatch.setattr(ir, "_post", lambda *a, **k: SahteYanit(200))
+    monkeypatch.setattr(ir.time, "sleep", lambda s: None)
+    ir.stream_events(_MotorStub(olaylar), _OluThread())
+    return capsys.readouterr().out
+
+
+def test_fire_line_reaches_container_stdout(monkeypatch, capsys):
+    """Ateşleme satırı Cloud Run loglarında kalmalı — yoksa kanıt yok."""
+    cikti = _stream([{"type": "log", "data": {"message": "🚀 BAŞLIYOR! (hedef farkı: +1ms)"},
+                      "timestamp": 1789470000.001}], monkeypatch, capsys)
+    assert "BAŞLIYOR" in cikti
+
+
+def test_stdout_carries_the_events_own_timestamp(monkeypatch, capsys):
+    """Basılan an değil, OLAYIN anı. Aktarım 100ms kuantalı; karışırsa ölçüm bozulur."""
+    cikti = _stream([{"type": "log", "data": {"message": "🚀 BAŞLIYOR!"},
+                      "timestamp": 1789470000.001}], monkeypatch, capsys)
+    assert "1789470000.001" in cikti
+
+
+def test_countdown_events_are_not_printed(monkeypatch, capsys):
+    """Geri sayım 10 Hz akıyor; stdout'a basılırsa log gürültüden okunmaz olur."""
+    cikti = _stream([{"type": "countdown", "data": {"remaining": 5.0},
+                      "timestamp": 1789469995.0}], monkeypatch, capsys)
+    assert "1789469995" not in cikti
