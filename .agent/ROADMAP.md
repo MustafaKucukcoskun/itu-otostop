@@ -576,3 +576,83 @@ kalmış token'la 5 dakika sonrasına kayıt denendiğinde sistem
 2. Kayıt penceresinde **dağıtım yapma** — durum bellekte, yeni sürüm bekleyen
    bütün motorları öldürür.
 3. `/internal/diag` ile canlı durumu izle (anahtar: `X-Diag-Key`).
+
+---
+
+## Faz 13 — Satır Satır Kod Denetimi (2026-09-15)
+
+Beş katmanda denetim: kayıt yaşam döngüsü → izolasyon devri → kullanıcı edge
+case'leri → veri katmanı → gerçek veriyle kanıt. **Altı hata bulundu.**
+
+### 1. `/api/register/reset` event loop'u bloke ediyordu
+`engine_thread.join(timeout=3)` bir async handler içindeydi. İptal bayrağı
+kalibrasyon sırasında (7sn ağ çağrısı) kontrol edilmediği için tam 3 saniye
+bloke edebiliyordu — ve bu uç frontend tarafından OTOMATİK çağrılıyordu.
+→ `asyncio.to_thread`. Bekçi görevli test eklendi.
+
+### 2. Geçersiz kayıt saati modelden geçiyordu
+`\d{2}:\d{2}:\d{2}` düzenli ifadesi `25:00:00` ve `12:70:00`'ı kabul ediyor;
+motor `datetime.replace(hour=25)` ile patlıyor, hata dış except'e düşüyor ve
+kullanıcı "Kayıt başlatıldı" mesajını aldıktan sonra sessizce hiçbir şey
+olmuyordu. Kayıt gününde yanlış yazılan saat = sessiz ders kaybı.
+→ Aralık doğrulaması (00:00:00 - 23:59:59), uçtan uca 422.
+
+### 3. Geçmiş kayıt saatiyle başlatma
+Uygulamada tarih kavramı yok; "10:00" her zaman BUGÜNÜN 10:00'u. Gece kurulum
+yapan kullanıcının hedefi saatlerce geçmiş olur; motor "hedef geçti, hemen
+başla" diye ateşler, VAL02 alır, 60 kez boşuna dener.
+→ 120 saniyeden fazla geçmişse net mesajla 400. Birkaç saniye geç kalan
+   kullanıcı yine deneyebiliyor.
+
+### 4. Biten kayıtta dersler "Bekliyor" kalıyordu
+60 denemenin hepsi VAL02 alırsa kod sadece logluyordu; `_crn_results`
+güncellenmiyordu. Öğrenci kayıt gününde dersi alıp almadığını anlayamıyordu.
+→ `_finalize_all()` her çıkış yolunda çağrılıyor. İptal "dropped", tükenme
+   "error" olarak işaretleniyor; karara bağlanmış sonuçlara dokunulmuyor.
+
+### 5. ⚠️ EN ÖNEMLİSİ — ders önbelleği 50 bölüm, ITÜ'de 177 bölüm var
+`max_cache_depts=50`. Bulunamayan bir CRN tüm bölümleri taratır; tarama
+sırasında ilk 50 bölüm sonrakiler tarafından ATILIR ve bir sonraki sorgu her
+şeyi baştan indirir.
+
+**Ölçüldü (üretim):** her sorgu ~12 saniye ve OBS'e ~127 istek — aynı CRN
+tekrar sorulsa bile. Ders planı sayfası açılışta toplu sorgu yapıyor;
+40 kullanıcı = 5000+ istek, tam OBS'in sağlıklı olması gereken anda.
+
+→ Önbellek 200 bölüme çıkarıldı + bulunamayan CRN'ler için negatif önbellek
+  (15 dk). Uç hız sınırına ve arama semaforuna bağlandı, toplu sorgu 50 CRN
+  ile sınırlandı.
+
+**Kanıt (üretim, gerçek ölçüm):**
+
+| | Önce | Sonra |
+|---|---|---|
+| Olmayan CRN, ilk | ~12s | 17.5s (bir kez ısınma) |
+| Olmayan CRN, tekrar | ~12s | **0.1s** |
+| Başka olmayan CRN | ~12s | **0.2s** |
+| 500 CRN'lik liste | kabul | **400** |
+
+OBS'e giden istek: 5080 → ~177 (28 kat azalma).
+
+### 6. İkinci sekme çalışan kaydı sessizce öldürüyordu
+Frontend 409 alınca otomatik sıfırlayıp yeniden başlatıyordu. Ama sunucu
+409'u YALNIZCA motor thread'i gerçekten yaşıyorsa döndürüyor (ölü thread'in
+bayrağını kendi temizliyor). Yani otomatik sıfırlama, ikinci bir sekmeden
+gelen tıklamanın çalışan kaydı ve izole konteynerini öldürmesi demekti.
+→ Otomatik sıfırlama kaldırıldı; kullanıcıya açık mesaj veriliyor.
+
+### Ayrıca: denetleyici hataları görünür hale getirildi
+`_isolation_supervisor` tüm döngüyü `except Exception: pass` ile sarıyordu —
+devir mantığı bozulsa asla öğrenemezdik. Kısıtlı loglama eklendi (yeni hata
+hemen, tekrarlayan hata dakikada bir).
+
+### Denetlenen ve TEMİZ çıkan yerler
+- Zamanlama formülünün işareti (türetilerek doğrulandı)
+- `/api/test-token` ve `/api/calibrate` (ikisi de `asyncio.to_thread`)
+- `/api/config` çalışan kaydı etkilemiyor (motor kendi kopyasını tutuyor)
+- WebSocket try/except/finally ve istemci temizliği
+- Kalibrasyon örnek havuzları (ikisi de 20 ile sınırlı)
+- Konteyner koşucusunun tüm çıkış yolları
+- `_kayit_yap` yeniden deneme mantığı ve OBS hata kodu işleme
+
+236 test geçiyor.

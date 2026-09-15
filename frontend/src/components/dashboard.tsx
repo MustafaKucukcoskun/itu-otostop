@@ -499,14 +499,22 @@ function DashboardContent() {
       try {
         await api.startRegistration();
       } catch (err) {
-        // 409 = stuck engine — auto-reset and retry once
+        // 409 = ZATEN ÇALIŞAN bir kayıt var. Burada otomatik sıfırlamak
+        // tehlikeliydi: sunucu 409'u yalnızca motor thread'i GERÇEKTEN
+        // yaşıyorsa döndürüyor (ölü thread'in bayrağını kendisi temizleyip
+        // devam ediyor). Yani otomatik sıfırlama, ikinci bir sekmeden gelen
+        // tıklamanın çalışan bir kaydı ve onun izole konteynerini sessizce
+        // öldürmesi demekti. Kullanıcıya söyle, kararı ona bırak.
         if (err instanceof Error && err.message.includes("zaten çalışıyor")) {
-          toast.info("Önceki oturum temizleniyor...");
-          await api.resetRegistration();
-          await api.startRegistration();
-        } else {
-          throw err;
+          toast.warning(
+            "Bu hesapta zaten çalışan bir kayıt var (başka bir sekmede " +
+              "açık olabilir). Yeniden başlatmak istiyorsan önce 'Yeni Kayıt' " +
+              "ile sıfırla.",
+            { duration: 10000 },
+          );
+          return;
         }
+        throw err;
       }
       toast.success(
         dryRun ? "DRY RUN başlatıldı" : "Kayıt süreci başlatıldı",

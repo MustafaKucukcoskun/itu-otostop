@@ -158,3 +158,48 @@ async def test_concurrent_searches_are_bounded(monkeypatch):
             c.get(f"/api/search-courses?q=sorgu{i}") for i in range(12)
         ])
     assert ayni_anda["en_yuksek"] <= main.SEARCH_CONCURRENCY, ayni_anda
+
+
+@pytest.mark.asyncio
+async def test_reset_does_not_stall_the_event_loop():
+    """/api/register/reset motor thread'ini SENKRON bekliyordu.
+
+    `engine_thread.join(timeout=3)` bir async handler içindeydi. İptal
+    bayrağı kalibrasyon sırasında (7 saniyelik ağ çağrısı) kontrol
+    edilmediği için join tam 3 saniye bloke edebiliyordu — ve reset,
+    frontend tarafından 409 durumunda OTOMATİK çağrılıyor. Kayıt anında
+    3 saniyelik bir donma; nabızlar cevapsız kalır, devir penceresi kaçabilir.
+    """
+    import threading
+    from engine import RegistrationEngine
+
+    sid = "77777777-7777-4777-8777-777777777777"
+    session = main.SessionState(token="t.o.k", ecrn_list=["12345"])
+    eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
+    eng._running = True
+
+    dur = threading.Event()
+
+    def yavas_motor():
+        dur.wait(1.5)          # iptal bayrağına geç tepki veren motoru taklit eder
+        eng._running = False
+
+    th = threading.Thread(target=yavas_motor, daemon=True)
+    th.start()
+    session.engine = eng
+    session.engine_thread = th
+    main.sessions[sid] = session
+
+    bekci = LoopBekcisi().basla()
+    await asyncio.sleep(0.05)
+    try:
+        transport = ASGITransport(app=main.app)
+        async with AsyncClient(transport=transport, base_url="http://t") as c:
+            r = await c.post("/api/register/reset", headers={"X-Session-ID": sid})
+        assert r.status_code == 200
+        durma = await bekci.bitir()
+        assert durma < 0.5, f"event loop {durma*1000:.0f}ms durdu — join handler içinde"
+    finally:
+        dur.set()
+        main.sessions.pop(sid, None)
+        main.broker.release(sid)

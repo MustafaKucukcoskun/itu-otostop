@@ -414,3 +414,92 @@ def test_start_not_blocked_when_exp_unreadable(client):
             s.engine.cancel()
         main.sessions.pop(sid, None)
         main.broker.release(sid)
+
+
+# ══════════════════════════════════════════════════════════════
+# Geçmiş kayıt saati
+# ══════════════════════════════════════════════════════════════
+#
+# Uygulamada tarih kavramı yok; "10:00:00" her zaman BUGÜNÜN 10:00'u demek.
+# Gece 23:00'te yarın için kurulum yapan kullanıcının hedefi 13 saat GEÇMİŞ
+# olur. Motor bunu "hedef geçti, hemen başla" diye yorumlayıp ateşler, VAL02
+# alır ve 60 kez boşuna dener. Kullanıcı "başlatıldı" mesajı görür ama hiçbir
+# şey olmaz. (Yarına ayarlamak zaten imkânsız: OBS token'ı 6 saatlik.)
+
+
+def _gecmis_oturum(sid, saniye_once):
+    import datetime, zoneinfo, base64, json, time
+    t = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Istanbul")) - \
+        datetime.timedelta(seconds=saniye_once)
+    def b64(o):
+        return base64.urlsafe_b64encode(json.dumps(o).encode()).decode().rstrip("=")
+    token = b64({"alg": "HS256"}) + "." + b64({"exp": int(time.time()) + 7200}) + ".imza"
+    s = main.SessionState(token=token, ecrn_list=["12345"],
+                          kayit_saati=t.strftime("%H:%M:%S"))
+    main.sessions[sid] = s
+    return s
+
+
+def test_start_refused_for_a_long_past_target(client):
+    """Saatlerce geçmiş hedefle başlatmak boşuna ateşleme demek."""
+    sid = "aaaa1111-1111-4111-8111-aaaa11111111"
+    _gecmis_oturum(sid, 3 * 3600)
+    try:
+        r = client.post("/api/register/start", headers={"X-Session-ID": sid})
+        assert r.status_code == 400
+        assert "geç" in r.json()["detail"].lower()
+    finally:
+        main.sessions.pop(sid, None); main.broker.release(sid)
+
+
+def test_just_missed_target_is_still_allowed(client):
+    """Kullanıcı birkaç saniye geç kaldıysa denemeye değer — engelleme."""
+    sid = "bbbb2222-2222-4222-8222-bbbb22222222"
+    _gecmis_oturum(sid, 30)
+    try:
+        r = client.post("/api/register/start", headers={"X-Session-ID": sid})
+        assert r.status_code != 400
+    finally:
+        s = main.sessions.get(sid)
+        if s and s.engine:
+            s.engine.cancel()
+        main.sessions.pop(sid, None); main.broker.release(sid)
+
+
+def test_future_target_unaffected(client):
+    """Normal akış bozulmamalı."""
+    sid = "cccc3333-3333-4333-8333-cccc33333333"
+    _gecmis_oturum(sid, -600)  # 10 dakika SONRA
+    try:
+        r = client.post("/api/register/start", headers={"X-Session-ID": sid})
+        assert r.status_code != 400
+    finally:
+        s = main.sessions.get(sid)
+        if s and s.engine:
+            s.engine.cancel()
+        main.sessions.pop(sid, None); main.broker.release(sid)
+
+
+# ══════════════════════════════════════════════════════════════
+# CRN sorgu ucu sınırları
+# ══════════════════════════════════════════════════════════════
+
+
+def test_batch_lookup_rejects_oversized_list(client):
+    """Toplu sorgu sınırsızdı. Bulunamayan her CRN 177 bölümü taratıyor;
+    büyük bir liste servisi ve OBS'yi dövmenin en kolay yolu."""
+    r = client.post("/api/crn-lookup", json={"crns": [f"{i:05d}" for i in range(500)]})
+    assert r.status_code == 400
+
+
+def test_batch_lookup_accepts_normal_list(client, monkeypatch):
+    class Servis:
+        def lookup_crns(self, crns):
+            return {c: None for c in crns}
+    monkeypatch.setattr(main, "get_obs_service", lambda: Servis())
+    r = client.post("/api/crn-lookup", json={"crns": ["12345", "67890"]})
+    assert r.status_code == 200
+
+
+def test_batch_lookup_rejects_empty(client):
+    assert client.post("/api/crn-lookup", json={"crns": []}).status_code == 400
