@@ -57,8 +57,16 @@ def _kos(engine, target, beat_sonuclari, saat, tik=2.0, max_tur=60):
 
     stop = threading.Event()
     stop.wait = sahte_wait  # type: ignore[method-assign]
+    # ir.beat modül düzeyinde değiştiriliyor; GERİ KONMASI şart. Konmadığında
+    # bu helper'ı çağıran her testten SONRAKİ testler sahte beat'i görüyordu ve
+    # gerçek beat()'i sınayan testler sessizce kör kalıyordu (pytest-randomly
+    # sırayı karıştırdığı için sonuç tohuma bağlıydı).
+    onceki_beat = ir.beat
     ir.beat = sahte_beat  # type: ignore[assignment]
-    ir.heartbeat_loop(engine, target, stop)
+    try:
+        ir.heartbeat_loop(engine, target, stop)
+    finally:
+        ir.beat = onceki_beat  # type: ignore[assignment]
     return tur["n"]
 
 
@@ -359,3 +367,25 @@ def test_discard_is_safe_on_an_empty_queue():
     m = KuyrukluMotor()
     m.olaylar = []
     ir.hazirlik_loglarini_at(m)   # patlamamali
+
+
+# ══════════════════════════════════════════════════════════════
+# Yeniden başlamış servis: "bilmiyorum" (503) çekilme sebebi DEĞİL
+# ══════════════════════════════════════════════════════════════
+#
+# Bu iki testin koruduğu sözleşme main.py ile paylaşılıyor: ana servis
+# amnezi penceresinde 403 değil 503 döner (bkz. main._bilet_reddi).
+# Taraflardan biri değişirse konteyner yine intihar eder.
+
+
+def test_restarted_service_does_not_look_like_a_reset(monkeypatch):
+    """503 = 'hatırlamıyorum'. Söz bozulmamalı, nabız belirsiz sayılmalı."""
+    monkeypatch.setattr(ir, "_post", lambda *a, **k: SahteYanit(503))
+    assert ir.beat() is None          # REDDEDILDI değil
+
+
+def test_restart_during_wait_still_fires(ortam):
+    """Kayıt beklerken servis yeniden başladı: konteyner ateşlemeye devam eder."""
+    motor = SahteMotor()
+    _kos(motor, target=ortam() + 100, beat_sonuclari=[None], saat=ortam, max_tur=1)
+    assert motor.cancelled is False

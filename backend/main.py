@@ -105,6 +105,44 @@ broker = IsolationBroker(
 # Konteyner gelmediğinde kullanıcıyı bir kez uyar (her turda değil)
 _fallback_notified: set[str] = set()
 
+# Servisin bu sürecinin başlangıç anı.
+#
+# CANLI OLAYDAN ÇIKTI (15 Eylül 05:49): kayıt beklerken yeni bir revizyon
+# yayına girdi, bellekteki broker sıfırlandı ve çalışan konteynerin nabzı 403
+# aldı ("kayıt tanınmıyor"). Konteyner bunu KESİN ret sayıp kendini durdurdu.
+# O sefer eski instance hayatta kaldığı için yerel motor ateşledi; tamamen
+# kapansaydı kimse ateşlemeyecekti.
+#
+# Yeni başlamış bir servis hiçbir şey hatırlamıyor, dolayısıyla bilmediği bir
+# bileti "silinmiş" SAYAMAZ. Bu pencerede bilinmeyen bilete 503 ("bilmiyorum")
+# döner; konteyner bunu ulaşılamama gibi ele alır ve sözünü tutar.
+#
+# Bedeli: bu pencerede yapılan bir SIFIRLAMA konteynere ulaşmayabilir.
+# İptal etkilenmez (kayıt silinmez, bayrak konur). Hiç ateşlememek,
+# istenmeyen bir kayıttan kötüdür.
+_STARTED_AT = time.time()
+COLD_START_GRACE = float(os.getenv("ISOLATION_COLD_START_GRACE", "1800"))
+
+
+def _amnezi_penceresinde(session_id: str) -> bool:
+    """Bu bilet hakkında gerçekten HİÇBİR ŞEY bilmiyor muyuz?
+
+    Kaydı tanıyorsak ya da sildiğimizi hatırlıyorsak cevap kesindir;
+    amnezi yalnızca süreç yeni başladığında ve hiçbir izi olmadığında olur.
+    """
+    if broker.target_of(session_id) is not None:
+        return False            # kaydı tanıyoruz — amnezi yok
+    if broker.deliberately_released(session_id):
+        return False            # sildiğimizi hatırlıyoruz — cevap kesin
+    return (time.time() - _STARTED_AT) < COLD_START_GRACE
+
+
+def _bilet_reddi(session_id: str) -> HTTPException:
+    if _amnezi_penceresinde(session_id):
+        return HTTPException(503, "Servis yeniden başladı — kayıt durumu bilinmiyor")
+    return HTTPException(403, "Geçersiz bilet")
+
+
 # Teşhis ucu anahtarı. Boşsa uç tamamen kapalı: kimin kayıt yaptığı bilgisi
 # herkese açık olmamalı. Kayıt günü "ne oluyor" sorusunu cevaplamak için var.
 ISOLATION_DIAG_KEY = os.getenv("ISOLATION_DIAG_KEY", "").strip()
@@ -484,7 +522,7 @@ async def internal_config(payload: dict):
     aktarılır; Cloud Run çalıştırma kaydına hiç yazılmaz."""
     sid = str(payload.get("session_id", ""))
     if not broker.verify_ticket(sid, str(payload.get("ticket", ""))):
-        raise HTTPException(403, "Geçersiz bilet")
+        raise _bilet_reddi(sid)
     session = sessions.get(sid)
     if not session:
         raise HTTPException(404, "Oturum bulunamadı")
@@ -515,6 +553,10 @@ async def internal_claim(payload: dict):
     Tek ateşleyici garantisi buradadır: broker sahipliği yalnızca bir kez verir.
     """
     sid = str(payload.get("session_id", ""))
+    if _amnezi_penceresinde(sid):
+        # Yeni başlamış servis "hayır" diyemez: konteyner bunu kesin ret sayıp
+        # çekilir ve yeniden başlatma sonrası kimse ateşlemez.
+        raise HTTPException(503, "Servis yeniden başladı — kayıt durumu bilinmiyor")
     granted = broker.claim_remote(sid, str(payload.get("ticket", "")))
     if granted:
         # Yerel motor BURADA çekilmez. Çekilseydi ve konteyner sonra ölseydi
@@ -545,7 +587,7 @@ async def internal_heartbeat(payload: dict):
     sid = str(payload.get("session_id", ""))
     status = broker.heartbeat(sid, str(payload.get("ticket", "")))
     if status is None:
-        raise HTTPException(403, "Geçersiz bilet")
+        raise _bilet_reddi(sid)
     return status
 
 
@@ -573,7 +615,7 @@ async def internal_events(payload: dict):
     """Konteynerdeki motorun olaylarını kullanıcının WebSocket'ine aktarır."""
     sid = str(payload.get("session_id", ""))
     if not broker.verify_ticket(sid, str(payload.get("ticket", ""))):
-        raise HTTPException(403, "Geçersiz bilet")
+        raise _bilet_reddi(sid)
     events = payload.get("events") or []
     if not isinstance(events, list):
         raise HTTPException(400, "events listesi bekleniyor")
