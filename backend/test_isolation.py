@@ -26,7 +26,7 @@ class FakeClock:
 @pytest.fixture
 def broker():
     clock = FakeClock()
-    b = IsolationBroker(lead=900.0, ready_deadline=120.0, clock=clock)
+    b = IsolationBroker(lead=900.0, min_claim_margin=20.0, clock=clock)
     b.clock = clock  # testin saati ilerletebilmesi için
     return b
 
@@ -115,10 +115,13 @@ def test_past_target_is_due_immediately(broker):
 
 
 def test_fallback_due_when_remote_never_claims(broker):
-    """Konteyner kalkmazsa ana servis son anda devralır — kullanıcı ders kaybetmez."""
+    """Konteyner hiç sahiplenmezse kullanıcı bilgilendirilir — ama ancak
+    sahiplenme İMKÂNSIZ hale geldiğinde (min_claim_margin)."""
     broker.register("s1", target_epoch=broker.clock() + 800)
     broker.mark_launched("s1")
-    broker.clock.advance(700)  # hedefe 100s kaldı, eşik 120s
+    broker.clock.advance(700)          # hedefe 100s — hâlâ yetişebilir
+    assert broker.fallback_due() == []
+    broker.clock.advance(85)           # hedefe 15s — artık sahiplenemez
     assert broker.fallback_due() == ["s1"]
 
 
@@ -138,19 +141,26 @@ def test_fallback_not_due_when_remote_claimed(broker):
 
 
 def test_fallback_due_even_if_launch_never_happened(broker):
-    """Başlatma isteği hiç gitmediyse de yedek devralmalı.
+    """Başlatma isteği hiç gitmediyse de kullanıcı bilgilendirilmeli.
 
-    Aksi halde (Run API hatası, geç kayıt) kullanıcı hiç ateşlenmez. Sahiplik
-    yoksa ve süre doldusa, sebebi ne olursa olsun ana servis üstlenir.
+    Aksi halde (Run API hatası) kullanıcı izolasyonsuz kaldığını bilmez.
+    Yerel motor zaten ateşleyecek; bu yalnızca bir bilgilendirmedir.
     """
     broker.register("s1", target_epoch=broker.clock() + 800)
-    broker.clock.advance(700)
+    broker.clock.advance(785)          # hedefe 15s
     assert broker.fallback_due() == ["s1"]
 
 
-def test_late_registration_falls_back_immediately(broker):
-    """Kullanıcı T-60s'de başlatırsa konteyner yetişemez (~70s provisioning)."""
+def test_late_registration_is_not_warned_prematurely(broker):
+    """T-60s'de başlatan kullanıcıya HEMEN 'yetişmedi' denmemeli.
+
+    Ölçüm: konteyner ~45 saniyede hazır oluyor, yani T-60s'de başlayan bir
+    kayıt hâlâ sahiplenebilir. Canlı testte bu uyarı başlattıktan 1 saniye
+    sonra çıkıyordu ve 19 saniye sonra konteyner zaten sahiplenmişti.
+    """
     broker.register("s1", target_epoch=broker.clock() + 60)
+    assert broker.fallback_due() == []
+    broker.clock.advance(45)           # hedefe 15s — artık gerçekten yetişemez
     assert broker.fallback_due() == ["s1"]
 
 
@@ -481,3 +491,32 @@ def test_rate_limit_error_is_retried_generously(broker):
     for _ in range(MAX_LAUNCH_ATTEMPTS - 1):
         broker.mark_launched("s1")
         assert broker.launch_failed("s1", "429 Too Many Requests") is True
+
+
+# ── "Konteyner yetişmedi" uyarısı erken çıkmamalı ──
+# Canlı testte kullanıcı T-61s'de başlattı ve uyarıyı 1 SANİYE sonra gördü;
+# 19 saniye sonra konteyner zaten sahiplendi. Eşik 120 saniyeydi ama
+# sahiplenme T-20s'ye kadar mümkün. Uyarı, hâlâ ümit varken korkutuyordu.
+
+
+def test_fallback_warning_not_issued_while_claiming_is_still_possible(broker):
+    b = IsolationBroker(clock=broker.clock, min_claim_margin=20.0)
+    b.clock = broker.clock
+    b.register("s1", target_epoch=b.clock() + 61)   # kullanıcının senaryosu
+    assert b.fallback_due() == []
+
+
+def test_fallback_warning_issued_once_claiming_is_impossible(broker):
+    b = IsolationBroker(clock=broker.clock, min_claim_margin=20.0)
+    b.clock = broker.clock
+    b.register("s1", target_epoch=b.clock() + 15)   # 20s'nin altı
+    assert b.fallback_due() == ["s1"]
+
+
+def test_fallback_warning_not_issued_after_a_claim(broker):
+    b = IsolationBroker(clock=broker.clock, min_claim_margin=20.0)
+    b.clock = broker.clock
+    t = b.register("s1", target_epoch=b.clock() + 61)
+    b.claim_remote("s1", t)
+    b.clock.advance(50)   # hedefe 11s
+    assert b.fallback_due() == []

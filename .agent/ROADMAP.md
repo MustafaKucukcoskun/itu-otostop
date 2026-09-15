@@ -656,3 +656,43 @@ hemen, tekrarlayan hata dakikada bir).
 - `_kayit_yap` yeniden deneme mantığı ve OBS hata kodu işleme
 
 236 test geçiyor.
+
+---
+
+## Faz 14 — Canlı Dry-Run Analizi (2026-09-15)
+
+Kullanıcı gerçek token'la, gerçek arayüzden dry-run yaptı. Log iki hata
+gösterdi; ikisi de yalnızca canlı koşuda görülebilirdi.
+
+### Ateşleme sonucu — hedef tam tutturuldu
+```
+🚀 BAŞLIYOR! (hedef farkı: -0ms, tetik farkı: +0ms)
+🎯 Sunucu perspektifi: gönderim +1ms, varış +27ms
+✅ MÜKEMMEL — Hedef pencere içinde! (+27ms) [0-50ms]
+```
+Kalibrasyon: jitter 0.1ms, buffer 12.1ms, havuz 3 ölçüm.
+Koruma beklendiği gibi çalıştı: formül hedeften 9ms önce ateşlemek istedi,
+alt sınır hedef+1ms'ye çekti (analizle birebir aynı).
+NTP/Date çapraz doğrulaması doğru: Date 791ms saptı (1sn granülarite),
+motor NTP'yi kullandı ve farkı "beklenen" diye işaretledi.
+
+### HATA 1 — "İzole konteyner yetişmedi" uyarısı erken çıkıyordu
+```
+05:42:59  başlat
+05:43:00  ⚠️ İzole konteyner yetişmedi     <-- 1 saniye sonra!
+05:43:19  ✅ İzole konteyner kaydı üstlendi  <-- zaten yetişti
+```
+`fallback_due` eşiği 120 saniyeydi; kullanıcı T-61s'de başlatınca hemen
+tetiklendi. Ama sahiplenme T-20s'ye (min_claim_margin) kadar mümkün.
+Uyarı, hâlâ ümit varken kullanıcıyı korkutuyordu.
+→ Eşik `min_claim_margin`'e bağlandı; uyarı ancak sahiplenme gerçekten
+  imkânsızken çıkıyor. `ISOLATION_READY_DEADLINE` kaldırıldı.
+
+### HATA 2 — Konteynerin hazırlık logları sırasız akıyordu
+Konteyner açılışta kalibre olurken motorun kuyruğuna onlarca olay yazıyor,
+ama olay akışı ancak sahiplenmeden SONRA başlıyor. Canlı logda
+"kaydı üstlendi" satırından sonra 8 saniye öncesine ait satırlar geliyordu.
+→ Sahiplenmeden önce kuyruk atılıyor. Kullanıcı zaten tek satırlık özeti
+  alıyor; detay konteynerin kendi Cloud Run logunda duruyor.
+
+241 test geçiyor.

@@ -36,8 +36,10 @@ from typing import Callable, Optional
 # kalibrasyon 7s + ısınma 1s. 900s bunun 10 katından fazla pay bırakır.
 DEFAULT_LEAD = 900.0
 
-# Konteyner bu süre kala hâlâ sahiplenmediyse kullanıcı bilgilendirilir.
-DEFAULT_READY_DEADLINE = 120.0
+# (Eskiden ayrı bir "hazır olma" eşiği vardı: 120 saniye. Uyarı sahiplenme
+# HÂLÂ MÜMKÜNKEN çıkıyordu — canlı testte kullanıcı T-61s'de başlattı, uyarıyı
+# 1 saniye sonra gördü ve 19 saniye sonra konteyner zaten sahiplendi. Artık
+# eşik min_claim_margin: uyarı ancak sahiplenme imkânsızlaştığında çıkar.)
 
 # Hedefe bundan az kalmışsa sahiplenme reddedilir. Geç kalkan bir konteyner,
 # yerel motor ateşleme hazırlığına girmişken devralmamalı.
@@ -76,7 +78,6 @@ class _Entry:
 @dataclass
 class IsolationBroker:
     lead: float = DEFAULT_LEAD
-    ready_deadline: float = DEFAULT_READY_DEADLINE
     min_claim_margin: float = DEFAULT_MIN_CLAIM_MARGIN
     handover_window: float = DEFAULT_HANDOVER_WINDOW
     heartbeat_max_age: float = DEFAULT_HEARTBEAT_MAX_AGE
@@ -290,11 +291,15 @@ class IsolationBroker:
             return True
 
     def fallback_due(self) -> list[str]:
-        """Konteyner yetişmedi — kullanıcıyı bilgilendirmek için.
+        """Konteyner artık YETİŞEMEZ — kullanıcıyı bilgilendirmek için.
+
+        Eşik `min_claim_margin`: sahiplenmenin reddedilmeye başladığı an.
+        Daha erken uyarmak yanlıştı; konteyner hâlâ yetişebilecekken
+        "yetişmedi" demek kullanıcıyı boş yere korkutuyordu.
 
         `launched` bayrağına BAKILMAZ: başlatma isteği hiç gitmemiş olsa da
-        (Run API hatası, geç kayıt) sahibi yoksa ve süre dolduysa yerel motor
-        ateşleyecektir. Kullanıcının hiç ateşlenmemesi, geç ateşlenmesinden kötüdür.
+        (Run API hatası, geç kayıt) sahibi yoksa yerel motor ateşleyecektir.
+        Kullanıcının hiç ateşlenmemesi, geç ateşlenmesinden kötüdür.
         """
         now = self.clock()
         with self._lock:
@@ -303,7 +308,7 @@ class IsolationBroker:
                 for e in self._entries.values()
                 if e.owner is None
                 and not e.cancelled
-                and (e.target_epoch - now) <= self.ready_deadline
+                and (e.target_epoch - now) <= self.min_claim_margin
             ]
 
     def purge_finished(self, older_than: float = 3600.0) -> list[str]:
