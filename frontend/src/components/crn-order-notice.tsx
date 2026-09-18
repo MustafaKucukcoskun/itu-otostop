@@ -81,14 +81,14 @@ export function CrnOrderNotice() {
 
         <div className="space-y-3 px-4 py-5">
           <p className="text-base leading-snug font-semibold">
-            En çok kapışılan dersi CRN listesinin{" "}
+            En az kontenjana sahip dersi CRN listesinin{" "}
             <span className="text-primary">en başına</span> yaz.
           </p>
 
           <DialogDescription className="text-sm leading-relaxed">
             OBS listeyi sırayla işliyor; sondaki ders saniyeler sonra
-            değerlendiriliyor ve o arada kontenjan bitebiliyor. Listende
-            olmayan bir CRN varsa sil.
+            değerlendiriliyor ve o arada kontenjan bitebiliyor. En önemli dersi
+            en başa koy.
           </DialogDescription>
         </div>
 
