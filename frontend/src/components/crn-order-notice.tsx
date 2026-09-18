@@ -79,30 +79,17 @@ export function CrnOrderNotice() {
           </DialogTitle>
         </div>
 
-        <div className="space-y-4 px-4 py-5">
+        <div className="space-y-3 px-4 py-5">
           <p className="text-base leading-snug font-semibold">
             En çok kapışılan dersi CRN listesinin{" "}
             <span className="text-primary">en başına</span> yaz.
           </p>
 
           <DialogDescription className="text-sm leading-relaxed">
-            OBS listeni sırayla işliyor ve yoğun saatlerde her CRN için ayrı
-            zaman harcıyor. Listenin sonundaki ders, isteğin ulaştıktan
-            saniyeler sonra değerlendiriliyor — o arada kontenjan bitebiliyor.
+            OBS listeyi sırayla işliyor; sondaki ders saniyeler sonra
+            değerlendiriliyor ve o arada kontenjan bitebiliyor. Listende
+            olmayan bir CRN varsa sil.
           </DialogDescription>
-
-          <div className="border-l-2 border-primary bg-accent/40 px-3 py-2.5">
-            <p className="font-mono text-[11px] leading-relaxed text-muted-foreground">
-              17 Eylül ölçümü: 5 CRN → 845ms, 11 CRN → 10sn+.
-              <br />O gün kontenjana takılan derslerin{" "}
-              <span className="text-foreground">hepsi listenin sonundaydı.</span>
-            </p>
-          </div>
-
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Ayrıca listende <span className="text-foreground">olmayan bir CRN
-            varsa sil</span> — o da sırada yer tutuyor ve işlenme süresi harcıyor.
-          </p>
         </div>
 
         <div className="border-t px-4 py-3">
@@ -110,7 +97,7 @@ export function CrnOrderNotice() {
             onClick={onayla}
             className="h-9 w-full rounded-none font-mono text-[11px] tracking-widest uppercase"
           >
-            Okudum, listemi sıraladım
+            Okudum
           </Button>
         </div>
       </DialogContent>
