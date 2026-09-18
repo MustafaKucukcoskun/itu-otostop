@@ -11,6 +11,7 @@ açılışta toplu sorgu yapıyor; 40 kullanıcı binlerce isteğe dönüşür.
 
 import time
 
+import obs_course_service as ocs
 from obs_course_service import OBSCourseService, CourseInfo
 
 
@@ -36,7 +37,7 @@ class SahteServis(OBSCourseService):
         now = time.time()
         if brans_kodu_id in self._dept_cache:
             kurslar, ts = self._dept_cache[brans_kodu_id]
-            if (now - ts) < self.cache_ttl:
+            if (now - ts) < self.course_ttl:
                 self._dept_cache.move_to_end(brans_kodu_id)
                 return kurslar
         self.indirilen += 1
@@ -102,3 +103,84 @@ def test_negative_cache_prevents_the_rescan_while_fresh():
     ilk = s.indirilen
     s.lookup_crns(["99999"])
     assert s.indirilen == ilk
+
+
+# ══════════════════════════════════════════════════════════════
+# Kontenjan bayatlamamalı — ders TTL'i bölüm TTL'inden ayrı
+# ══════════════════════════════════════════════════════════════
+#
+# CANLI OLAY (18 Eylül 09:46): DEN 405E (CRN 12002) uygulamada 85/85 "DOLU"
+# görünüyordu. Aynı anda OBS'ten önbelleksiz çekilen taze veri 100/85 dedi —
+# kontenjan 85'ten 100'e ÇIKARILMIŞTI, 15 boş yer vardı. Öğrenci, yeri olan
+# bir dersi dolu sanıp vazgeçiyordu.
+#
+# Sebep tek bir cache_ttl=3600'ün iki farklı şeyi birden yönetmesiydi:
+#   bölüm listesi  → dönem içinde neredeyse hiç değişmez, 1 saat iyi
+#   ders/kontenjan → kayıt gününde dakikalar içinde değişir, 1 saat felaket
+
+
+class _SahteYanit:
+    def __init__(self, govde):
+        self._govde = govde
+        self.text = govde if isinstance(govde, str) else ""
+        self.status_code = 200
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._govde
+
+
+def _servis(monkeypatch, sayac):
+    svc = ocs.OBSCourseService()
+
+    def sahte_get(url, **kw):
+        sayac.append(url)
+        if url == ocs.DEPARTMENTS_URL:
+            return _SahteYanit([{"bransKoduId": 10, "dersBransKodu": "DEN"}])
+        return _SahteYanit("<table></table>")
+
+    monkeypatch.setattr(svc.session, "get", sahte_get)
+    return svc
+
+
+def test_course_data_is_refetched_once_it_goes_stale(monkeypatch):
+    """Asıl hata: kontenjan bir saat boyunca donuyordu."""
+    cagrilar = []
+    svc = _servis(monkeypatch, cagrilar)
+    svc.get_courses(10)
+    n = len(cagrilar)
+    # Ders verisini ders TTL'inden eski yap
+    kurslar, ts = svc._dept_cache[10]
+    svc._dept_cache[10] = (kurslar, ts - svc.course_ttl - 1)
+    svc.get_courses(10)
+    assert len(cagrilar) > n, "ders verisi bayatladığı hâlde yenilenmedi"
+
+
+def test_fresh_course_data_is_served_from_cache(monkeypatch):
+    """Önbellek yine de işini yapmalı — her istekte OBS'e gidilmemeli."""
+    cagrilar = []
+    svc = _servis(monkeypatch, cagrilar)
+    svc.get_courses(10)
+    n = len(cagrilar)
+    svc.get_courses(10)
+    assert len(cagrilar) == n
+
+
+def test_course_ttl_is_far_shorter_than_department_ttl(monkeypatch):
+    """İkisi ayrı olmalı: bölüm listesini 5 dakikada bir çekmek boşuna yük."""
+    svc = ocs.OBSCourseService()
+    assert svc.course_ttl <= 600
+    assert svc.cache_ttl >= svc.course_ttl * 4
+
+
+def test_department_list_is_not_refetched_at_the_course_rate(monkeypatch):
+    """Bölüm listesi ders TTL'i geçtiğinde yenilenmemeli."""
+    cagrilar = []
+    svc = _servis(monkeypatch, cagrilar)
+    svc.get_departments()
+    n = len(cagrilar)
+    svc._departments_ts -= svc.course_ttl + 1     # ders TTL'i geçti, bölüm TTL'i geçmedi
+    svc.get_departments()
+    assert len(cagrilar) == n, "bölüm listesi gereksiz yere yeniden çekildi"
