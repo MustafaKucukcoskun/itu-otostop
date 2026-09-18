@@ -7,6 +7,7 @@ import { Clock, Pencil } from "lucide-react";
 // Common ITU registration times
 const QUICK_TIMES = [
   { label: "10:00", value: "10:00:00" },
+  { label: "12:00", value: "12:00:00" },
   { label: "14:00", value: "14:00:00" },
 ];
 

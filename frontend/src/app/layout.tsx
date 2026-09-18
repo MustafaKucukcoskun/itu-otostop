@@ -3,6 +3,7 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { Providers } from "@/components/providers";
 import { ConditionalNavbar } from "@/components/conditional-navbar";
+import { CrnOrderNotice } from "@/components/crn-order-notice";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -31,6 +32,7 @@ export default function RootLayout({
       >
         <Providers>
           <ConditionalNavbar />
+          <CrnOrderNotice />
           {children}
           <Toaster richColors position="top-right" />
         </Providers>
