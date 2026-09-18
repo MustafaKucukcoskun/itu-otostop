@@ -4,6 +4,7 @@ claudeai2-optimal.py mantığının sınıf tabanlı, event-driven adaptasyonu.
 Zamanlama hassasiyeti korunur (busy-wait, Date header geçişi vb.).
 """
 
+import json
 import time
 import threading
 import queue
@@ -56,6 +57,66 @@ COUNTDOWN_INTERVAL = 0.1
 # en eskisini düşürmek servisi çökertmekten iyidir.
 EVENT_QUEUE_MAX = 2000
 OBS_BASE = "https://obs.itu.edu.tr"
+
+# resultData'da açıklamanın hangi anahtarda geldiğini bilmiyoruz; gördüğümüz
+# tek örnek VAL22'nin "yukseltmeyeAlinanDers" alanı. Yaygın adları sırayla
+# deneyip, hiçbiri tutmazsa alanın tamamını gösteriyoruz.
+_ACIKLAMA_ANAHTARLARI = ("message", "mesaj", "aciklama", "açıklama", "description",
+                         "hata", "error", "errorMessage", "text", "detail", "detay")
+_ACIKLAMA_MAX = 200
+
+
+def obs_aciklama(rd) -> str:
+    """OBS'in `resultData` alanından okunabilir bir açıklama çıkar.
+
+    CANLI OLAY (17 Eylül 14:00): bir kullanıcının 10 dersinin hepsi `VAL21`
+    aldı ve 0/10 ile bitti. O kod HATA_KODLARI'nda olmadığı için kullanıcı
+    ekranda çıplak "VAL21" gördü ve neden hiç ders alamadığını öğrenemedi —
+    oysa OBS aynı cevapta `resultData` gönderiyordu ve biz onu atıyorduk.
+
+    Alanın şekli meçhul, o yüzden hiçbir şekil varsayılmıyor: dict ise
+    bilinen anahtarlar denenir, tutmazsa alanın tamamı JSON olarak gösterilir
+    (tanımadığımız bir kodun ne olduğunu ancak böyle öğrenebiliriz).
+    ensure_ascii kapalı: aksi halde kullanıcı "de\u011fil" görür.
+    """
+    if rd is None:
+        return ""
+    if isinstance(rd, str):
+        return rd.strip()[:_ACIKLAMA_MAX]
+    if isinstance(rd, dict):
+        for anahtar in _ACIKLAMA_ANAHTARLARI:
+            deger = rd.get(anahtar)
+            if isinstance(deger, str) and deger.strip():
+                return deger.strip()[:_ACIKLAMA_MAX]
+        if not rd:
+            return ""
+        return json.dumps(rd, ensure_ascii=False)[:_ACIKLAMA_MAX]
+    return str(rd)[:_ACIKLAMA_MAX]
+
+
+def robust_jitter(rtts: list[float]) -> float:
+    """RTT dağınıklığı — tek bir aykırı ölçümün kandıramayacağı ölçüt.
+
+    CANLI OLAY (17 Eylül 14:00): üç konteynerin 10 RTT ölçümünden biri 76-87ms
+    geldi, diğerleri 38-45ms'ydi; `min` hepsinde 38-40ms, yani ağ kusursuz
+    çalışıyordu. Popülasyon standart sapması farkların KARESİNİ aldığı için o
+    tek örnek σ'yı 0.3ms'den 14-16ms'ye çıkardı. Buffer 11ms yerine 30-33ms
+    hesaplandı; buffer tek yön RTT'yi (20ms) aşınca `_apply_advanced_protection`
+    alt sınırı devreden çıktı ve tetik 10-15ms GECİKTİ.
+
+    MAD (medyandan sapmaların medyanı) sıralamaya bakar, kare almaz: 10
+    örnekten biri uçsa bile kılı kıpırdamaz. 1.4826 çarpanı, normal dağılımda
+    MAD'ı standart sapmaya çeviren tutarlılık katsayısıdır — yani sağlıklı
+    örneklemde eski ölçütle aynı sayıyı verir, yalnızca aykırı örnekte ayrışır.
+    """
+    if len(rtts) < 2:
+        return 0.0
+    s = sorted(rtts)
+    medyan = s[len(s) // 2]
+    sapmalar = sorted(abs(r - medyan) for r in s)
+    mad = sapmalar[len(sapmalar) // 2]
+    return mad * 1.4826
+
 
 HATA_KODLARI = {
     "VAL02": "Kayıt dönemi henüz açılmadı",
@@ -491,9 +552,9 @@ class RegistrationEngine:
         rtts.sort()
         count = len(rtts)
         median = rtts[count // 2]
-        mean = sum(rtts) / count
-        variance = sum((r - mean) ** 2 for r in rtts) / count
-        jitter = variance ** 0.5
+        # Popülasyon std sapması DEĞİL: tek bir takılan ölçüm tetiği
+        # kaydırıyordu (bkz. robust_jitter).
+        jitter = robust_jitter(rtts)
 
         return {"median": median, "jitter": jitter, "min": rtts[0], "max": rtts[-1], "count": count, "trend": trend}
 
@@ -1051,7 +1112,13 @@ class RegistrationEngine:
                             basarisiz[crn] = f"Yükseltme: {d}"
                             crn_degisti = True
                     else:
+                        # Tanımadığımız kodda OBS'in kendi açıklamasını GÖSTER.
+                        # 17 Eylül'de VAL21/VAL11/VAL08 çıplak kod olarak
+                        # görünüyordu; kullanıcı sebebini öğrenemiyordu.
                         desc = HATA_KODLARI.get(rc, rc)
+                        if rc not in HATA_KODLARI:
+                            ek = obs_aciklama(rd)
+                            desc = f"{rc} — {ek}" if ek else f"{rc} (OBS açıklama göndermedi)"
                         self._log(f"❌ {crn} → {desc}", "error")
                         self._crn_results[crn] = {"status": "error", "message": desc}
                         if crn in kalan:
