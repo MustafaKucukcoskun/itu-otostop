@@ -10,6 +10,7 @@ ve in-memory LRU cache ile hızlı CRN lookup sağlar.
 - Popüler bölümler öncelikli arama
 """
 
+import os
 import re
 import time
 import logging
@@ -111,8 +112,21 @@ class OBSCourseService:
     """
 
     def __init__(self, cache_ttl: int = 3600, max_cache_depts: int = 200,
-                 negative_ttl: float = 900.0):
+                 negative_ttl: float = 900.0, course_ttl: float | None = None):
         """
+        cache_ttl: BÖLÜM LİSTESİ için. Dönem içinde neredeyse hiç değişmez,
+            1 saat fazlasıyla yeterli.
+
+        course_ttl: DERS VERİSİ için — ayrı tutulmasının sebebi kontenjan.
+            18 Eylül 09:46'da DEN 405E (CRN 12002) uygulamada 85/85 "dolu"
+            görünüyordu; aynı anda OBS'ten önbelleksiz çekilen veri 100/85
+            dedi, yani kontenjan 85'ten 100'e ÇIKARILMIŞTI ve 15 boş yer
+            vardı. Öğrenci yeri olan derse "dolu" görüp vazgeçiyordu. Tek bir
+            TTL bölüm listesiyle kontenjanı aynı kefeye koyuyordu.
+            Varsayılan 300sn: OBS kayıtlı sayısını zaten ~5 dakikada bir
+            günceller, daha kısası boşuna istek, daha uzunu bayat kontenjan.
+            OBS_COURSE_TTL ile değiştirilebilir.
+
         max_cache_depts: ITÜ'de 177 bölüm var. Bu sayı bölüm sayısından KÜÇÜK
             olursa tam tarama kendini yer: tarama sırasında ilk bölümler
             sonrakiler tarafından atılır ve bir sonraki arama her şeyi baştan
@@ -130,6 +144,8 @@ class OBSCourseService:
             "X-Requested-With": "XMLHttpRequest",
         })
         self.cache_ttl = cache_ttl
+        self.course_ttl = (course_ttl if course_ttl is not None
+                           else float(os.getenv("OBS_COURSE_TTL", "300")))
         self.max_cache_depts = max_cache_depts
 
         # Caches
@@ -174,7 +190,8 @@ class OBSCourseService:
         # Check cache
         if brans_kodu_id in self._dept_cache:
             courses, ts = self._dept_cache[brans_kodu_id]
-            if (now - ts) < self.cache_ttl:
+            # cache_ttl DEĞİL: kontenjan bir saat boyunca donuyordu.
+            if (now - ts) < self.course_ttl:
                 self._dept_cache.move_to_end(brans_kodu_id)
                 return courses
 
