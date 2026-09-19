@@ -618,8 +618,11 @@ class RegistrationEngine:
         for _ in range(n):
             t0 = time.perf_counter()
             try:
-                # POST isteği ile RTT ölçümü (gerçek kayıt isteği gibi)
-                self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
+                # HEAD — POST DEĞİL. Ölçtüğümüz şey ağ transiti; POST buna
+                # OBS'in kimlik+kayıt mantığı maliyetini de katıyordu ve
+                # kayıt başına ~37 sahte kayıt isteği ediyordu (bkz.
+                # _rtt_stats yorumu).
+                self.session.head(OBS_URL, timeout=10)
             except Exception:
                 continue
             rtts.append(time.perf_counter() - t0)
@@ -631,15 +634,32 @@ class RegistrationEngine:
     # ── RTT İstatistikleri ──
 
     def _rtt_stats(self, n: int = 10) -> dict:
-        """RTT istatistikleri: median, jitter (std dev), min, max."""
+        """RTT istatistikleri: median, jitter (robust), min, max.
+
+        HEAD kullanılır, POST değil. Eskiden gerçek kayıt ucuna
+        `ECRN:["00000"]` ile POST atılıyordu; `_rtt_olc` ile birlikte kayıt
+        başına ~37 sahte kayıt isteği ediyordu (40 kullanıcılık dalgada
+        ~1500). Üniversitenin kayıt ucuna bu hacimde sahte istek, aracın
+        engellenmesine yol açabilecek bir risk.
+
+        ÖLÇÜLDÜ (19 Eylül, Frankfurt, n=120, dönüşümlü):
+            HEAD kayıt ucu : min 36.1  medyan 36.5  p90 36.8 ms  (HTTP 405)
+            POST kayıt ucu : min 36.1  medyan 36.6  p90 37.0 ms  (HTTP 401)
+            fark (min)     : 0.0 ms
+
+        Birebir aynı — HEAD, kayıt ucunda 405 ile yönlendirme katmanında
+        kesilip uygulamaya hiç girmediği hâlde. Yani ölçtüğümüz saf ağ
+        transiti. Üretimdeki gerçek token'lı POST'un min'i 38.0ms; aradaki
+        1.9ms OBS'in kimlik+kayıt mantığı maliyeti, formülün istemediği bir
+        pay. Dolayısıyla HEAD hem daha nazik hem daha DOĞRU.
+        """
         rtts = []
         for _ in range(n):
             if self._cancelled.is_set():
                 break
             t0 = time.perf_counter()
             try:
-                # POST isteği ile RTT ölçümü (gerçek kayıt isteği gibi)
-                self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
+                self.session.head(OBS_URL, timeout=10)
             except Exception:
                 continue
             rtts.append(time.perf_counter() - t0)
@@ -801,11 +821,11 @@ class RegistrationEngine:
         self._set_phase("calibrating")
         self._log("Sunucu saati ölçülüyor...")
 
-        # 1. Bağlantıyı ısıt
+        # 1. Bağlantıyı ısıt — HEAD ile, kayıt ucuna sahte POST atmadan.
         try:
-            self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
+            self.session.head(OBS_URL, timeout=10)
         except Exception as e:
-            self._log(f"POST bağlantısı hatası: {e}, HEAD ile deniyor...", "warning")
+            self._log(f"Bağlantı ısıtma hatası: {e}, ana sayfa deneniyor...", "warning")
             try:
                 self.session.head(OBS_BASE, timeout=10, allow_redirects=False)
             except Exception as e2:
@@ -950,12 +970,29 @@ class RegistrationEngine:
     # ── Prewarm ──
 
     def _prewarm(self, head_only: bool = False):
+        """TCP+TLS bağlantısını ısıt. HEAD ile — POST ile DEĞİL.
+
+        Eskiden POST atıyordu ve `head_only=True` yalnızca İKİNCİ POST'u
+        atlıyordu; buna rağmen "Bağlantı hazır (HEAD only)" diye logluyor,
+        çağrıldığı yerdeki yorum da "HEAD ile, debounce riski sıfır" diyordu.
+        Üçü de yanlıştı.
+
+        Şu ana dek zararsız kalmıştı çünkü son tam kalibrasyon T-20s civarında
+        bitiyor ve ısıtma T-13s'ye düşüyordu. Ama latent bir ders kaybı riski:
+        `calibrate()` bir kez 9004ms sürdü ve OBS yavaşlayabiliyor; kalibrasyon
+        17 saniye sürseydi ısıtma POST'u T-3s'ye, yani debounce penceresinin
+        içine düşer ve GERÇEK kayıt isteği VAL16 alırdı.
+
+        HEAD aynı bağlantıyı aynı şekilde ısıtır: ÖLÇÜLDÜ (19 Eylül, Frankfurt,
+        n=120) HEAD ve POST'un RTT'si birebir aynı (min 36.1ms / 36.1ms).
+
+        `head_only` artık yalnızca istek SAYISINI belirler.
+        """
         try:
-            # POST isteği ile ısıtma (gerçek kayıt isteği gibi)
-            self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
+            self.session.head(OBS_URL, timeout=10)
             if not head_only:
-                self.session.post(OBS_URL, json={"ECRN": ["00000"], "SCRN": []}, timeout=10)
-            self._log("Bağlantı hazır" + (" (HEAD only)" if head_only else ""))
+                self.session.head(OBS_URL, timeout=10)
+            self._log("Bağlantı hazır" + (" (tek istek)" if head_only else ""))
         except Exception as e:
             self._log(f"Prewarm hatası: {e}", "warning")
 
@@ -1533,7 +1570,7 @@ class RegistrationEngine:
                     self._prewarm(head_only=True)
                     prewarm2 = True
 
-                # ── Bağlantı canlı tutma (10s, 5s, 3.5s kala — HEAD ile, debounce riski sıfır) ──
+                # ── Bağlantı canlı tutma (10s, 5s, 3.5s kala — hepsi HEAD) ──
                 if not prewarm2 and 0 < kalan <= 10:
                     self._prewarm(head_only=True)
                     prewarm2 = True
