@@ -4,6 +4,8 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir requests
 
-COPY obs_clock_calibration.py .
+COPY obs_clock_calibration.py obs_clock_probe.py ./
 
-CMD ["python", "-u", "obs_clock_calibration.py"]
+# Varsayılan: yeni hassas ölçüm aracı (eşzamanlı örnekleme).
+# Eski araç da imajda duruyor; gerekirse komut değiştirilerek çalıştırılır.
+CMD ["python", "-u", "obs_clock_probe.py"]
