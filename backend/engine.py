@@ -711,8 +711,21 @@ class RegistrationEngine:
         # σ_obs: OBS sunucu saat farkı belirsizliği
         sigma_obs = self._obs_clock_uncertainty  # kalibrasyon yoksa 25ms
 
-        # σ_asimetri: RTT gidiş-dönüş asimetrisi
-        # Araştırma: tipik asimetri %10-30, min RTT en simetrik
+        # σ_asimetri: RTT gidiş-dönüş asimetrisi.
+        #
+        # Bu bir VARSAYIM, ölçüm değil — ve öyle kalmak zorunda. Doğrudan
+        # ölçmek OBS tarafında senkron bir saat ister; tek aday `Date`
+        # başlığıydı ve 19 Eylül'de ÖNBELLEKLİ olduğu kanıtlandı (bkz.
+        # calibration/obs_clock_probe.py). TCP timestamp'leri requests
+        # seviyesinden okunamıyor.
+        #
+        # Canlı verinin verdiği dolaylı sınır zayıf: 15-19 Eylül'de ~30 gerçek
+        # kayıtta hiç VAL02 yok, bu da |asimetri| < ~20ms diyor.
+        #
+        # Ama değeri pratikte ÖNEMSİZ: %10, %15, %20 varsayımlarının üçünde de
+        # buffer tek yön RTT'nin altında kalıyor (9.2 / 10.2 / 11.3ms vs 19ms),
+        # yani alt sınır bağlıyor ve tetik değişmiyor. Bu terim ancak gecikmeler
+        # bugünkünden çok düşerse anlam kazanır.
         sigma_asimetri = cal.rtt_one_way * 0.15  # tipik: ~3-4ms
 
         # Toplam belirsizlik (bağımsız hata kaynakları → karekök toplam)
