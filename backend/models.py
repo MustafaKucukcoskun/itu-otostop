@@ -45,7 +45,9 @@ class ConfigRequest(BaseModel):
             )
         return v
     max_deneme: int = Field(default=60, ge=1, le=300)
-    retry_aralik: float = Field(default=3.0, ge=3.0, le=10.0)
+    # 3.0 OBS'in debounce sınırının TAM üstünde: 17 Eylül'de 3.04-3.17s
+    # aralıklı denemelerin beşi üst üste VAL16 yedi. Taban 3.5'e çekildi.
+    retry_aralik: float = Field(default=3.5, ge=3.5, le=10.0)
     dry_run: bool = Field(default=False, description="Test modu — gerçek kayıt yapmaz")
 
     @field_validator('ecrn_list', 'scrn_list')
