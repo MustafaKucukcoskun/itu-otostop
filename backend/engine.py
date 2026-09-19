@@ -5,6 +5,7 @@ Zamanlama hassasiyeti korunur (busy-wait, Date header geçişi vb.).
 """
 
 import json
+import re
 import time
 import threading
 import queue
@@ -58,6 +59,48 @@ COUNTDOWN_INTERVAL = 0.1
 EVENT_QUEUE_MAX = 2000
 OBS_BASE = "https://obs.itu.edu.tr"
 
+# OBS'in önkoşul ifadesi: {'DersKodu':'MAT 104', 'Min': 'DD'} birimleri,
+# aralarında | (veya) ve & (ve), parantezlerle gruplanmış.
+_ONSART_BIRIM = re.compile(
+    r"\{\s*'DersKodu'\s*:\s*'([^']+)'\s*,\s*'Min'\s*:\s*'([^']+)'\s*\}"
+)
+
+
+def onsart_metni(ham) -> str:
+    """OBS'in önkoşul ifadesini okunabilir Türkçeye çevir.
+
+    18 Eylül'de (42vq5) VAL11'in `uyulmayanOnsartlar` alanı görülünce kodun
+    ne olduğu kesinleşti: önkoşul sağlanmadı. Ama öğrenci ekranda ham JSON
+    görüyordu.
+
+    Çeviri YORUM DEĞİL, birebir: her birim "DERS (en az NOT)" olur, operatörler
+    Türkçeleşir, parantezler KORUNUR. Yapıyı kendimiz yorumlayıp düzleştirseydik
+    (hepsini "veya" saymak gibi) yanlış bilgi vermiş olurduk; eksik bilgi yanlış
+    bilgiden iyidir. Tanımadığımız bir şekil gelirse olduğu gibi döner.
+    """
+    if not ham:
+        return ""
+    metin = str(ham).strip()
+    # Alan, JSON içinde bir kez daha tırnaklanmış geliyor.
+    while len(metin) >= 2 and metin[0] == metin[-1] == '"':
+        metin = metin[1:-1].strip()
+    if not _ONSART_BIRIM.search(metin):
+        return metin
+    metin = _ONSART_BIRIM.sub(lambda m: f"{m.group(1)} (en az {m.group(2)})", metin)
+    metin = metin.replace("|", " veya ").replace("&", " ve ")
+    metin = re.sub(r"\s+", " ", metin).strip()
+    # Tümünü saran tek parantez varsa gereksiz; içtekiler korunur.
+    if metin.startswith("(") and metin.endswith(")"):
+        derinlik = 0
+        for i, ch in enumerate(metin):
+            derinlik += (ch == "(") - (ch == ")")
+            if derinlik == 0 and i < len(metin) - 1:
+                break
+        else:
+            metin = metin[1:-1].strip()
+    return metin
+
+
 # resultData'da açıklamanın hangi anahtarda geldiğini bilmiyoruz; gördüğümüz
 # tek örnek VAL22'nin "yukseltmeyeAlinanDers" alanı. Yaygın adları sırayla
 # deneyip, hiçbiri tutmazsa alanın tamamını gösteriyoruz.
@@ -84,6 +127,12 @@ def obs_aciklama(rd) -> str:
     if isinstance(rd, str):
         return rd.strip()[:_ACIKLAMA_MAX]
     if isinstance(rd, dict):
+        # Önkoşul ifadesi özel: ham hâli okunmaz, çevirisi nettir.
+        onsart = rd.get("uyulmayanOnsartlar")
+        if onsart:
+            cevrilmis = onsart_metni(onsart)
+            if cevrilmis:
+                return cevrilmis[:_ACIKLAMA_MAX]
         for anahtar in _ACIKLAMA_ANAHTARLARI:
             deger = rd.get(anahtar)
             if isinstance(deger, str) and deger.strip():
@@ -118,11 +167,26 @@ def robust_jitter(rtts: list[float]) -> float:
     return mad * 1.4826
 
 
+# Ateşleme isteğinin zaman sınırları — bağlantı ve okuma AYRI.
+#
+# CANLI OLAY (19 Eylül 12:00, wsqj2): kayıt İLK istekte tamamlanmıştı ama
+# cevap 10sn'de kesildiği için bunu bilemedik. Motor art arda SEKİZ kez zaman
+# aşımına düştü, gerçeği 123 saniye sonra öğrendi ve bu arada OBS'e sekiz
+# mükerrer kayıt isteği attı. Aynı gün ölçülen cevap süreleri 304ms, 1523ms,
+# 2076ms, 7046ms, 9845ms — yani 9845ms eski sınıra kıl payı sığmıştı.
+#
+# Okuma sınırı ölçülen tavanın belirgin üstünde; bağlantı sınırı kısa, çünkü
+# sunucuya hiç bağlanamıyorsak beklemek değil tekrar denemek istiyoruz.
+FIRE_CONNECT_TIMEOUT = float(os.getenv("OBS_CONNECT_TIMEOUT", "5"))
+FIRE_READ_TIMEOUT = float(os.getenv("OBS_READ_TIMEOUT", "30"))
+
 HATA_KODLARI = {
     "VAL02": "Kayıt dönemi henüz açılmadı",
     "VAL03": "Bu ders zaten alınmış",
     "VAL06": "Kontenjan dolu",
     "VAL09": "Ders çakışması var",
+    # OBS'in kendi alan adı `uyulmayanOnsartlar` ile kesinleşti (18 Eylül).
+    "VAL11": "Önkoşul sağlanmadı",
     "VAL16": "Debounce (sunucu <3sn'de tekrarı yok saydı)",
     "VAL22": "Yükseltmeye alınan ders çakışması",
 }
@@ -133,6 +197,9 @@ class CalibrationData:
     server_offset: float = 0.0
     rtt_one_way: float = 0.003
     ntp_offset: float = 0.0
+    # Bu ÖLÇÜMÜN kendi NTP gecikmesi. Belirsizlik (σ_ntp), offseti aldığımız
+    # örnekten gelmeli; başka bir örneğin gecikmesini kullanmak tutarsız.
+    ntp_delay: float = 0.0
     obs_clock_offset: float = 0.0       # OBS-NTP saat farkı (sn)
     obs_clock_uncertainty: float = 0.025 # OBS saat belirsizliği (sn)
 
@@ -248,7 +315,10 @@ class RegistrationEngine:
         self._phase = "idle"
         self._current_attempt = 0
         self._calibration: Optional[CalibrationData] = None
-        self._cal_samples: list[tuple[float, float, float, str]] = []  # (offset, rtt, timestamp, source)
+        self._cal_samples: list[tuple[float, float, float, str, float]] = []  # (offset, rtt, timestamp, source, ntp_delay)
+        # Son ölçülen RTT jitter'ı. Buffer tazelenirken yeniden ağ ölçümü
+        # YAPILMAZ: tetik yolunda ağ beklemek hassasiyeti bozar.
+        self._rtt_jitter: float = 0.0003
         self._crn_results: dict[str, dict] = {}
         self._trigger_time: Optional[float] = None
         # Tetik öncesi hazırlanan istek (eşzamanlılık: tetikten sonra iş kalmasın)
@@ -411,7 +481,29 @@ class RegistrationEngine:
             server_offset=best[0],
             rtt_one_way=best[1] / 2,
             ntp_offset=self._calibration.ntp_offset if self._calibration else 0.0,
+            # Eski örnekler bu alanı taşımıyor olabilir; 0 → geri düşülür.
+            ntp_delay=best[4] if len(best) > 4 else 0.0,
         )
+
+    def _refresh_buffer(self) -> float:
+        """Buffer'ı havuzdaki EN İYİ ölçümden yeniden hesapla ve sakla.
+
+        Buffer motor başlarken bir kez hesaplanıp donuyordu. Tetik bekleme
+        boyunca defalarca yeniden hesaplanıyor (periyodik kalibrasyon, son tam
+        kalibrasyon) ama hep o donmuş buffer'la. 18 Eylül'de 42vq5'in kötü
+        başlangıç ölçümü (NTP gecikmesi 16.2ms → buffer 19.1ms) hedefe kadar
+        taşındı ve alt sınırın 0.9ms yakınına kadar geldi; oysa havuz o sırada
+        2ms gecikmeli ölçümlerle dolmuştu.
+
+        Ağ ölçümü yapılmaz: jitter en son ölçülen değerden okunur.
+        """
+        cal = self._best_calibration()
+        if cal is None:
+            cal = self._calibration or CalibrationData()
+        self._measurement_buffer = self._calculate_measurement_based_buffer(
+            cal, self._rtt_jitter
+        )
+        return self._measurement_buffer
 
     def _apply_advanced_protection(
         self,
@@ -458,7 +550,8 @@ class RegistrationEngine:
 
         return protected_trigger
 
-    def _add_sample(self, offset: float, rtt: float, source: str):
+    def _add_sample(self, offset: float, rtt: float, source: str,
+                    ntp_delay: float = 0.0):
         """Kalibrasyon ölçüm havuzuna yeni sample ekle. Max 20 tutar, eski/kötü olanları atar."""
         # Outlier filtresi: mevcut en iyi offset'ten 200ms+ sapan ölçümleri reddet
         if self._cal_samples:
@@ -471,7 +564,7 @@ class RegistrationEngine:
                 )
                 return  # Havuza ekleme
 
-        sample = (offset, rtt, time.time(), source)
+        sample = (offset, rtt, time.time(), source, ntp_delay)
         self._cal_samples.append(sample)
         self._cal_samples_chrono.append(sample)  # Kronolojik kopya (sıralama bozulmaz)
         # Havuzu 20 ile sınırla: en kötü RTT'lileri at
@@ -571,9 +664,17 @@ class RegistrationEngine:
         """
         GUVEN_SEVIYESI = 2.0  # N: 2=%97.7, 3=%99.9
 
-        # σ_ntp: NTP ölçüm hassasiyeti (delay/2)
-        ntp_delay = self._last_ntp_delay or 0.008
-        sigma_ntp = ntp_delay / 2  # tipik: ~4ms
+        # σ_ntp: offseti ALDIĞIMIZ ölçümün hassasiyeti (delay/2).
+        #
+        # CANLI OLAY (18 Eylül, 42vq5): buffer motor başlarken bir kez
+        # hesaplanıp donuyordu. Başlangıç turunun NTP gecikmesi 16.2ms'ydi →
+        # σ_ntp 8.1ms → buffer 19.1ms, tek yön RTT'nin (20.0ms) yalnızca
+        # 0.9ms altı. σ_ntp 9ms olsaydı buffer sınırı devre dışı bırakır,
+        # tetik gecikirdi. Oysa havuz sonradan çok daha iyi ölçümlerle
+        # doluyor ve offset oradan seçiliyordu — belirsizliği başka bir
+        # örnekten almak tutarsızdı.
+        ntp_delay = getattr(cal, "ntp_delay", 0.0) or self._last_ntp_delay or 0.008
+        sigma_ntp = ntp_delay / 2
 
         # σ_rtt: Ağ RTT değişkenliği (ölçülen jitter)
         sigma_rtt = rtt_jitter  # tipik: ~1-3ms
@@ -765,7 +866,10 @@ class RegistrationEngine:
             rtt_one_way=medyan_rtt / 2,
             ntp_offset=ntp_offset_raw,
         )
-        self._add_sample(server_offset, medyan_rtt, source)
+        # Gecikmeyi ÖRNEĞE yaz: belirsizlik, offseti aldığımız ölçümden
+        # gelmeli. NTP başarısızsa None kalır → 0.0, eski davranışa düşülür.
+        self._add_sample(server_offset, medyan_rtt, source,
+                         ntp_delay=ntp_delay or 0.0)
 
         yon = "İLERİDE" if server_offset > 0 else "GERİDE"
         self._log(
@@ -804,7 +908,8 @@ class RegistrationEngine:
             medyan_rtt = self._rtt_olc(3)
 
             # 3. Havuza ekle (outlier filtresi _add_sample içinde)
-            self._add_sample(server_offset, medyan_rtt, source)
+            self._add_sample(server_offset, medyan_rtt, source,
+                             ntp_delay=ntp_delay or 0.0)
 
             # 4. En iyi ölçümü havuzdan seç
             best = self._best_calibration()
@@ -1026,7 +1131,10 @@ class RegistrationEngine:
                     crn_degisti = False
 
             try:
-                resp = self.session.send(prepped, timeout=10)
+                resp = self.session.send(
+                    prepped,
+                    timeout=(FIRE_CONNECT_TIMEOUT, FIRE_READ_TIMEOUT),
+                )
             except requests.exceptions.RequestException as e:
                 self._log(f"Bağlantı hatası: {e}", "error")
                 time.sleep(aralik)
@@ -1112,13 +1220,17 @@ class RegistrationEngine:
                             basarisiz[crn] = f"Yükseltme: {d}"
                             crn_degisti = True
                     else:
-                        # Tanımadığımız kodda OBS'in kendi açıklamasını GÖSTER.
-                        # 17 Eylül'de VAL21/VAL11/VAL08 çıplak kod olarak
-                        # görünüyordu; kullanıcı sebebini öğrenemiyordu.
+                        # Etiket bizden, AYRINTI OBS'ten. Kodu tanıyor olmak
+                        # OBS'in açıklamasını yutmamalı: VAL11'i "Önkoşul
+                        # sağlanmadı" diye bilmek yetmez, öğrencinin HANGİ
+                        # dersi hangi notla alması gerektiğini görmesi lazım
+                        # (18 Eylül, 42vq5).
                         desc = HATA_KODLARI.get(rc, rc)
-                        if rc not in HATA_KODLARI:
-                            ek = obs_aciklama(rd)
-                            desc = f"{rc} — {ek}" if ek else f"{rc} (OBS açıklama göndermedi)"
+                        ek = obs_aciklama(rd)
+                        if ek:
+                            desc = f"{desc}: {ek}"
+                        elif rc not in HATA_KODLARI:
+                            desc = f"{rc} (OBS açıklama göndermedi)"
                         self._log(f"❌ {crn} → {desc}", "error")
                         self._crn_results[crn] = {"status": "error", "message": desc}
                         if crn in kalan:
@@ -1287,6 +1399,7 @@ class RegistrationEngine:
 
             # 2b. RTT jitter ölçümü + ölçüm tabanlı buffer hesaplama
             rtt_stats = self._rtt_stats(10)
+            self._rtt_jitter = rtt_stats['jitter']
             self._log(f"📊 RTT: median={rtt_stats['median']*1000:.0f}ms, jitter(σ)={rtt_stats['jitter']*1000:.1f}ms, min={rtt_stats['min']*1000:.0f}ms, max={rtt_stats['max']*1000:.0f}ms ({rtt_stats['count']} örnek)")
 
             best = self._best_calibration()
@@ -1350,6 +1463,9 @@ class RegistrationEngine:
                 """Havuzdaki en iyi ölçüme göre tetik zamanını yeniden hesapla."""
                 best = self._best_calibration()
                 if best:
+                    # Buffer'ı da tazele: havuz iyileştiyse belirsizlik de
+                    # küçülmüş demektir (bkz. _refresh_buffer).
+                    self._refresh_buffer()
                     # ADVANCED TREND ANALYSIS: Hedef zamanda ofseti tahmin et
                     predicted_offset = self._predict_offset_at_target_time(hedef)
                     
