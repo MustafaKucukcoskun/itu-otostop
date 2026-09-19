@@ -177,6 +177,15 @@ def robust_jitter(rtts: list[float]) -> float:
 #
 # Okuma sınırı ölçülen tavanın belirgin üstünde; bağlantı sınırı kısa, çünkü
 # sunucuya hiç bağlanamıyorsak beklemek değil tekrar denemek istiyoruz.
+# VAL16 (debounce) görüldüğünde beklenen süre.
+#
+# CANLI OLAY (17 Eylül 10:00, zmxzl): denemeler 3.04-3.17s aralıklarla gitti
+# ve beşi üst üste VAL16 yedi; gerçek cevap ancak 28 saniye sonra geldi.
+# Hepsi 3 saniyelik sınırın hemen üstündeydi, hangisinin geçeceği tesadüfe
+# kalmıştı. VAL16 "çok erken geldin" demek — aynı hızda tekrar denemek
+# denemeyi ziyan eder.
+DEBOUNCE_BACKOFF = float(os.getenv("OBS_DEBOUNCE_BACKOFF", "5"))
+
 FIRE_CONNECT_TIMEOUT = float(os.getenv("OBS_CONNECT_TIMEOUT", "5"))
 FIRE_READ_TIMEOUT = float(os.getenv("OBS_READ_TIMEOUT", "30"))
 
@@ -1158,6 +1167,7 @@ class RegistrationEngine:
                 break
 
             tum_val02 = True
+            debounce_var = False
 
             if resp.status_code == 200:
                 data = resp.json()
@@ -1191,6 +1201,7 @@ class RegistrationEngine:
                             self._log(f"⏳ {crn} → Sistem henüz açılmadı")
 
                     elif rc == "VAL16":
+                        debounce_var = True
                         if deneme <= 2:
                             self._log(f"⚠️ {crn} → Debounce")
                         self._crn_results[crn] = {"status": "debounce", "message": "Debounce — tekrar denenecek"}
@@ -1244,7 +1255,11 @@ class RegistrationEngine:
                 self._log(f"HTTP {resp.status_code}: {resp.text[:200]}", "error")
 
             if kalan and deneme < self.max_deneme:
-                if tum_val02:
+                if debounce_var:
+                    # "Çok erken geldin" — aynı hızda ısrar etmek denemeyi
+                    # ziyan eder (bkz. DEBOUNCE_BACKOFF).
+                    time.sleep(max(self.retry_aralik, DEBOUNCE_BACKOFF))
+                elif tum_val02:
                     time.sleep(self.retry_aralik)
                 else:
                     time.sleep(0.05)
