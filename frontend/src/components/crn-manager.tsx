@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import type { CourseInfo } from "@/lib/api";
+import { CRN_BULUNAMADI, CRN_YUKLENEMEDI, type CourseInfo } from "@/lib/api";
 import { UserDataService, UserDataKeys } from "@/lib/user-data-service";
 
 // ── CRN etiketleri ──
@@ -286,7 +286,21 @@ export function CRNManager({
                     <span className="shrink-0 font-mono text-[15px] font-bold tracking-wider">
                       {crn}
                     </span>
-                    {courseInfo[crn] ? (
+                    {courseInfo[crn] &&
+                    (courseInfo[crn].course_name === CRN_BULUNAMADI ||
+                      courseInfo[crn].course_name === CRN_YUKLENEMEDI) ? (
+                      // Bulunamayan CRN, henüz SORGULANMAMIŞ CRN'den ayırt
+                      // edilebilmeli. Eskiden ders adı `hidden sm:inline` ile
+                      // gizleniyor ve "0/0" gerçek kontenjan gibi duruyordu;
+                      // 17 Eylül'de bir kullanıcının listesindeki üç olmayan
+                      // CRN (30218, 30227, 30473) böyle sessizce geçti ve
+                      // OBS'te sırada yer tutup işlenme süresi harcadı.
+                      <span className="shrink-0 font-mono text-[11px] font-medium text-status-err">
+                        {courseInfo[crn].course_name === CRN_BULUNAMADI
+                          ? "OBS'te böyle bir CRN yok — listeden çıkar"
+                          : "Bilgi alınamadı, tekrar deneniyor"}
+                      </span>
+                    ) : courseInfo[crn] ? (
                       <div className="flex min-w-0 items-center gap-2 truncate">
                         <span className="truncate font-mono text-[11px] font-medium text-muted-foreground">
                           {courseInfo[crn].course_code}

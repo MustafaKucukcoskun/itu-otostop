@@ -13,7 +13,13 @@ import {
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
 import { scheduleExportKeyFor } from "@/lib/storage-keys";
-import { api, type CalibrationResult, type CourseInfo } from "@/lib/api";
+import {
+  api,
+  CRN_BULUNAMADI,
+  CRN_YUKLENEMEDI,
+  type CalibrationResult,
+  type CourseInfo,
+} from "@/lib/api";
 import { ConfigService } from "@/lib/config-service";
 import { useToken } from "@/lib/token-context";
 import { useWebSocket } from "@/hooks/use-websocket";
@@ -349,8 +355,8 @@ function DashboardContent() {
       // Retry CRNs that failed before (placeholder entries)
       if (
         info.sessions.length === 0 &&
-        (info.course_name === "Yüklenemedi" ||
-          info.course_name === "Bulunamadı")
+        (info.course_name === CRN_YUKLENEMEDI ||
+          info.course_name === CRN_BULUNAMADI)
       )
         return true;
       return false;
@@ -375,7 +381,7 @@ function DashboardContent() {
               next[crn] = {
                 crn,
                 course_code: crn,
-                course_name: "Bulunamadı",
+                course_name: CRN_BULUNAMADI,
                 instructor: "",
                 teaching_method: "",
                 capacity: 0,
@@ -393,11 +399,11 @@ function DashboardContent() {
         setCourseInfo((prev) => {
           const next = { ...prev };
           for (const crn of missing) {
-            if (!next[crn] || next[crn].course_name === "Yüklenemedi")
+            if (!next[crn] || next[crn].course_name === CRN_YUKLENEMEDI)
               next[crn] = {
                 crn,
                 course_code: crn,
-                course_name: "Yüklenemedi",
+                course_name: CRN_YUKLENEMEDI,
                 instructor: "",
                 teaching_method: "",
                 capacity: 0,

@@ -210,6 +210,12 @@ export const api = {
 
 // ── WebSocket ──
 
+// CRN araması sonuçsuz kalınca listede yer tutan sahte kayıtların adları.
+// İki dosyada elle yazılmak yerine tek kaynaktan gelir: crn-manager bunlara
+// bakıp satırı hata olarak çizer, dashboard da yeniden denenecekleri seçer.
+export const CRN_BULUNAMADI = "Bulunamadı";
+export const CRN_YUKLENEMEDI = "Yüklenemedi";
+
 export async function createWebSocket(): Promise<WebSocket> {
   const token = await clerkToken();
   const wsUrl =
