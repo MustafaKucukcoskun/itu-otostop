@@ -215,9 +215,20 @@ export async function createWebSocket(): Promise<WebSocket> {
   const wsUrl =
     API_BASE.replace("http", "ws") +
     `/ws?session_id=${encodeURIComponent(getSessionId())}`;
+  // Sunucu REQUIRE_AUTH ile çalışıyor: token'sız el sıkışma KESİN reddedilir
+  // (kod 4001) ve erişim loglarına 403 olarak düşer. 17 Eylül'de tek bir
+  // kullanıcı 10:00 slotuna hazırlanırken 22 kez böyle reddedildi ve canlı
+  // log akışını kaybetti.
+  //
+  // Bu app'te her sayfa Clerk korumalı, yani token'ın yokluğu "kullanıcı
+  // anonim" demek değil — Clerk henüz yüklenmemiş ya da token'ı yeniliyor
+  // demek. Birkaç yüz milisaniye sonra hazır olur. Bilerek başarısız olacak
+  // bir soket açmak yerine hata fırlat: useWebSocket bunu yakalayıp
+  // exponential backoff ile yeniden dener.
+  if (!token) {
+    throw new Error("Clerk oturum token'ı henüz hazır değil");
+  }
   // Token URL'e KONULMAZ: sorgu dizeleri erişim loglarına yazılır. Bunun yerine
   // WebSocket alt protokolü olarak gönderilir — başlık loglanmaz.
-  return token
-    ? new WebSocket(wsUrl, ["bearer", token])
-    : new WebSocket(wsUrl);
+  return new WebSocket(wsUrl, ["bearer", token]);
 }

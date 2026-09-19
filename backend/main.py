@@ -153,10 +153,20 @@ ISOLATION_DIAG_KEY = os.getenv("ISOLATION_DIAG_KEY", "").strip()
 # 90 kullanıcı bu hızda 45 saniyede açılır — 900 saniyelik pencereye sığar.
 LAUNCH_PER_TICK = int(os.getenv("ISOLATION_LAUNCH_PER_TICK", "4"))
 
-# Hedef saat bu kadar saniyeden fazla geçmişse kayıt başlatılmaz.
-# Birkaç dakika geç kalan kullanıcı yine de denesin; saatlerce geçmiş bir
-# hedef ise kesin bir yanlış anlamadır (bkz. start_registration).
-GECMIS_HEDEF_TOLERANSI = float(os.getenv("PAST_TARGET_TOLERANCE", "120"))
+# Hedef saat geçmişken kaydın kabul edileceği en büyük gecikme.
+#
+# CANLI OLAY — iki gerçek kullanıcı, iki ayrı gün, aynı duvar:
+#   17 Eylül 14:03:53 (hedeften 233sn sonra) → HTTP 400
+#   18 Eylül 14:02:27 (hedeften 147sn sonra) → HTTP 400
+# İkisinin de kurulumu geçerliydi (/api/config hemen öncesinde 200 dönmüş);
+# 17 Eylül'deki kullanıcı kaçırdığı bir ders için tekrar deniyordu. Oysa
+# kayıt penceresi saatlerce açık — boş kontenjanlı ders hâlâ alınabilirdi.
+#
+# Sınırın varlık sebebi "akşamdan kurup ertesi güne bırakmak" vakası; orada
+# hedef SAATLERCE geride olur ve motor kapalı pencereye altmış kez ateşler.
+# 1 saat bu ayrımı rahatça yapıyor: aynı kayıt penceresi içindeki gecikmeyi
+# geçirir, ertesi güne kurulmuş bir hedefi geçirmez.
+GECMIS_HEDEF_TOLERANSI = float(os.getenv("PAST_TARGET_TOLERANCE", "3600"))
 
 def rate_limit_key(request: Request) -> str:
     """Hız limitinin kime uygulanacağı.
