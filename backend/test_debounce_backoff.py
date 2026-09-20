@@ -74,12 +74,15 @@ def test_normal_retry_is_not_slowed_down(monkeypatch):
     assert _uykular(monkeypatch, [["VAL02"]])[0] == 3.5
 
 
-def test_schema_floor_is_above_the_debounce_window():
-    """3.0s tam sınırda; şemanın izin verdiği en küçük değer güvenli olmalı."""
-    import pydantic
-    try:
-        models.ConfigRequest(token="t", ecrn_list=["12345"],
+def test_schema_raises_unsafe_values_instead_of_refusing_them():
+    """3.0s tam debounce sınırında; güvenli değere YÜKSELTİLMELİ.
+
+    Bu test önce "3.0 reddedilmeli" diyordu ve şema öyle yazıldı — sonuç:
+    frontend'in varsayılanı 3.0 olduğu için canlıda her config kaydı 422
+    döndü ve kullanıcı 20 Eylül 05:44'te "Ayarlar sunucuya kaydedilemiyor"
+    hatası aldı. Daha önce geçerli olan bir değeri geçersiz kılmak istemciyi
+    kırar; doğrusu kabul edip güvenli tabana çekmek.
+    """
+    c = models.ConfigRequest(token="t", ecrn_list=["12345"],
                              kayit_saati="10:00:00", retry_aralik=3.0)
-    except pydantic.ValidationError:
-        return
-    raise AssertionError("retry_aralik=3.0 hâlâ kabul ediliyor")
+    assert c.retry_aralik == 3.5
