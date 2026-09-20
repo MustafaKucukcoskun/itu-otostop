@@ -67,7 +67,10 @@ function DashboardContent() {
   const [scrnList, setScrnList] = useState<string[]>([]);
   const [kayitSaati, setKayitSaati] = useState<string | null>(null);
   const [maxDeneme, setMaxDeneme] = useState(60);
-  const [retryAralik, setRetryAralik] = useState(3.0);
+  // 3.0 OBS'in debounce sınırının tam üstünde: 17 Eylül'de 3.04-3.17s
+  // aralıklı denemelerin beşi üst üste VAL16 yedi. Backend 3.5'e
+  // yükseltiyor; burada da aynı değeri göstermek için 3.5.
+  const [retryAralik, setRetryAralik] = useState(3.5);
   const [dryRun, setDryRun] = useState(false);
 
   // UI state

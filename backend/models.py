@@ -25,6 +25,12 @@ class ConfigRequest(BaseModel):
     scrn_list: list[str] = Field(default_factory=list, description="Silinecek CRN listesi", max_length=20)
     kayit_saati: str = Field(default="", pattern=r"^(\d{2}:\d{2}:\d{2})?$")
 
+    @field_validator("retry_aralik")
+    @classmethod
+    def _guvenli_tabana_yukselt(cls, v: float) -> float:
+        """3.0-3.5 arası değerleri REDDETME, yükselt (bkz. alan yorumu)."""
+        return max(v, 3.5)
+
     @field_validator("kayit_saati")
     @classmethod
     def validate_time_range(cls, v: str) -> str:
@@ -46,8 +52,17 @@ class ConfigRequest(BaseModel):
         return v
     max_deneme: int = Field(default=60, ge=1, le=300)
     # 3.0 OBS'in debounce sınırının TAM üstünde: 17 Eylül'de 3.04-3.17s
-    # aralıklı denemelerin beşi üst üste VAL16 yedi. Taban 3.5'e çekildi.
-    retry_aralik: float = Field(default=3.5, ge=3.5, le=10.0)
+    # aralıklı denemelerin beşi üst üste VAL16 yedi. Güvenli taban 3.5.
+    #
+    # Ama şema tabanını 3.5 yapmak İSTEMCİYİ KIRDI: frontend'in varsayılanı
+    # ve kullanıcıların kayıtlı config'leri 3.0'dı, backend her kaydı 422 ile
+    # reddetti ve 20 Eylül 05:44'te kullanıcı "Ayarlar sunucuya kaydedilemiyor"
+    # hatası aldı. Daha önce GEÇERLİ olan bir değeri sonradan geçersiz kılmak
+    # bir uyumluluk kırılmasıdır.
+    #
+    # Doğrusu: kabul et, güvenli tabana yükselt (aşağıdaki validator).
+    # Girdide hoşgörülü, davranışta katı.
+    retry_aralik: float = Field(default=3.5, ge=3.0, le=10.0)
     dry_run: bool = Field(default=False, description="Test modu — gerçek kayıt yapmaz")
 
     @field_validator('ecrn_list', 'scrn_list')
