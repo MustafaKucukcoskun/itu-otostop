@@ -481,17 +481,34 @@ class RegistrationEngine:
         return not self._cancelled.is_set() and not self._stood_down.is_set()
 
     def _best_calibration(self) -> Optional[CalibrationData]:
-        """Tüm ölçüm havuzundan en düşük RTT'li sample'ı seç (en güvenilir offset)."""
+        """Havuzdan en iyi ölçümü seç — ama İKİ AYRI ölçütle.
+
+        `server_offset`'in doğruluğunu NTP gecikmesi belirler; `rtt_one_way`'in
+        doğruluğunu HTTP RTT belirler. Bunlar farklı büyüklükler ve tek örnekten
+        tek ölçütle seçmek, birinde kazanıp ötekinde kaybetmek demek.
+
+        CANLI OLAY (20 Eylül 06:05, gerçek kullanıcı): ateşlemeden 14 saniye
+        önce buffer 10.2ms'den 14.5ms'ye ÇIKTI. Son tam kalibrasyonun NTP
+        gecikmesi 11ms'ydi (öncekiler 3-7ms) ama HTTP RTT'si en düşüktü;
+        yalnızca RTT'ye bakıldığı için o örnek seçildi ve kötü NTP gecikmesini
+        de beraberinde getirdi. Alt sınır yine bağladı, ama pay 7.7ms yerine
+        3.5ms kaldı — 18 Eylül'de 0.9ms'ye inen hatanın bir kat derinindeki
+        hali.
+
+        NTP'si olmayan örnekler (gecikme 0 kaydedilir) offset seçiminde yarışa
+        girmez: aksi hâlde "en düşük gecikme" diye kazanırlardı.
+        """
         if not self._cal_samples:
             return self._calibration
-        # En düşük RTT = en yüksek güvenilirlik
-        best = min(self._cal_samples, key=lambda s: s[1])
+        en_dusuk_rtt = min(self._cal_samples, key=lambda s: s[1])
+        ntp_li = [s for s in self._cal_samples if len(s) > 4 and s[4] > 0]
+        offset_ornegi = min(ntp_li, key=lambda s: s[4]) if ntp_li else en_dusuk_rtt
         return CalibrationData(
-            server_offset=best[0],
-            rtt_one_way=best[1] / 2,
+            server_offset=offset_ornegi[0],
+            rtt_one_way=en_dusuk_rtt[1] / 2,
             ntp_offset=self._calibration.ntp_offset if self._calibration else 0.0,
             # Eski örnekler bu alanı taşımıyor olabilir; 0 → geri düşülür.
-            ntp_delay=best[4] if len(best) > 4 else 0.0,
+            ntp_delay=offset_ornegi[4] if len(offset_ornegi) > 4 else 0.0,
         )
 
     def _refresh_buffer(self) -> float:

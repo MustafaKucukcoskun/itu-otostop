@@ -427,23 +427,41 @@ def test_start_not_blocked_when_exp_unreadable(client):
 # şey olmaz. (Yarına ayarlamak zaten imkânsız: OBS token'ı 6 saatlik.)
 
 
-def _gecmis_oturum(sid, saniye_once):
+def _gecmis_oturum(sid, saniye_once, monkeypatch=None):
+    """Hedefi `saniye_once` kadar geçmişte olan bir oturum kur.
+
+    DİKKAT — uygulamada TARİH kavramı yok: "23:08:15" her zaman BUGÜNÜN
+    23:08'idir. Saat başlığını hesaplayıp string'e çevirmek bu yüzden gece
+    yarısı civarında ters tepiyordu: saat 02:08'de "3 saat önce" 23:08 eder
+    ve bu bugünün 21 saat İLERİSİ olur. Test o saatlerde geçmiş-hedef
+    korumasını değil token korumasını tetikleyip düşüyordu — koddan bağımsız,
+    yalnızca çalıştırma saatine bağlı bir kırılganlık (21 Eylül 02:08'de
+    yakalandı; temiz ağaçta da düşüyordu).
+
+    `monkeypatch` verilirse epoch çevrimi sabitlenir ve test duvar saatinden
+    tamamen bağımsız olur.
+    """
     import datetime, zoneinfo, base64, json, time
-    t = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Istanbul")) - \
-        datetime.timedelta(seconds=saniye_once)
+    t = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Istanbul")) -         datetime.timedelta(seconds=saniye_once)
+
     def b64(o):
         return base64.urlsafe_b64encode(json.dumps(o).encode()).decode().rstrip("=")
+
     token = b64({"alg": "HS256"}) + "." + b64({"exp": int(time.time()) + 7200}) + ".imza"
+    if monkeypatch is not None:
+        hedef = time.time() - saniye_once
+        monkeypatch.setattr(main.RegistrationEngine, "_saat_to_epoch",
+                            staticmethod(lambda _s: hedef))
     s = main.SessionState(token=token, ecrn_list=["12345"],
                           kayit_saati=t.strftime("%H:%M:%S"))
     main.sessions[sid] = s
     return s
 
 
-def test_start_refused_for_a_long_past_target(client):
+def test_start_refused_for_a_long_past_target(client, monkeypatch):
     """Saatlerce geçmiş hedefle başlatmak boşuna ateşleme demek."""
     sid = "aaaa1111-1111-4111-8111-aaaa11111111"
-    _gecmis_oturum(sid, 3 * 3600)
+    _gecmis_oturum(sid, 3 * 3600, monkeypatch)
     try:
         r = client.post("/api/register/start", headers={"X-Session-ID": sid})
         assert r.status_code == 400
@@ -452,10 +470,10 @@ def test_start_refused_for_a_long_past_target(client):
         main.sessions.pop(sid, None); main.broker.release(sid)
 
 
-def test_just_missed_target_is_still_allowed(client):
+def test_just_missed_target_is_still_allowed(client, monkeypatch):
     """Kullanıcı birkaç saniye geç kaldıysa denemeye değer — engelleme."""
     sid = "bbbb2222-2222-4222-8222-bbbb22222222"
-    _gecmis_oturum(sid, 30)
+    _gecmis_oturum(sid, 30, monkeypatch)
     try:
         r = client.post("/api/register/start", headers={"X-Session-ID": sid})
         assert r.status_code != 400
