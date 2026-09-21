@@ -30,6 +30,7 @@ from auth import ClerkVerifier
 from engine import RegistrationEngine
 from isolation import IsolationBroker
 from token_expiry import expires_before, remaining_after_target
+from persistence import PendingStore
 from job_launcher import (JobLauncher, JobLauncherConfig, hesapla_timeout,
                           CONTAINER_RUNWAY)
 
@@ -110,6 +111,11 @@ _launcher = JobLauncher(_job_cfg) if _job_cfg else None
 # başlatanın konteyneri yarım saat boyunca hiç açılmıyordu.
 ISOLATION_LEAD_SN = float(os.getenv("ISOLATION_LEAD", "3600"))
 
+# Bekleyen kayıtların diskteki kopyası. Servis yeniden başladığında geri
+# yüklenirler; yoksa konteyner açılmadan önceki pencerede kayıt tamamen
+# kaybolur ve kimse ateşlemez. Kova ayarlanmamışsa sessizce devre dışı.
+pending_store = PendingStore(bucket=os.getenv("PENDING_BUCKET", ""))
+
 broker = IsolationBroker(
     # Konteyneri hedeften bu kadar önce aç. Kullanıcılar "başlat"a basıp
     # gitmek istiyor ve ölçüldü: 17 Eylül'de gerçek kullanıcılar 3.5 saat,
@@ -125,6 +131,9 @@ broker = IsolationBroker(
 )
 # Konteyner gelmediğinde kullanıcıyı bir kez uyar (her turda değil)
 _fallback_notified: set[str] = set()
+
+# Diskteki kopyası silinmiş kayıtlar — her turda tekrar silmeye çalışmamak için.
+_disk_silindi: set[str] = set()
 
 # Servisin bu sürecinin başlangıç anı.
 #
@@ -321,6 +330,68 @@ def get_session_id(request: Request) -> str:
 
 # ── App ──
 
+def _restore_pending() -> int:
+    """Yeniden başlatmadan sağ çıkan kayıtları belleğe geri koy.
+
+    Broker ve motor bellekte duruyor; servis yeniden başlayınca (deploy,
+    instance değişimi, çökme) konteyneri henüz açılmamış her kayıt yok oluyor
+    ve kimse ateşlemiyor. Kullanıcı "başlat"a basıp gitmişse bunu öğrenmesinin
+    yolu da yok.
+
+    ORİJİNAL BİLET korunur (broker.restore): yeniden başlatmadan önce açılmış
+    bir konteyner o başlatmadan sağ çıkar ve elinde eski bilet vardır; yeni
+    bilet üretmek kurtarmaya çalışırken hayatta olanı öldürmek olurdu.
+
+    Hiçbir hata servisi başlatmaktan alıkoymaz: kalıcılık emniyet ağıdır.
+    """
+    if not pending_store.enabled:
+        return 0
+    try:
+        bekleyenler = pending_store.list_pending()
+    except Exception as e:
+        # Depo kendi içinde yutuyor ama burada da koruyoruz: açılış yolunda
+        # sızan tek bir istisna servisi hiç başlatmayabilir.
+        print(f"[kalicilik] liste alinamadi: {e}", flush=True)
+        return 0
+    geri = 0
+    for kayit in bekleyenler:
+        sid = kayit.get("session_id") or ""
+        if not sid:
+            continue
+        try:
+            mevcut = sessions.get(sid)
+            if mevcut and mevcut.engine and mevcut.engine.is_running:
+                continue                       # zaten çalışıyor
+            s = get_session(sid)
+            s.token = kayit.get("token") or ""
+            s.ecrn_list = list(kayit.get("ecrn_list") or [])
+            s.scrn_list = list(kayit.get("scrn_list") or [])
+            s.kayit_saati = kayit.get("kayit_saati") or ""
+            s.max_deneme = int(kayit.get("max_deneme") or 60)
+            s.retry_aralik = float(kayit.get("retry_aralik") or 3.5)
+            s.dry_run = bool(kayit.get("dry_run"))
+            if not (s.token and s.ecrn_list and s.kayit_saati):
+                continue
+            s.engine = RegistrationEngine(
+                token=s.token, ecrn_list=s.ecrn_list, scrn_list=s.scrn_list,
+                kayit_saati=s.kayit_saati, max_deneme=s.max_deneme,
+                retry_aralik=s.retry_aralik, dry_run=s.dry_run,
+            )
+            s.engine_thread = threading.Thread(target=s.engine.run, daemon=True)
+            s.engine_thread.start()
+            if ISOLATION_ENABLED:
+                broker.restore(sid, float(kayit["target_epoch"]),
+                               str(kayit.get("ticket") or ""))
+            geri += 1
+            print(f"[kalicilik] geri yuklendi {sid[:14]} "
+                  f"kalan={float(kayit['target_epoch'])-time.time():.0f}s", flush=True)
+        except Exception as e:
+            print(f"[kalicilik] geri yuklenemedi ({sid[:14]}): {e}", flush=True)
+    if geri:
+        print(f"[kalicilik] toplam {geri} kayit geri yuklendi", flush=True)
+    return geri
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # JWKS'i baştan çek: ilk isteğin ağ beklemesini event loop'ta yapmasını önler
@@ -329,6 +400,13 @@ async def lifespan(app: FastAPI):
             await asyncio.get_running_loop().run_in_executor(None, _clerk._keys)
         except Exception:
             pass  # Clerk geçici erişilemezse ilk istekte tekrar denenir
+
+    # Yeniden başlatmadan sağ çıkan kayıtları geri yükle. Denetleyiciden ÖNCE:
+    # broker dolu olmalı ki ilk turda açılışlar değerlendirilebilsin.
+    try:
+        await asyncio.get_running_loop().run_in_executor(None, _restore_pending)
+    except Exception as e:
+        print(f"[kalicilik] geri yukleme atlandi: {e}", flush=True)
 
     sup: Optional[asyncio.Task] = None
     if ISOLATION_ENABLED:
@@ -557,7 +635,15 @@ async def _isolation_supervisor():
             # Biten kayıtları periyodik temizle (~her 5 dakikada bir)
             tur += 1
             if tur % 150 == 0:
-                broker.purge_finished()
+                for sid in broker.purge_finished():
+                    pending_store.delete(sid)
+            # Hedefi geçmiş kayıtların diskteki kopyası beklemeden silinsin:
+            # token orada gereğinden uzun durmamalı.
+            simdi_ = time.time()
+            for e in broker.snapshot():
+                if e.get("kalan_sn", 0) < -300 and e["session_id"] not in _disk_silindi:
+                    _disk_silindi.add(e["session_id"])
+                    pending_store.delete(e["session_id"])
         except Exception as e:
             # Sessizce yutmak en kritik döngüde kör nokta demekti: devir
             # mantığı bozulsa konteynerler asla çekilmez ve biz öğrenemezdik.
@@ -896,7 +982,20 @@ async def start_registration(request: Request):
     if ISOLATION_ENABLED:
         try:
             target = session.engine._saat_to_epoch(session.kayit_saati)
-            broker.register(session_id, target)
+            bilet = broker.register(session_id, target)
+            # Diske de yaz: servis yeniden başlarsa kayıt geri yüklenir.
+            # Başarısızlık sessiz — kalıcılık emniyet ağı, bağımlılık değil.
+            pending_store.save(session_id, {
+                "target_epoch": target,
+                "ticket": bilet,
+                "token": session.token,
+                "ecrn_list": list(session.ecrn_list),
+                "scrn_list": list(session.scrn_list),
+                "kayit_saati": session.kayit_saati,
+                "max_deneme": session.max_deneme,
+                "retry_aralik": session.retry_aralik,
+                "dry_run": session.dry_run,
+            })
             _fallback_notified.discard(session_id)
         except Exception as e:
             # İzolasyon kurulamadıysa kayıt yine de çalışır — sessizce geç
@@ -924,6 +1023,8 @@ async def cancel_registration(request: Request):
         raise HTTPException(404, "Çalışan kayıt yok")
 
     _fallback_notified.discard(session_id)
+    # İş bitti: token'ın diskte durmasına gerek yok.
+    pending_store.delete(session_id)
     return {"status": "cancelled"}
 
 
@@ -953,6 +1054,9 @@ async def reset_registration(request: Request):
     session.remote_running = False
     session.remote_results = {}
     broker.release(session_id)
+    # Kullanıcı sıfırladı: diskteki kopya da gitmeli, yoksa yeniden başlatmada
+    # SİLDİĞİ kayıt geri yüklenir ve istemediği ders alınır.
+    pending_store.delete(session_id)
     _fallback_notified.discard(session_id)
     return {"status": "reset", "message": "Engine state sıfırlandı"}
 
