@@ -30,7 +30,13 @@ from auth import ClerkVerifier
 from engine import RegistrationEngine
 from isolation import IsolationBroker
 from token_expiry import expires_before, remaining_after_target
-from job_launcher import JobLauncher, JobLauncherConfig, hesapla_timeout
+from job_launcher import (JobLauncher, JobLauncherConfig, hesapla_timeout,
+                          CONTAINER_RUNWAY)
+
+
+def job_launcher_runway() -> float:
+    """Konteynerin hedeften SONRA ihtiyaç duyduğu süre."""
+    return float(CONTAINER_RUNWAY)
 from obs_course_service import get_obs_service, CourseInfo as OBSCourseInfo
 
 
@@ -98,6 +104,12 @@ UUID_RE = re.compile(
 ISOLATION_ENABLED = os.getenv("ISOLATION", "").lower() in ("1", "true", "yes")
 _job_cfg = JobLauncherConfig.from_env() if ISOLATION_ENABLED else None
 _launcher = JobLauncher(_job_cfg) if _job_cfg else None
+# Konteyneri hedeften bu kadar önce aç (saniye). Kullanıcılar "başlat"a
+# basıp gitmek istiyor ve ölçüldü: 17 Eylül'de gerçek kullanıcılar 3.5 / 3 /
+# 2.8 / 2.7 / 2.6 / 2 / 2 saat önceden başlattı. 1800'de bir saat önce
+# başlatanın konteyneri yarım saat boyunca hiç açılmıyordu.
+ISOLATION_LEAD_SN = float(os.getenv("ISOLATION_LEAD", "3600"))
+
 broker = IsolationBroker(
     # Konteyneri hedeften bu kadar önce aç. Kullanıcılar "başlat"a basıp
     # gitmek istiyor ve ölçüldü: 17 Eylül'de gerçek kullanıcılar 3.5 saat,
@@ -108,7 +120,7 @@ broker = IsolationBroker(
     # Sınırı yükseltmek ancak açılış zaman sınırı da bekleme süresinden
     # TÜRETİLDİĞİ için güvenli (bkz. job_launcher.hesapla_timeout); sabit
     # 1800 kalsaydı erken açılan konteyner hedefe varmadan öldürülürdü.
-    lead=float(os.getenv("ISOLATION_LEAD", "3600")),
+    lead=ISOLATION_LEAD_SN,
     min_claim_margin=float(os.getenv("ISOLATION_MIN_CLAIM_MARGIN", "20")),
 )
 # Konteyner gelmediğinde kullanıcıyı bir kez uyar (her turda değil)
@@ -130,7 +142,18 @@ _fallback_notified: set[str] = set()
 # İptal etkilenmez (kayıt silinmez, bayrak konur). Hiç ateşlememek,
 # istenmeyen bir kayıttan kötüdür.
 _STARTED_AT = time.time()
-COLD_START_GRACE = float(os.getenv("ISOLATION_COLD_START_GRACE", "1800"))
+# Tolerans, bir konteynerin VAR OLABİLECEĞİ en uzun süreyi kapsamalı:
+# lead (hedeften önce açılış) + runway (hedeften sonra tekrar bütçesi).
+#
+# Sabit 1800'dü ve ISOLATION_LEAD de 1800 olduğu için denk geliyordu. Lead
+# 3600'e çıkarılınca bu, düzeltilmiş bir hatayı YENİDEN AÇTI: servis T-3500'de
+# yeniden başlarsa tolerans T-1700'de biter, konteyner T-1000'deki nabzında
+# 403 alıp kendini durdurur ve yerel motor da o yeniden başlatmada
+# kaybolduğu için KİMSE ateşlemez. İki sayı elle senkron tutulamaz; türetiliyor.
+COLD_START_GRACE = float(os.getenv(
+    "ISOLATION_COLD_START_GRACE",
+    str(int(ISOLATION_LEAD_SN + job_launcher_runway())),
+))
 
 
 def _amnezi_penceresinde(session_id: str) -> bool:

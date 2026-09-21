@@ -131,3 +131,42 @@ def test_reregistering_clears_the_tombstone(client, monkeypatch):
     r = client.post("/internal/heartbeat",
                     json={"session_id": "hayalet", "ticket": yeni})
     assert r.status_code == 200
+
+
+# ══════════════════════════════════════════════════════════════
+# Tolerans, konteynerin YAŞAYABİLECEĞİ en uzun süreyi kapsamalı
+# ══════════════════════════════════════════════════════════════
+#
+# COLD_START_GRACE sabit 1800sn'ydi ve ISOLATION_LEAD de 1800'dü — denk
+# geliyordu. Lead 3600'e çıkarılınca bu kendi düzelttiğim hatayı yeniden
+# açtı: konteyner artık hedeften bir saat önce açılıyor, ama servis
+# T-3500'de yeniden başlarsa tolerans T-1700'de biter ve konteyner
+# T-1000'deki nabzında 403 alıp kendini durdurur. Yerel motor da o yeniden
+# başlatmada kaybolduğu için KİMSE ateşlemez.
+#
+# Tolerans, bir konteynerin var olabileceği en uzun süreyi kapsamalı:
+# lead (hedeften önce açılış) + runway (hedeften sonra tekrar bütçesi).
+
+
+def test_grace_covers_the_longest_possible_container_life():
+    import job_launcher
+    assert main.COLD_START_GRACE >= main.ISOLATION_LEAD_SN + job_launcher.CONTAINER_RUNWAY, (
+        f"tolerans {main.COLD_START_GRACE}s, konteyner "
+        f"{main.ISOLATION_LEAD_SN + job_launcher.CONTAINER_RUNWAY}s yasayabilir"
+    )
+
+
+def test_grace_is_derived_not_a_magic_number():
+    """Lead değişirse tolerans da değişmeli — ikisi elle senkron tutulamaz."""
+    import importlib, os
+    eski = os.environ.get("ISOLATION_LEAD")
+    try:
+        os.environ["ISOLATION_LEAD"] = "7200"
+        importlib.reload(main)
+        assert main.COLD_START_GRACE >= 7200
+    finally:
+        if eski is None:
+            os.environ.pop("ISOLATION_LEAD", None)
+        else:
+            os.environ["ISOLATION_LEAD"] = eski
+        importlib.reload(main)
