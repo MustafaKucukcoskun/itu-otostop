@@ -108,6 +108,23 @@ class IsolationBroker:
             self._mezar.pop(session_id, None)
         return ticket
 
+    def restore(self, session_id: str, target_epoch: float, ticket: str) -> None:
+        """Yeniden başlatma sonrası kaydı ORİJİNAL biletiyle geri koy.
+
+        `register()` kullanılamaz çünkü yeni bilet üretir. Yeniden başlatmadan
+        önce açılmış bir konteyner o başlatmadan SAĞ ÇIKAR (soğuk başlangıç
+        toleransı sayesinde sözünü tutar) ve elinde eski bilet vardır; yeni
+        bilet üretmek, kurtarmaya çalışırken hayatta olanı öldürmek olur.
+
+        Kayıt `launched=False` döner: orijinal konteyner ölmüşse ikinci bir
+        şans doğar, sağsa ikinci konteyner "söz verilemedi" deyip çekilir.
+        """
+        with self._lock:
+            self._entries[session_id] = _Entry(
+                session_id=session_id, target_epoch=target_epoch, ticket=ticket
+            )
+            self._mezar.pop(session_id, None)
+
     def release(self, session_id: str) -> None:
         """Kaydı tamamen sil (sıfırlama). Biletler geçersizleşir.
 
