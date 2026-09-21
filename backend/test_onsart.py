@@ -113,10 +113,10 @@ def test_val11_result_keeps_the_course_requirement(monkeypatch):
 
 def test_unknown_code_still_shows_whatever_obs_sent(monkeypatch):
     mesaj = _kos_tek_deneme(monkeypatch, [{
-        "crn": "14771", "statusCode": 1, "resultCode": "VAL21",
-        "resultData": {"mesaj": "Aktif ders seçim zamanınız değil"},
+        "crn": "14771", "statusCode": 1, "resultCode": "VAL99",
+        "resultData": {"mesaj": "Tanimadigimiz bir sebep"},
     }])
-    assert "VAL21" in mesaj and "Aktif ders" in mesaj
+    assert "VAL99" in mesaj and "Tanimadigimiz bir sebep" in mesaj
 
 
 def test_known_code_without_data_is_not_polluted(monkeypatch):
