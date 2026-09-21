@@ -30,7 +30,7 @@ from auth import ClerkVerifier
 from engine import RegistrationEngine
 from isolation import IsolationBroker
 from token_expiry import expires_before, remaining_after_target
-from job_launcher import JobLauncher, JobLauncherConfig
+from job_launcher import JobLauncher, JobLauncherConfig, hesapla_timeout
 from obs_course_service import get_obs_service, CourseInfo as OBSCourseInfo
 
 
@@ -99,7 +99,16 @@ ISOLATION_ENABLED = os.getenv("ISOLATION", "").lower() in ("1", "true", "yes")
 _job_cfg = JobLauncherConfig.from_env() if ISOLATION_ENABLED else None
 _launcher = JobLauncher(_job_cfg) if _job_cfg else None
 broker = IsolationBroker(
-    lead=float(os.getenv("ISOLATION_LEAD", "900")),
+    # Konteyneri hedeften bu kadar önce aç. Kullanıcılar "başlat"a basıp
+    # gitmek istiyor ve ölçüldü: 17 Eylül'de gerçek kullanıcılar 3.5 saat,
+    # 3 saat, 2.8, 2.7, 2.6, 2, 2 saat önceden başlattı. 1800sn'de bir saat
+    # önce başlatan kişinin konteyneri yarım saat boyunca hiç açılmıyordu ve
+    # o sürede kayıt yalnızca ana servisin belleğinde duruyordu.
+    #
+    # Sınırı yükseltmek ancak açılış zaman sınırı da bekleme süresinden
+    # TÜRETİLDİĞİ için güvenli (bkz. job_launcher.hesapla_timeout); sabit
+    # 1800 kalsaydı erken açılan konteyner hedefe varmadan öldürülürdü.
+    lead=float(os.getenv("ISOLATION_LEAD", "3600")),
     min_claim_margin=float(os.getenv("ISOLATION_MIN_CLAIM_MARGIN", "20")),
 )
 # Konteyner gelmediğinde kullanıcıyı bir kez uyar (her turda değil)
@@ -483,12 +492,23 @@ async def _isolation_supervisor():
                 loop = asyncio.get_running_loop()
                 for sid, ticket in broker.due_for_launch(limit=LAUNCH_PER_TICK):
                     broker.mark_launched(sid)
+                    # Sınır SABİT OLAMAZ: konteyner hedefe kadar bekliyor ve
+                    # erken başlatan kullanıcıda bu bir saati bulabiliyor.
+                    # Sabit 1800 açılış gövdesinde gidip Job'ın task-timeout
+                    # ayarını eziyordu (bkz. job_launcher.hesapla_timeout).
+                    kalan = (broker.target_of(sid) or time.time()) - time.time()
+                    sinir = hesapla_timeout(kalan)
+                    print(f"[izolasyon] acilis {sid[:12]} kalan={kalan:.0f}s "
+                          f"sinir={sinir}s", flush=True)
                     try:
                         await loop.run_in_executor(
-                            None, _launcher.launch, sid, ticket, 1800
+                            None, _launcher.launch, sid, ticket, sinir
                         )
+                        print(f"[izolasyon] acildi {sid[:12]}", flush=True)
                     except Exception as e:
                         tekrar = broker.launch_failed(sid, str(e))
+                        print(f"[izolasyon] ACILAMADI {sid[:12]}: {e} "
+                              f"(tekrar={tekrar})", flush=True)
                         if not tekrar:
                             await broadcast(sid, {
                                 "type": "log",

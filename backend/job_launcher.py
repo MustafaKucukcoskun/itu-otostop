@@ -47,6 +47,30 @@ class JobLauncherConfig:
         return cls(project, region, job_name, control_url)
 
 
+# Hedeften SONRA konteynerin ihtiyacı olan süre: 60 deneme x 3.5sn tekrar
+# aralığı, artı yavaş OBS cevapları (19 Eylül'de 9845ms ölçüldü) ve kapanış.
+CONTAINER_RUNWAY = int(os.getenv("CONTAINER_RUNWAY", "900"))
+
+
+def hesapla_timeout(kalan_sn: float) -> int:
+    """Konteynerin zaman sınırı — SABİT OLAMAZ.
+
+    Konteyner hedefe kadar bekliyor ve kullanıcı ne kadar erken başlattıysa
+    bekleme o kadar uzun. Sabit 1800 saniye iki ayrı yerde yazılıydı ve açılış
+    isteğinin gövdesinde gidip Job'ın kendi `task-timeout` ayarını EZİYORDU;
+    18 Eylül'de o ayarı 2700'e çekmek bu yüzden hiçbir işe yaramadı.
+
+    Ölçülen sonuç: 15-17 Eylül'de üç konteyner 1799, 1803, 1811 saniye çalıştı,
+    ikisi sınırı aşıp "Terminating task because it has reached the maximum
+    timeout of 1800 seconds" logladı. 447p4 hedefte ateşledi ve öldürülmesine
+    0.3 saniye kala OBS'in cevabını aldı.
+
+    Hedef geçmiş olsa bile tam tekrar bütçesi verilir: geç başlatan kullanıcı
+    da altmış deneme hakkını kullanabilmeli.
+    """
+    return int(max(0.0, kalan_sn) + CONTAINER_RUNWAY)
+
+
 def build_run_request(
     cfg: JobLauncherConfig,
     session_id: str,
