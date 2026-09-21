@@ -172,3 +172,28 @@ class PendingStore:
                 continue          # çoktan geçmiş; geri yüklemek boşuna ateşler
             sonuc.append(kayit)
         return sonuc
+
+
+if __name__ == "__main__":  # pragma: no cover
+    # Cloud Run'dan GCS'e gerçekten yazabiliyor muyuz? Metadata token + IAM
+    # yolu üretimde ancak burada kanıtlanır; birim testleri ağa çıkmıyor.
+    # Tek seferlik bir Job olarak çalıştırılır, kendi çöpünü temizler.
+    import sys
+    kova = os.getenv("PENDING_BUCKET", "")
+    d = PendingStore(bucket=kova)
+    print(f"kova={kova!r} aktif={d.enabled}")
+    if not d.enabled:
+        sys.exit("PENDING_BUCKET ayarlanmamis")
+    sid = "u:__dogrulama__"
+    ornek = {"target_epoch": time.time() + 600, "ticket": "t", "token": "x",
+             "ecrn_list": ["00000"], "scrn_list": [], "kayit_saati": "23:59:00",
+             "max_deneme": 1, "retry_aralik": 3.5, "dry_run": True}
+    print("yazma :", "OK" if d.save(sid, ornek) else "BASARISIZ")
+    bulundu = [k for k in d.list_pending() if k.get("session_id") == sid]
+    print("okuma :", "OK" if bulundu else "BASARISIZ")
+    if bulundu:
+        print("  geri gelen ecrn:", bulundu[0].get("ecrn_list"))
+    print("silme :", "OK" if d.delete(sid) else "BASARISIZ")
+    kalan = [k for k in d.list_pending() if k.get("session_id") == sid]
+    print("temiz :", "OK" if not kalan else "HALA DURUYOR")
+    sys.exit(0 if (bulundu and not kalan) else 1)
