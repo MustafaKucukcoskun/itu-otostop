@@ -200,6 +200,20 @@ HATA_KODLARI = {
     "VAL22": "Yükseltmeye alınan ders çakışması",
 }
 
+# Kanıtı OBS'ten DEĞİL kendi gözlemimizden gelen ipuçları. Yalnızca OBS hiçbir
+# açıklama göndermediğinde kullanılır: OBS bir şey söylediyse bizim tahminimiz
+# onun YANINDA durmamalı — çelişirse kullanıcıyı yanlış yere yollar.
+#
+# VAL21 kanıtları (17 Eylül 14:00, x68zw): 10 CRN'in HEPSİ aynı kodu aldı;
+# cevap 49ms'de geldi, yani kontenjan mantığına girilmeden kapıda kesildi;
+# o CRN'lerden ikisini AYNI SANİYEDE başka kullanıcılar aldı; biri 75
+# kontenjan / 23 kayıttı. Resmî takvim o slotun 3. SINIFA ait olduğunu
+# söylüyor. Hepsi "bu öğrencinin kayıt saati değildi"ne uyuyor — ama OBS'in
+# kendi metnini hiç görmediğimiz için dil KESİN değil.
+IPUCLARI = {
+    "VAL21": "Muhtemelen kayıt saatiniz değil — ÖBS'de kendi kayıt saatinizi kontrol edin",
+}
+
 
 @dataclass
 class CalibrationData:
@@ -1306,7 +1320,11 @@ class RegistrationEngine:
                         desc = HATA_KODLARI.get(rc, rc)
                         ek = obs_aciklama(rd)
                         if ek:
+                            # OBS konuştuysa bizim tahminimiz SUSAR: ikisi
+                            # çelişirse kullanıcıyı yanlış yere yollarız.
                             desc = f"{desc}: {ek}"
+                        elif rc in IPUCLARI:
+                            desc = IPUCLARI[rc]
                         elif rc not in HATA_KODLARI:
                             desc = f"{rc} (OBS açıklama göndermedi)"
                         self._log(f"❌ {crn} → {desc}", "error")
