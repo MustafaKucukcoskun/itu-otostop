@@ -27,7 +27,7 @@ import time
 
 import requests
 
-from engine import RegistrationEngine
+from engine import RegistrationEngine, RETRY_ARALIK_VARSAYILAN
 
 # Sahipliğin alınacağı an. Ana servisin devir eşiği 8s, sahiplenme alt sınırı
 # 20s; 180s ikisine de geniş pay bırakır.
@@ -320,7 +320,7 @@ def main() -> int:
         scrn_list=cfg.get("scrn_list", []),
         kayit_saati=cfg["kayit_saati"],
         max_deneme=cfg.get("max_deneme", 60),
-        retry_aralik=cfg.get("retry_aralik", 3.0),
+        retry_aralik=cfg.get("retry_aralik", RETRY_ARALIK_VARSAYILAN),
         dry_run=cfg.get("dry_run", False),
     )
 

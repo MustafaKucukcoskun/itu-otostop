@@ -86,3 +86,20 @@ def test_schema_raises_unsafe_values_instead_of_refusing_them():
     c = models.ConfigRequest(token="t", ecrn_list=["12345"],
                              kayit_saati="10:00:00", retry_aralik=3.0)
     assert c.retry_aralik == 3.5
+
+
+def test_every_default_retry_interval_clears_the_debounce_window():
+    """Değer geçmeyi unutan HİÇBİR yol 3 saniyelik sınıra düşmemeli.
+
+    Motor, oturum ve izole koşucu varsayılanları 3.0'dı; canlı yol değeri
+    hep şemadan (≥3.5) aldığı için görünmüyordu.
+    """
+    import inspect
+    import main
+    import isolated_runner
+    from engine import RegistrationEngine, RETRY_ARALIK_VARSAYILAN
+    assert RETRY_ARALIK_VARSAYILAN >= 3.5
+    imza = inspect.signature(RegistrationEngine.__init__)
+    assert imza.parameters["retry_aralik"].default == RETRY_ARALIK_VARSAYILAN
+    assert main.SessionState().retry_aralik == RETRY_ARALIK_VARSAYILAN
+    assert "3.0" not in inspect.getsource(isolated_runner)
