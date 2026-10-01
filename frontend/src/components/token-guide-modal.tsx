@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import { m, AnimatePresence } from "motion/react";
 import {
   X,
@@ -26,6 +27,8 @@ const STEPS = [
       "Hangi sayfada olduğunun önemi yok, OBS'e giriş yapmış olman yeterli. Fotoğraftaki kırmızı kutular kullanıcı adı ve şifre alanlarını, yeşil kutu ise giriş butonunu gösteriyor.",
     icon: ExternalLink,
     image: "/guide/step1-obs-login.png",
+    width: 1050,
+    height: 640,
   },
   {
     title: "Geliştirici Araçlarını Aç",
@@ -34,6 +37,8 @@ const STEPS = [
       'Mac kullanıyorsan Cmd+Option+I kısayolunu kullanabilirsin. Chrome, Firefox ve Edge\'de çalışır. Fotoğrafta "Network" sekmesinin yerini görebilirsin.',
     icon: MonitorSmartphone,
     image: "/guide/step2-devtools.png",
+    width: 900,
+    height: 280,
   },
   {
     title: '"jwt" Filtrele',
@@ -42,6 +47,8 @@ const STEPS = [
       'Fotoğrafta kırmızı kutuyla işaretli filtre alanına "jwt" yazdığında, alttaki sonuç satırı görünecek. O satıra tıklaman gerekiyor. Liste boşsa sayfayı F5 ile yenileyi dene.',
     icon: Search,
     image: "/guide/step3a-jwt-filter.png",
+    width: 902,
+    height: 380,
   },
   {
     title: "Token'ı Kopyala",
@@ -50,6 +57,8 @@ const STEPS = [
       "Fotoğraftaki kırmızı kutuyla işaretli Response sekmesine tıkla. Açılan token metnini Ctrl+A ile tümünü seç, ardından Ctrl+C ile kopyala.",
     icon: Copy,
     image: "/guide/step3b-response-copy.png",
+    width: 902,
+    height: 380,
   },
   {
     title: "Token'ı Yapıştır",
@@ -58,6 +67,8 @@ const STEPS = [
       '"Bearer " ön eki otomatik olarak kaldırılır. Yapıştırdıktan sonra "Token Test Et" butonuyla doğruluğunu kontrol edebilirsin.',
     icon: ClipboardPaste,
     image: "/guide/step4-paste-token.png",
+    width: 1350,
+    height: 810,
   },
 ];
 
@@ -176,11 +187,16 @@ export function TokenGuideModal({ open, onClose }: TokenGuideModalProps) {
                         onClick={() => setLightbox(current.image)}
                         className="group relative w-full rounded-xl overflow-hidden ring-1 ring-border/15 hover:ring-primary/30 transition-all duration-200 cursor-zoom-in"
                       >
-                        <img
+                        {/* next/image: rehberi tam kayıt anında token almaya
+                            çalışan yeni kullanıcı açıyor; ham PNG'ler 1.4 MB.
+                            Tam boy yalnızca büyütmeye tıklanınca iner. */}
+                        <Image
                           src={current.image}
                           alt={current.title}
+                          width={current.width}
+                          height={current.height}
+                          sizes="(max-width: 544px) 100vw, 512px"
                           className="w-full h-auto object-contain"
-                          loading="lazy"
                         />
                         {/* Zoom hint overlay */}
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
