@@ -285,7 +285,9 @@ def test_no_sync_disk_call_inside_any_async_function():
             if (isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)
                     and isinstance(d.func.value, ast.Name)
                     and d.func.value.id == "pending_store"
-                    and d.func.attr in ("save", "delete", "list_pending")):
+                    and d.func.attr in ("save", "delete", "list_pending",
+                                        "save_result", "load_result",
+                                        "delete_result")):
                 ihlaller.append(f"{fn.name}:{d.lineno} pending_store.{d.func.attr}()")
     assert not ihlaller, "senkron GCS çağrısı async gövdede: " + ", ".join(ihlaller)
 
