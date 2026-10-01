@@ -885,7 +885,7 @@ class RegistrationEngine:
                 self._calibration = CalibrationData(server_offset=-ntp_off, rtt_one_way=0.010, ntp_offset=ntp_off)
                 return self._calibration
 
-        # 2. RTT ölçümü (OBS'ye gerçek POST ile)
+        # 2. RTT ölçümü (HEAD ile — POST ile birebir aynı RTT, bkz. _prewarm)
         medyan_rtt = self._rtt_olc(5)
         self._log(f"RTT: {medyan_rtt*1000:.0f}ms → tek yön: {medyan_rtt*500:.0f}ms")
 

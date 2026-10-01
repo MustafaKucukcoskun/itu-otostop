@@ -135,6 +135,39 @@ _fallback_notified: set[str] = set()
 # Diskteki kopyası silinmiş kayıtlar — her turda tekrar silmeye çalışmamak için.
 _disk_silindi: set[str] = set()
 
+
+# ── Kalıcılık çağrıları: loop'u BLOKE ETMEDEN ve oturum başına SIRAYLA ──
+#
+# PendingStore senkron `requests` kullanıyor (10 sn zaman aşımı) ve async
+# gövdelerden doğrudan çağrılıyordu: tek worker'lı serviste her GCS çağrısı
+# kadar WebSocket'ler, nabızlar ve devir denetleyicisi duruyordu (bkz.
+# test_event_loop.py). Thread'e taşımak tek başına yetmez: başlat→iptal art
+# arda gelirse silme, yazmayı geçip diskte iptal edilmiş token'lı bir kayıt
+# bırakabilir — servis yeniden başlarsa o kayıt geri yüklenip ATEŞLENİRDİ.
+# Aynı oturumun işleri bu yüzden kilitle sıraya giriyor (asyncio.Lock FIFO).
+_disk_kilitleri: dict[str, asyncio.Lock] = {}
+# Beklenmeden başlatılan disk işleri: referans tutulmazsa görev çöpe gidebilir.
+_arka_plan: set[asyncio.Task] = set()
+
+
+async def _disk(islem: str, session_id: str, *args) -> bool:
+    kilit = _disk_kilitleri.setdefault(session_id, asyncio.Lock())
+    async with kilit:
+        return await asyncio.to_thread(getattr(pending_store, islem), session_id, *args)
+
+
+def _disk_arka_planda(islem: str, session_id: str, *args) -> None:
+    """Beklemeden başlat. Denetleyici BEKLEMEMELİ: yavaş bir silme aynı
+    turdaki 8 saniyelik devir kontrolünü geciktirirdi."""
+    g = asyncio.get_running_loop().create_task(_disk(islem, session_id, *args))
+    _arka_plan.add(g)
+    g.add_done_callback(_arka_plan.discard)
+
+
+def _yeni_kayit_disk_durumu(session_id: str) -> None:
+    """Yeni kayıt: önceki kaydın "silindi" işareti bu kaydı korumasız bırakmasın."""
+    _disk_silindi.discard(session_id)
+
 # Servisin bu sürecinin başlangıç anı.
 #
 # CANLI OLAYDAN ÇIKTI (15 Eylül 05:49): kayıt beklerken yeni bir revizyon
@@ -515,6 +548,7 @@ async def poll_engine_events(session_id: str):
 
         events = engine.get_events()
         for event in events:
+            _bittiyse_diskten_sil(session_id, event)
             await broadcast(session_id, event)
 
         # Çıkış: engine durdu VE kuyruk boş VE thread bitti
@@ -527,7 +561,20 @@ async def poll_engine_events(session_id: str):
     # Son kalan eventleri gönder
     remaining = engine.get_events()
     for event in remaining:
+        _bittiyse_diskten_sil(session_id, event)
         await broadcast(session_id, event)
+
+
+def _bittiyse_diskten_sil(session_id: str, event: dict) -> None:
+    """Kayıt bitti: disk kopyası HEMEN gitsin ("iş biter bitmez SİL").
+
+    Eskiden hedeften 5 dk sonra siliniyordu. Arada servis yeniden başlarsa
+    geri yükleme (1 saat tolerans) BİTMİŞ kaydı yeniden ateşlerdi — öğrenci
+    bu arada ÖBS'de elle bir şey değiştirdiyse istemediği ekleme/bırakma olur.
+    Çekilen (stood_down) yerel motor "done" yaymaz; kayıt konteynerde sürer.
+    """
+    if event.get("type") == "done":
+        _disk_arka_planda("delete", session_id)
 
 
 # ── İzolasyon denetleyicisi ──
@@ -636,14 +683,14 @@ async def _isolation_supervisor():
             tur += 1
             if tur % 150 == 0:
                 for sid in broker.purge_finished():
-                    pending_store.delete(sid)
+                    _disk_arka_planda("delete", sid)
             # Hedefi geçmiş kayıtların diskteki kopyası beklemeden silinsin:
             # token orada gereğinden uzun durmamalı.
             simdi_ = time.time()
             for e in broker.snapshot():
                 if e.get("kalan_sn", 0) < -300 and e["session_id"] not in _disk_silindi:
                     _disk_silindi.add(e["session_id"])
-                    pending_store.delete(e["session_id"])
+                    _disk_arka_planda("delete", e["session_id"])
         except Exception as e:
             # Sessizce yutmak en kritik döngüde kör nokta demekti: devir
             # mantığı bozulsa konteynerler asla çekilmez ve biz öğrenemezdik.
@@ -764,6 +811,7 @@ async def internal_events(payload: dict):
             continue
         if session is not None:
             _mirror_remote_event(session, ev)
+        _bittiyse_diskten_sil(sid, ev)
         await broadcast(sid, ev)
     return {"ok": True}
 
@@ -985,7 +1033,8 @@ async def start_registration(request: Request):
             bilet = broker.register(session_id, target)
             # Diske de yaz: servis yeniden başlarsa kayıt geri yüklenir.
             # Başarısızlık sessiz — kalıcılık emniyet ağı, bağımlılık değil.
-            pending_store.save(session_id, {
+            _yeni_kayit_disk_durumu(session_id)
+            await _disk("save", session_id, {
                 "target_epoch": target,
                 "ticket": bilet,
                 "token": session.token,
@@ -1024,7 +1073,7 @@ async def cancel_registration(request: Request):
 
     _fallback_notified.discard(session_id)
     # İş bitti: token'ın diskte durmasına gerek yok.
-    pending_store.delete(session_id)
+    await _disk("delete", session_id)
     return {"status": "cancelled"}
 
 
@@ -1056,7 +1105,7 @@ async def reset_registration(request: Request):
     broker.release(session_id)
     # Kullanıcı sıfırladı: diskteki kopya da gitmeli, yoksa yeniden başlatmada
     # SİLDİĞİ kayıt geri yüklenir ve istemediği ders alınır.
-    pending_store.delete(session_id)
+    await _disk("delete", session_id)
     _fallback_notified.discard(session_id)
     return {"status": "reset", "message": "Engine state sıfırlandı"}
 
