@@ -33,7 +33,7 @@ def _motor(monkeypatch):
     y = _Yakalayici()
     monkeypatch.setattr(m, "session", y)
     monkeypatch.setattr(m, "_prepare_fire", lambda: None)
-    monkeypatch.setattr(m, "_request_for", lambda c: object())
+    monkeypatch.setattr(m, "_request_for", lambda *a, **k: object())
     monkeypatch.setattr(engine.time, "sleep", lambda s: None)
     return m, y
 

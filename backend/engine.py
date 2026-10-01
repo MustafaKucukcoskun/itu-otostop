@@ -346,7 +346,8 @@ class RegistrationEngine:
         self._trigger_time: Optional[float] = None
         # Tetik öncesi hazırlanan istek (eşzamanlılık: tetikten sonra iş kalmasın)
         self._prepped: Optional[requests.PreparedRequest] = None
-        self._prepped_for: Optional[list[str]] = None
+        # (ECRN, SCRN) — hazır istek hangi iki liste için inşa edildi
+        self._prepped_for: Optional[tuple[list[str], list[str]]] = None
 
         # Ölçüm tabanlı zamanlama
         self._last_ntp_delay: Optional[float] = None  # Son NTP delay (sn)
@@ -1042,10 +1043,12 @@ class RegistrationEngine:
 
     # ── PreparedRequest ──
 
-    def _build_request(self, ecrn_list: list[str]) -> requests.PreparedRequest:
+    def _build_request(self, ecrn_list: list[str],
+                       scrn_list: list[str] | None = None) -> requests.PreparedRequest:
+        scrn = self.scrn_list if scrn_list is None else scrn_list
         req = requests.Request(
             method="POST", url=OBS_URL,
-            json={"ECRN": ecrn_list, "SCRN": self.scrn_list},
+            json={"ECRN": ecrn_list, "SCRN": scrn},
         )
         return self.session.prepare_request(req)
 
@@ -1057,13 +1060,17 @@ class RegistrationEngine:
         Bu hazırlık tetikten önce çalıştığında tetik anında geriye yalnızca
         session.send() kalır ve gecikme kullanıcı sayısından bağımsızlaşır.
         """
-        if self._prepped is not None and self._prepped_for == self.ecrn_list:
+        anahtar = (list(self.ecrn_list), list(self.scrn_list))
+        if self._prepped is not None and self._prepped_for == anahtar:
             return
-        kalan = list(self.ecrn_list)
-        for crn in kalan:
+        for crn in self.ecrn_list:
             self._crn_results.setdefault(crn, {"status": "pending", "message": "Bekliyor"})
-        self._prepped = self._build_request(kalan)
-        self._prepped_for = kalan
+        # Bırakılacak dersler de listede görünmeli: aksi halde öğrenci
+        # bıraktığı dersin akıbetini arayüzde hiç göremiyordu.
+        for crn in self.scrn_list:
+            self._crn_results.setdefault(crn, {"status": "pending", "message": "Bırakılacak"})
+        self._prepped = self._build_request(*anahtar)
+        self._prepped_for = anahtar
 
     def _done_payload(self) -> dict:
         """Bitiş olayının içeriği.
@@ -1078,16 +1085,20 @@ class RegistrationEngine:
             "stood_down": self._stood_down.is_set(),
         }
 
-    def _request_for(self, ecrn_list: list[str]) -> requests.PreparedRequest:
-        """Hazır istek bu CRN listesiyle eşleşiyorsa onu kullan; değilse yeniden inşa et.
+    def _request_for(self, ecrn_list: list[str],
+                     scrn_list: list[str] | None = None) -> requests.PreparedRequest:
+        """Hazır istek bu CRN listeleriyle eşleşiyorsa onu kullan; değilse yeniden inşa et.
 
-        Kayıt döngüsünde başarılı CRN'ler listeden düştükçe istek yenilenmeli;
-        ama ilk (en kritik) istekte hazır olan doğrudan kullanılır.
+        Kayıt döngüsünde karara bağlanan CRN'ler listeden düştükçe istek
+        yenilenmeli; ama ilk (en kritik) istekte hazır olan doğrudan kullanılır.
+        `scrn_list` verilmezse motorun tam bırakma listesi kullanılır.
         """
-        if self._prepped is not None and self._prepped_for == ecrn_list:
+        scrn = self.scrn_list if scrn_list is None else scrn_list
+        anahtar = (list(ecrn_list), list(scrn))
+        if self._prepped is not None and self._prepped_for == anahtar:
             return self._prepped
-        self._prepped = self._build_request(ecrn_list)
-        self._prepped_for = list(ecrn_list)
+        self._prepped = self._build_request(*anahtar)
+        self._prepped_for = anahtar
         return self._prepped
 
     # ── Dry-Run Simülasyonu ──
@@ -1187,6 +1198,10 @@ class RegistrationEngine:
                 for crn in list(kalan):
                     self._crn_results[crn] = {"status": "success", "message": "DRY RUN: Simüle edilmiş başarı"}
                     kalan.remove(crn)
+                # Bırakmalar da simüle edilmeli; yoksa sondaki _finalize_all
+                # onları "sonuç bildirilmedi" diye kırmızıya çevirir.
+                for crn in self.scrn_list:
+                    self._crn_results[crn] = {"status": "dropped", "message": "DRY RUN: Simüle edilmiş bırakma"}
                 self._emit("crn_update", {"results": dict(self._crn_results)})
                 break
 
@@ -1197,6 +1212,9 @@ class RegistrationEngine:
 
     def _kayit_yap(self):
         kalan = list(self.ecrn_list)
+        # Bırakılacaklardan sonucu henüz belli olmayanlar. Döngüyü YÖNETMEZ:
+        # OBS bırakma listesini göndermezse eklemeler bitince yine durulur.
+        kalan_scrn = list(self.scrn_list)
         basarili = []
         basarisiz = {}
         aralik = self.retry_aralik
@@ -1217,7 +1235,7 @@ class RegistrationEngine:
 
             if not ilk:
                 if crn_degisti:
-                    prepped = self._request_for(kalan)
+                    prepped = self._request_for(kalan, kalan_scrn)
                     crn_degisti = False
 
             try:
@@ -1334,6 +1352,31 @@ class RegistrationEngine:
                             basarisiz[crn] = desc
                             crn_degisti = True
 
+                # Bırakma sonuçları. Bekleme süresine (tum_val02/debounce_var)
+                # KARIŞMAZ: o hesap production'da ekleme kodlarıyla kanıtlandı;
+                # bırakmanın başka bir kodu motoru açılmamış sisteme 50ms'lik
+                # tekrarlara sokmamalı.
+                for item in (data.get("scrnResultList") or []):
+                    crn = str(item.get("crn") or "")
+                    if crn not in kalan_scrn:
+                        continue
+                    rc = item.get("resultCode")
+                    if item.get("statusCode") == 0:
+                        self._log(f"✅ {crn} → BIRAKILDI")
+                        self._crn_results[crn] = {"status": "dropped", "message": "Bırakıldı"}
+                    elif rc in ("VAL02", "VAL16"):
+                        continue  # henüz işlenmedi — sonraki istekte yine gider
+                    else:
+                        # Ekleme etiketleri (HATA_KODLARI) bırakma için
+                        # yanlış olabilir: kod + OBS'in kendi açıklaması.
+                        ek = obs_aciklama(item.get("resultData"))
+                        desc = f"Bırakılamadı ({rc})" + (
+                            f": {ek}" if ek else " — ÖBS'den kontrol edin")
+                        self._log(f"❌ {crn} → {desc}", "error")
+                        self._crn_results[crn] = {"status": "error", "message": desc}
+                    kalan_scrn.remove(crn)
+                    crn_degisti = True
+
                 self._emit("crn_update", {"results": dict(self._crn_results)})
             else:
                 tum_val02 = False
@@ -1356,7 +1399,10 @@ class RegistrationEngine:
                 self._log(f"  Başarısız: {c} — {s}", "error")
         if kalan:
             self._log(f"  Kalan: {kalan}", "warning")
-            self._finalize_pending(kalan)
+        if kalan_scrn:
+            self._log(f"  Bırakma sonucu gelmedi: {kalan_scrn}", "warning")
+        if kalan or kalan_scrn:
+            self._finalize_pending(kalan + kalan_scrn)
 
     def _finalize_all(self):
         """Kaydın bittiği HER yolda çağrılır: kalan tüm CRN'leri karara bağlar.
@@ -1379,14 +1425,24 @@ class RegistrationEngine:
         yazılamaz.
         """
         iptal = self._cancelled.is_set()
+        birakma = set(self.scrn_list) - set(self.ecrn_list)
         degisti = False
         for crn in kalan:
             mevcut = self._crn_results.get(crn, {})
             if mevcut.get("status") not in (None, "pending", "debounce"):
                 continue  # zaten karara bağlanmış
             if iptal:
+                # Bir zamanlar "dropped" yazılıyordu — ama o anahtar ekle-bırak
+                # döneminde "ders BIRAKILDI" demek ve arayüz onu yeşil
+                # "Bırakıldı" gösteriyor. İptal ne başarı ne hata.
                 self._crn_results[crn] = {
-                    "status": "dropped", "message": "İptal edildi"
+                    "status": "cancelled", "message": "İptal edildi"
+                }
+            elif crn in birakma:
+                # Bilmediğimizi söyle: "bırakıldı" da "bırakılamadı" da tahmin.
+                self._crn_results[crn] = {
+                    "status": "error",
+                    "message": "Bırakma sonucu bildirilmedi — ÖBS'den kontrol edin",
                 }
             else:
                 self._crn_results[crn] = {
