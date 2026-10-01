@@ -239,30 +239,9 @@ function DashboardContent() {
     })();
   }, [clerkUserId]);
 
-  // Sync state from backend when WebSocket connects/reconnects
-  const prevConnectedRef = useRef(false);
-  useEffect(() => {
-    if (ws.connected && !prevConnectedRef.current) {
-      // WS just connected — check backend state
-      api
-        .getStatus()
-        .then((status) => {
-          if (
-            status.running &&
-            status.phase &&
-            status.phase !== "idle" &&
-            status.phase !== "done"
-          ) {
-            // Backend is running but frontend might be out of sync
-            // WS events will take over from here
-          }
-        })
-        .catch(() => {
-          /* ignore — backend may be offline */
-        });
-    }
-    prevConnectedRef.current = ws.connected;
-  }, [ws.connected]);
+  // Bağlanınca durum senkronu use-websocket.ts'te (ws.onopen → getStatus).
+  // Burada ikinci bir getStatus vardı ama sonucu hiçbir şey yapmıyordu:
+  // her (yeniden) bağlantıda, kayıt anında yüzlerce kullanıcı için boşa istek.
 
   // Save config to backend
   const saveConfig = useCallback(async (): Promise<boolean> => {
