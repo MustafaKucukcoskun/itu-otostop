@@ -470,12 +470,16 @@ def test_exhausted_attempts_mark_remaining_crns_failed():
 
 
 def test_cancelled_registration_is_marked_cancelled_not_failed():
-    """İptal başarısızlık değildir; kullanıcı ikisini ayırt edebilmeli."""
+    """İptal başarısızlık değildir; kullanıcı ikisini ayırt edebilmeli.
+
+    Durum bir zamanlar 'dropped' idi — ama ekle-bırak döneminde o anahtar
+    "ders BIRAKILDI" demek ve arayüz onu yeşil "Bırakıldı" gösteriyor.
+    """
     eng = RegistrationEngine(token="t.o.k", ecrn_list=["12345"])
     eng._prepare_fire()
     eng.cancel()
     eng._finalize_pending(["12345"])
-    assert eng._crn_results["12345"]["status"] == "dropped"
+    assert eng._crn_results["12345"]["status"] == "cancelled"
     assert "ptal" in eng._crn_results["12345"]["message"]
 
 

@@ -15,7 +15,8 @@ class CRNStatus(str, Enum):
     CONFLICT = "conflict"
     UPGRADE = "upgrade"
     DEBOUNCE = "debounce"
-    DROPPED = "dropped"
+    DROPPED = "dropped"      # SCRN ile gerçekten bırakıldı
+    CANCELLED = "cancelled"  # kullanıcı iptal etti — ne başarı ne hata
     ERROR = "error"
 
 

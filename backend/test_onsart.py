@@ -90,7 +90,7 @@ def _kos_tek_deneme(monkeypatch, sonuclar):
     m = engine.RegistrationEngine(token="t", ecrn_list=["14771"],
                                   kayit_saati="23:59:00", max_deneme=1)
     monkeypatch.setattr(m, "_prepare_fire", lambda: None)
-    monkeypatch.setattr(m, "_request_for", lambda c: object())
+    monkeypatch.setattr(m, "_request_for", lambda *a, **k: object())
     monkeypatch.setattr(engine.time, "sleep", lambda s: None)
 
     class S:

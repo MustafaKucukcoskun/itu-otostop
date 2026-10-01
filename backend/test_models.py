@@ -1,4 +1,4 @@
-"""Girdi doğrulaması — kullanıcının yanlış yazabileceği her şey.
+r"""Girdi doğrulaması — kullanıcının yanlış yazabileceği her şey.
 
 Kayıt saati düzenli ifadeyle `\d{2}:\d{2}:\d{2}` olarak kontrol ediliyordu;
 bu "25:00:00" ve "12:70:00" gibi değerleri KABUL eder. Motor bunları

@@ -40,7 +40,7 @@ def _uykular(monkeypatch, kod_dizisi):
                                   kayit_saati="23:59:00", max_deneme=3,
                                   retry_aralik=3.5)
     monkeypatch.setattr(m, "_prepare_fire", lambda: None)
-    monkeypatch.setattr(m, "_request_for", lambda c: object())
+    monkeypatch.setattr(m, "_request_for", lambda *a, **k: object())
     uykular = []
     monkeypatch.setattr(engine.time, "sleep", lambda s: uykular.append(s))
     tur = {"n": 0}

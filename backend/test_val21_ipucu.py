@@ -41,7 +41,7 @@ def test_obs_explanation_wins_over_our_hint(monkeypatch):
     m = engine.RegistrationEngine(token="t", ecrn_list=["12345"],
                                   kayit_saati="23:59:00", max_deneme=1)
     monkeypatch.setattr(m, "_prepare_fire", lambda: None)
-    monkeypatch.setattr(m, "_request_for", lambda c: object())
+    monkeypatch.setattr(m, "_request_for", lambda *a, **k: object())
     monkeypatch.setattr(engine.time, "sleep", lambda s: None)
     monkeypatch.setattr(m, "session", type("S", (), {"send": lambda s,*a,**k: Y()})())
     m._kayit_yap()
