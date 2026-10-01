@@ -66,6 +66,10 @@ class SessionState:
     remote_phase: str = ""
     remote_running: bool = False
     remote_results: dict = field(default_factory=dict)
+    # Servis yeniden başladıysa son kaydın SONUCU diskten okunur — oturum
+    # başına en fazla bir kez (her sayfa açılışında GCS'e gidilmesin).
+    disk_sonucu: Optional[dict] = None
+    disk_sonucu_bakildi: bool = False
 
 
 sessions: dict[str, SessionState] = {}
@@ -548,7 +552,7 @@ async def poll_engine_events(session_id: str):
 
         events = engine.get_events()
         for event in events:
-            _bittiyse_diskten_sil(session_id, event)
+            _bitisi_isle(session_id, event)
             await broadcast(session_id, event)
 
         # Çıkış: engine durdu VE kuyruk boş VE thread bitti
@@ -561,20 +565,37 @@ async def poll_engine_events(session_id: str):
     # Son kalan eventleri gönder
     remaining = engine.get_events()
     for event in remaining:
-        _bittiyse_diskten_sil(session_id, event)
+        _bitisi_isle(session_id, event)
         await broadcast(session_id, event)
 
 
-def _bittiyse_diskten_sil(session_id: str, event: dict) -> None:
-    """Kayıt bitti: disk kopyası HEMEN gitsin ("iş biter bitmez SİL").
+def _bitisi_isle(session_id: str, event: dict) -> None:
+    """Kayıt bitti: bekleyen kopya HEMEN silinsin, sonuç saklansın.
 
-    Eskiden hedeften 5 dk sonra siliniyordu. Arada servis yeniden başlarsa
-    geri yükleme (1 saat tolerans) BİTMİŞ kaydı yeniden ateşlerdi — öğrenci
-    bu arada ÖBS'de elle bir şey değiştirdiyse istemediği ekleme/bırakma olur.
-    Çekilen (stood_down) yerel motor "done" yaymaz; kayıt konteynerde sürer.
+    Silme ("iş biter bitmez SİL"): eskiden hedeften 5 dk sonra siliniyordu.
+    Arada servis yeniden başlarsa geri yükleme (1 saat tolerans) BİTMİŞ kaydı
+    yeniden ateşlerdi — öğrenci bu arada ÖBS'de elle bir şey değiştirdiyse
+    istemediği ekleme/bırakma olur.
+
+    Sonuç: başlatıp giden kullanıcı servis örneği değişse de ne olduğunu
+    görsün. Token İÇERMEZ. Dry run ve iptal saklanmaz — dönen kullanıcı
+    simülasyonu gerçek sanmasın.
     """
-    if event.get("type") == "done":
-        _disk_arka_planda("delete", session_id)
+    if event.get("type") != "done":
+        return
+    data = event.get("data") or {}
+    if not isinstance(data, dict) or data.get("stood_down"):
+        return  # çekilme bitiş değil: kayıt konteynerde sürüyor
+    _disk_arka_planda("delete", session_id)
+    if data.get("cancelled"):
+        return
+    s = sessions.get(session_id)
+    kaynak = (s.engine or s) if s else None
+    if kaynak is None or getattr(kaynak, "dry_run", True):
+        return  # dry run ya da bilinmiyor
+    sonuclar = data.get("results")
+    if isinstance(sonuclar, dict) and sonuclar:
+        _disk_arka_planda("save_result", session_id, {"results": sonuclar})
 
 
 # ── İzolasyon denetleyicisi ──
@@ -811,7 +832,7 @@ async def internal_events(payload: dict):
             continue
         if session is not None:
             _mirror_remote_event(session, ev)
-        _bittiyse_diskten_sil(sid, ev)
+        _bitisi_isle(sid, ev)
         await broadcast(sid, ev)
     return {"ok": True}
 
@@ -1016,6 +1037,10 @@ async def start_registration(request: Request):
     if session.poll_task and not session.poll_task.done():
         session.poll_task.cancel()
 
+    # Yeni kayıt: önceki kaydın saklanan sonucu bir daha gösterilmesin.
+    _disk_sonucunu_unut(session)
+    _disk_arka_planda("delete_result", session_id)
+
     # Event polling'i background task olarak başlat
     session.poll_task = asyncio.create_task(poll_engine_events(session_id))
     session.poll_task.add_done_callback(_poll_task_done)
@@ -1106,8 +1131,38 @@ async def reset_registration(request: Request):
     # Kullanıcı sıfırladı: diskteki kopya da gitmeli, yoksa yeniden başlatmada
     # SİLDİĞİ kayıt geri yüklenir ve istemediği ders alınır.
     await _disk("delete", session_id)
+    _disk_sonucunu_unut(session)
+    await _disk("delete_result", session_id)
     _fallback_notified.discard(session_id)
     return {"status": "reset", "message": "Engine state sıfırlandı"}
+
+
+def _sonuc_listesi(sonuclar) -> list[CRNResultItem]:
+    """{crn: {status, message}} → API listesi. Tanınmayan durum 'pending'."""
+    liste = []
+    for crn, info in (sonuclar if isinstance(sonuclar, dict) else {}).items():
+        info = info if isinstance(info, dict) else {}
+        try:
+            st = CRNStatus(info.get("status", "pending"))
+        except ValueError:
+            st = CRNStatus.PENDING
+        liste.append(CRNResultItem(crn=crn, status=st,
+                                   message=info.get("message", "")))
+    return liste
+
+
+async def _disk_sonucu(session_id: str, session: SessionState) -> Optional[dict]:
+    if not session.disk_sonucu_bakildi:
+        sonuc = await asyncio.to_thread(pending_store.load_result, session_id)
+        session.disk_sonucu = sonuc if isinstance(sonuc, dict) else None
+        session.disk_sonucu_bakildi = True
+    return session.disk_sonucu
+
+
+def _disk_sonucunu_unut(session: SessionState) -> None:
+    """Yeni kayıt / sıfırlama: eski sonuç bir daha gösterilmesin."""
+    session.disk_sonucu = None
+    session.disk_sonucu_bakildi = True
 
 
 @app.get("/api/register/status", response_model=RegistrationState)
@@ -1116,32 +1171,25 @@ async def registration_status(request: Request):
     session = get_session(session_id)
 
     if not session.engine:
+        # Servis yeniden başlamış olabilir: son kaydın sonucu diskte mi?
+        sonuc = await _disk_sonucu(session_id, session)
+        if sonuc:
+            return RegistrationState(
+                phase="done", running=False,
+                crn_results=_sonuc_listesi(sonuc.get("results")),
+            )
         return RegistrationState()
 
     # Konteyner devraldıysa gerçek durum ONDA; yerel motor susturulmuş halde
     # bekliyor ve eski fazını gösterirdi.
     if broker.owner_of(session_id) == "remote" and session.remote_phase:
-        uzak = []
-        for crn, info in (session.remote_results or {}).items():
-            try:
-                st = CRNStatus(info.get("status", "pending"))
-            except (ValueError, AttributeError):
-                st = CRNStatus.PENDING
-            uzak.append(CRNResultItem(crn=crn, status=st,
-                                      message=(info or {}).get("message", "")))
         return RegistrationState(
             phase=session.remote_phase,
             running=session.remote_running,
-            crn_results=uzak,
+            crn_results=_sonuc_listesi(session.remote_results),
         )
 
-    crn_results = []
-    for crn, info in session.engine.crn_results.items():
-        try:
-            status = CRNStatus(info["status"])
-        except ValueError:
-            status = CRNStatus.PENDING
-        crn_results.append(CRNResultItem(crn=crn, status=status, message=info.get("message", "")))
+    crn_results = _sonuc_listesi(session.engine.crn_results)
 
     cal = None
     if session.engine.calibration:

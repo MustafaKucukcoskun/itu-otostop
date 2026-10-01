@@ -29,6 +29,14 @@ token'la imzalanıyor. Bedeli bilinçli kabul edildi. Azaltıcılar:
   - kovada 1 günlük yaşam döngüsü kuralı: temizlik yolu bozulsa bile
     token sonsuza kadar durmaz
 
+SONUÇLAR
+────────
+Kayıt bitince bekleyen kopya silinir ve SONUÇ ayrı bir önekte (`results/`)
+saklanır: başlatıp giden kullanıcı servis örneği değişse de — çoğu zaman
+başka bir cihazdan — ne olduğunu görebilsin. Sonuç token içermez; dry run ve
+iptal saklanmaz; yeni kayıt ve sıfırlama eskisini siler; kovanın 1 günlük
+kuralı gerisini temizler.
+
 EN ÖNEMLİ KURAL
 ───────────────
 Kalıcılık bir EMNİYET AĞI, bir bağımlılık değil. Depolama çökerse, yetki
@@ -54,6 +62,9 @@ METADATA_TOKEN_URL = (
 GCS_UPLOAD = "https://storage.googleapis.com/upload/storage/v1/b"
 GCS_API = "https://storage.googleapis.com/storage/v1/b"
 ONEK = "pending/"
+# Biten kaydın SONUCU — token İÇERMEZ, geri yüklemeye karışmaz (ayrı önek).
+# Kovanın 1 günlük yaşam döngüsü kuralı bunları da kendiliğinden siler.
+SONUC_ONEKI = "results/"
 
 # Hedefi bu kadar saniyeden fazla geçmiş kayıt geri YÜKLENMEZ: motor kapalı
 # pencereye altmış kez ateşler ve kullanıcı "başlatıldı" yazısını gördükten
@@ -100,6 +111,9 @@ class PendingStore:
     def _ad(self, session_id: str) -> str:
         return f"{ONEK}{session_id}.json"
 
+    def _sonuc_adi(self, session_id: str) -> str:
+        return f"{SONUC_ONEKI}{session_id}.json"
+
     def _indir(self, ad: str) -> Optional[dict]:
         url = f"{GCS_API}/{quote(self.bucket, safe='')}/o/{quote(ad, safe='')}?alt=media"
         r = self._t.get(url, headers=self._basliklar(), timeout=self._timeout)
@@ -108,15 +122,14 @@ class PendingStore:
 
     # ── dışarıya ──
 
-    def save(self, session_id: str, kayit: dict) -> bool:
-        """Kaydı yaz. Başarısızlık sessiz: kayıt yine çalışır."""
+    def _yaz(self, ad: str, session_id: str, veri: dict) -> bool:
         if not self.enabled:
             return False
         try:
-            govde = json.dumps({**kayit, "session_id": session_id,
+            govde = json.dumps({**veri, "session_id": session_id,
                                 "saved_at": time.time()}).encode("utf-8")
             url = (f"{GCS_UPLOAD}/{quote(self.bucket, safe='')}/o"
-                   f"?uploadType=media&name={quote(self._ad(session_id), safe='')}")
+                   f"?uploadType=media&name={quote(ad, safe='')}")
             r = self._t.post(url, data=govde,
                              headers={**self._basliklar(),
                                       "Content-Type": "application/json"},
@@ -124,23 +137,48 @@ class PendingStore:
             r.raise_for_status()
             return True
         except Exception as e:
-            print(f"[kalicilik] yazilamadi ({session_id[:12]}): {e}", flush=True)
+            print(f"[kalicilik] yazilamadi ({ad[:40]}): {e}", flush=True)
             return False
 
-    def delete(self, session_id: str) -> bool:
-        """Kaydı sil — iş bitti, token'ın orada durmasına gerek yok."""
+    def _sil(self, ad: str) -> bool:
         if not self.enabled:
             return False
         try:
             url = (f"{GCS_API}/{quote(self.bucket, safe='')}/o/"
-                   f"{quote(self._ad(session_id), safe='')}")
+                   f"{quote(ad, safe='')}")
             r = self._t.delete(url, headers=self._basliklar(), timeout=self._timeout)
             if r.status_code not in (200, 204, 404):
                 r.raise_for_status()
             return True
         except Exception as e:
-            print(f"[kalicilik] silinemedi ({session_id[:12]}): {e}", flush=True)
+            print(f"[kalicilik] silinemedi ({ad[:40]}): {e}", flush=True)
             return False
+
+    def save(self, session_id: str, kayit: dict) -> bool:
+        """Kaydı yaz. Başarısızlık sessiz: kayıt yine çalışır."""
+        return self._yaz(self._ad(session_id), session_id, kayit)
+
+    def delete(self, session_id: str) -> bool:
+        """Kaydı sil — iş bitti, token'ın orada durmasına gerek yok."""
+        return self._sil(self._ad(session_id))
+
+    # ── Biten kaydın sonucu (token yok) ──
+
+    def save_result(self, session_id: str, sonuc: dict) -> bool:
+        return self._yaz(self._sonuc_adi(session_id), session_id, sonuc)
+
+    def load_result(self, session_id: str) -> Optional[dict]:
+        """Yoksa (404) ya da okunamazsa None — hata asla dışarı sızmaz."""
+        if not self.enabled:
+            return None
+        try:
+            veri = self._indir(self._sonuc_adi(session_id))
+            return veri if isinstance(veri, dict) else None
+        except Exception:
+            return None
+
+    def delete_result(self, session_id: str) -> bool:
+        return self._sil(self._sonuc_adi(session_id))
 
     def list_pending(self) -> list[dict]:
         """Geri yüklenmeye değer kayıtlar. Hata olursa BOŞ döner."""
