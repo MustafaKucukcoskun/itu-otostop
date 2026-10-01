@@ -65,6 +65,9 @@ const statusColor: Record<string, string> = {
   debounce: "text-status-wait",
   error: "text-status-err",
   dropped: "text-status-ok",
+  // İptal ne başarı ne hata. Eskiden motor iptali "dropped" yazıyordu ve
+  // iptal edilen ders burada yeşil "Bırakıldı" görünüyordu.
+  cancelled: "text-muted-foreground",
 };
 
 const statusDot: Record<string, string> = {
@@ -77,6 +80,7 @@ const statusDot: Record<string, string> = {
   debounce: "bg-status-wait",
   error: "bg-status-err",
   dropped: "bg-status-ok",
+  cancelled: "bg-muted-foreground",
 };
 
 const statusLabels: Record<string, string> = {
@@ -89,6 +93,7 @@ const statusLabels: Record<string, string> = {
   debounce: "Tekrar",
   error: "Hata",
   dropped: "Bırakıldı",
+  cancelled: "İptal",
 };
 
 type Tab = "add" | "drop";
@@ -322,9 +327,9 @@ export function CRNManager({
                     ) : null}
                     {result && (
                       <span
-                        className={`flex shrink-0 items-center gap-1.5 text-[11px] font-medium ${statusColor[status]}`}
+                        className={`flex shrink-0 items-center gap-1.5 text-[11px] font-medium ${statusColor[status] ?? "text-muted-foreground"}`}
                       >
-                        <span className={`h-1.5 w-1.5 rounded-full ${statusDot[status]}`} />
+                        <span className={`h-1.5 w-1.5 rounded-full ${statusDot[status] ?? "bg-muted-foreground"}`} />
                         {statusLabels[status] || status}
                       </span>
                     )}

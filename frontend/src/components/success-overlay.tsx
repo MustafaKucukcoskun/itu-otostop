@@ -2,6 +2,7 @@
 
 import { m, AnimatePresence } from "motion/react";
 import { Check, X } from "lucide-react";
+import { isOk } from "@/lib/crn-status";
 
 interface SuccessOverlayProps {
   show: boolean;
@@ -20,13 +21,13 @@ const STATUS_TEXT: Record<string, string> = {
   already: "Zaten kayıtlı",
   full: "Kontenjan dolu",
   conflict: "Çakışma",
+  upgrade: "Yükseltme",
+  debounce: "Tekrar",
+  dropped: "Bırakıldı",
+  cancelled: "İptal",
   pending: "Bekliyor",
   error: "Hata",
 };
-
-function isOk(status: string) {
-  return status === "success" || status === "already";
-}
 
 /**
  * Sonuç stempeli — kayıt bittiğinde tam ekran sonuç paneli.

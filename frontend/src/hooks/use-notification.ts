@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState, useEffect } from "react";
+import { isOk, ozetMetni } from "@/lib/crn-status";
 
 // ── Web Audio beep generator ──
 
@@ -141,19 +142,32 @@ export function useNotification() {
   // Convenience: notify registration result
   const notifyResult = useCallback(
     (
-      successCount: number,
-      totalCount: number,
       results: Record<string, { status: string; message: string }>,
+      dryRun: boolean,
     ) => {
-      if (successCount > 0) {
+      if (dryRun) {
+        playSound("warning");
+        sendNotification(
+          "Dry run bitti",
+          "Gerçek kayıt yapılmadı — zamanlama sonucu uygulamada.",
+        );
+        return;
+      }
+      const ozet = ozetMetni(results);
+      if (ozet) {
         playSound("success");
         const body = Object.entries(results)
-          .filter(([, r]) => r.status === "success")
+          .filter(([, r]) => isOk(r.status))
           .map(([crn]) => crn)
           .join(", ");
+        // Eski başlık "1/3" diyerek eksik kalanı ima ediyordu; o bilgi
+        // telefondan bildirime bakan öğrenci için kaybolmamalı.
+        const basarisiz = Object.values(results).filter(
+          (r) => !isOk(r.status),
+        ).length;
         sendNotification(
-          `${successCount}/${totalCount} Ders Kaydedildi! 🎉`,
-          `Başarılı CRN: ${body}`,
+          `${ozet} 🎉`,
+          `CRN: ${body}` + (basarisiz ? ` · ${basarisiz} başarısız` : ""),
         );
       } else {
         playSound("error");

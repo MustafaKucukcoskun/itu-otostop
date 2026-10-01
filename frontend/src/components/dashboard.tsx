@@ -36,6 +36,7 @@ import { WeeklySchedule } from "@/components/weekly-schedule";
 import { Panel } from "@/components/panel";
 import { SuccessOverlay } from "@/components/success-overlay";
 import { DashboardSkeleton } from "@/components/dashboard-skeleton";
+import { ozetMetni } from "@/lib/crn-status";
 
 // ── Wrapper: kullanıcı değiştiğinde key ile tam remount sağlar ──
 // Bu, tüm useState/useEffect/useRef'leri sıfırdan başlatır.
@@ -575,17 +576,18 @@ function DashboardContent() {
   // Toast + bildirim — yalnızca CANLI tamamlanmada (her remount'ta değil)
   useEffect(() => {
     if (ws.completionTick > 0) {
-      const successCount = Object.values(ws.crnResults).filter(
-        (r) => r.status === "success",
-      ).length;
-      const totalCount = Object.keys(ws.crnResults).length;
-      if (successCount > 0) {
-        toast.success(`${successCount} ders başarıyla kaydedildi`);
+      // Dry run'da motor sonuçları "success" diye SİMÜLE ediyor; burada
+      // "ders kaydedildi" demek öğrenciye kaydolduğunu düşündürür.
+      const ozet = ozetMetni(ws.crnResults);
+      if (dryRun) {
+        toast.info("Dry run bitti — gerçek kayıt yapılmadı");
+      } else if (ozet) {
+        toast.success(ozet);
       } else {
         toast.warning("Kayıt süreci bitti, başarılı ders yok");
       }
       // Sound + browser notification
-      notify.notifyResult(successCount, totalCount, ws.crnResults);
+      notify.notifyResult(ws.crnResults, dryRun);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ws.completionTick]);

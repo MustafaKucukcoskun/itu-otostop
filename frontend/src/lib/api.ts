@@ -76,6 +76,8 @@ export interface CRNResultItem {
     | "conflict"
     | "upgrade"
     | "debounce"
+    | "dropped"
+    | "cancelled"
     | "error";
   message: string;
 }
