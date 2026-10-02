@@ -1189,6 +1189,18 @@ async def registration_status(request: Request):
             crn_results=_sonuc_listesi(session.remote_results),
         )
 
+    # Çekilen yerel motorun fazı "waiting"te DONAR: çekilme bitiş değil,
+    # "done" yaymaz. Broker kaydı hedef+1 saatte temizlenince yukarıdaki dal
+    # atlanıp çekilen motorun fazı dönüyordu → arayüz saatlerce "Hedefe kalan"
+    # ve çalışmayan bir İptal butonunda kilitli kaldı (2 Ekim, hedef 14:00,
+    # 16:55'te İptal → "Çalışan kayıt yok"). Broker kaydı yoksa kayıt çoktan
+    # bitmiştir: konteynerin bildirdiği sonucu "bitti" olarak göster.
+    if session.engine.stood_down and broker.target_of(session_id) is None:
+        return RegistrationState(
+            phase="done", running=False,
+            crn_results=_sonuc_listesi(session.remote_results),
+        )
+
     crn_results = _sonuc_listesi(session.engine.crn_results)
 
     cal = None

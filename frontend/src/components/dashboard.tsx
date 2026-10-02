@@ -536,16 +536,19 @@ function DashboardContent() {
       // devreye girip bir an "HAZIR" ekranı parlatıyordu.
       setCancelling(true);
       await api.cancelRegistration();
-      // Gerçekten kaçan WS olayına karşı yedek — motorun en uzun ağ timeout'undan sonra
+      // Kaçan WS olayına karşı yedek — motorun en uzun ağ timeout'undan sonra.
+      // Durumu SUNUCUDAN oku: eskiden burada tıklama anındaki (bayat) ws.phase
+      // kontrol ediliyordu; iptal "done" ile bitse bile ekran sıfırlanıp
+      // sonuçlar siliniyordu.
       setTimeout(() => {
-        if (ws.phase !== "idle" && ws.phase !== "done") {
-          ws.softReset();
-        }
+        void ws.resync(true);
         setCancelling(false);
       }, 12000);
       toast.info("Kayıt iptal ediliyor…");
     } catch (err) {
       setCancelling(false);
+      // Sunucu "çalışan kayıt yok" diyorsa ekran yalan söylüyor: eşitle.
+      await ws.resync();
       toast.error(
         `İptal hatası: ${err instanceof Error ? err.message : "Bilinmeyen hata"}`,
       );
