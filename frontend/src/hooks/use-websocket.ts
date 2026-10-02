@@ -6,6 +6,7 @@ import {
   api,
   type WSEvent,
   type CalibrationResult,
+  type RegistrationState,
 } from "@/lib/api";
 
 export interface LogEntry {
@@ -25,6 +26,9 @@ const RECONNECT_MAX = 5000;
 function getReconnectDelay(attempt: number): number {
   return Math.min(RECONNECT_BASE * Math.pow(2, attempt), RECONNECT_MAX);
 }
+
+// Motorun çalıştığı fazlar — arayüz bunlarda İptal butonu ve geri sayım gösterir.
+const AKTIF_FAZLAR = new Set(["token_check", "calibrating", "waiting", "registering"]);
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
@@ -54,6 +58,56 @@ export function useWebSocket() {
   // sadece gerçek tamamlanmada tetiklenir, her sayfa açılışında değil.
   const [completionTick, setCompletionTick] = useState(0);
   const logIdRef = useRef(0);
+  const phaseRef = useRef("idle");
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
+  // Sunucunun söylediği durumu uygula. Sunucu "idle" derse (kayıt bilmiyor)
+  // eski bir aktif faz arayüzü KİLİTLEMEMELİ: eskiden bu durumda hiçbir şey
+  // yapılmıyordu ve ekran "Hedefe kalan" + çalışmayan bir İptal butonunda
+  // takılı kalıyordu (2 Ekim). Bitmiş bir sonucu ("done") ise silme.
+  const durumuUygula = useCallback((status: RegistrationState) => {
+    if (!status.phase || status.phase === "idle") {
+      if (AKTIF_FAZLAR.has(phaseRef.current)) {
+        setPhase("idle");
+        setCountdown(null);
+      }
+      return;
+    }
+    setPhase(status.phase);
+    if (status.countdown_seconds != null) {
+      setCountdown(status.countdown_seconds);
+    }
+    if (status.crn_results?.length) {
+      const map: Record<string, { status: string; message: string }> = {};
+      for (const r of status.crn_results) {
+        map[r.crn] = { status: r.status, message: r.message };
+      }
+      setCrnResults(map);
+    }
+    if (status.calibration) {
+      setCalibration(status.calibration);
+    }
+    if (status.phase === "done") {
+      setDone(true);
+    }
+  }, []);
+
+  /** Durumu sunucudan yeniden oku (ör. iptal 404 aldıysa ekran yalan söylüyor).
+   *  `iptalSonrasi`: iptal olayı kaçtıysa bitiş "TAMAMLANDI" değil "İPTAL" desin. */
+  const resync = useCallback(
+    async (iptalSonrasi = false) => {
+      try {
+        const st = await api.getStatus();
+        durumuUygula(st);
+        if (iptalSonrasi && st.phase === "done") setCancelled(true);
+      } catch {
+        /* backend offline — WS olayları sonra eşitler */
+      }
+    },
+    [durumuUygula],
+  );
 
   // Clerk token'ı asenkron alındığı için connect de asenkron.
   const connect = useCallback(async () => {
@@ -72,33 +126,7 @@ export function useWebSocket() {
         reconnectAttemptRef.current = 0; // Başarılı bağlantıda sayacı sıfırla
 
         // Reconnect sonrası backend state'i senkronize et
-        api
-          .getStatus()
-          .then((status) => {
-            if (status.phase && status.phase !== "idle") {
-              setPhase(status.phase);
-              if (status.countdown_seconds != null) {
-                setCountdown(status.countdown_seconds);
-              }
-              if (status.crn_results?.length) {
-                const map: Record<string, { status: string; message: string }> =
-                  {};
-                for (const r of status.crn_results) {
-                  map[r.crn] = { status: r.status, message: r.message };
-                }
-                setCrnResults(map);
-              }
-              if (status.calibration) {
-                setCalibration(status.calibration);
-              }
-              if (status.phase === "done") {
-                setDone(true);
-              }
-            }
-          })
-          .catch(() => {
-            /* backend offline — WS events will sync later */
-          });
+        void resync();
 
         // Start ping interval for latency measurement
         pingIntervalRef.current = setInterval(() => {
@@ -207,7 +235,7 @@ export function useWebSocket() {
       reconnectAttemptRef.current++;
       reconnectTimeoutRef.current = setTimeout(connect, delay);
     }
-  }, []);
+  }, [resync]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -265,5 +293,6 @@ export function useWebSocket() {
     clearLogs,
     reset,
     softReset,
+    resync,
   };
 }
