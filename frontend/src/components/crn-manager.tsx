@@ -168,18 +168,6 @@ export function CRNManager({
     const crn = match ? match[1] : trimmed;
     const label = match ? match[2].trim() : "";
 
-    // Aynı CRN hem eklenip hem bırakılamaz: OBS'e ECRN:[X], SCRN:[X] gider
-    // ve sonucun ne olacağı belirsiz — dolu bir derste yer kaybettirebilir.
-    const digerListe = tab === "add" ? scrnList : ecrnList;
-    if (digerListe.includes(crn)) {
-      toast.error(
-        tab === "add"
-          ? `${crn} bırakılacaklar listesinde — önce oradan çıkar`
-          : `${crn} eklenecekler listesinde — önce oradan çıkar`,
-      );
-      return;
-    }
-
     if (!activeList.includes(crn)) {
       setActiveList([...activeList, crn]);
     }
@@ -197,7 +185,7 @@ export function CRNManager({
       setLabels((prev) => ({ ...prev, [crn]: label }));
     }
     setInput("");
-  }, [input, activeList, setActiveList, tab, ecrnList, scrnList]);
+  }, [input, activeList, setActiveList, tab, ecrnList.length]);
 
   const removeCRN = (crn: string) => {
     setActiveList(activeList.filter((c) => c !== crn));
