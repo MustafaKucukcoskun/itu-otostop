@@ -36,7 +36,7 @@ import { WeeklySchedule } from "@/components/weekly-schedule";
 import { Panel } from "@/components/panel";
 import { SuccessOverlay } from "@/components/success-overlay";
 import { DashboardSkeleton } from "@/components/dashboard-skeleton";
-import { ozetMetni } from "@/lib/crn-status";
+import { birakilanEki, ozetMetni } from "@/lib/crn-status";
 
 // ── Wrapper: kullanıcı değiştiğinde key ile tam remount sağlar ──
 // Bu, tüm useState/useEffect/useRef'leri sıfırdan başlatır.
@@ -566,7 +566,9 @@ function DashboardContent() {
       } else if (ozet) {
         toast.success(ozet);
       } else {
-        toast.warning("Kayıt süreci bitti, başarılı ders yok");
+        toast.warning(
+          `Kayıt süreci bitti, başarılı ders yok${birakilanEki(ws.crnResults)}`,
+        );
       }
       // Sound + browser notification
       notify.notifyResult(ws.crnResults, dryRun);
