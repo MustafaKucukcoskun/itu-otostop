@@ -186,12 +186,6 @@ def robust_jitter(rtts: list[float]) -> float:
 # denemeyi ziyan eder.
 DEBOUNCE_BACKOFF = float(os.getenv("OBS_DEBOUNCE_BACKOFF", "5"))
 
-# Normal yeniden deneme aralığının varsayılanı. OBS 3 saniye içindeki tekrarı
-# VAL16 ile yok sayıyor; 3.0 tam sınırda (yukarıdaki canlı olay). Şema bu
-# tabana yükseltiyor (models.ConfigRequest); varsayılanlar da aynı yerde dursun
-# ki değeri geçmeyi unutan bir çağrı sessizce sınırın altına düşmesin.
-RETRY_ARALIK_VARSAYILAN = 3.5
-
 FIRE_CONNECT_TIMEOUT = float(os.getenv("OBS_CONNECT_TIMEOUT", "5"))
 FIRE_READ_TIMEOUT = float(os.getenv("OBS_READ_TIMEOUT", "30"))
 
@@ -316,7 +310,7 @@ class RegistrationEngine:
         scrn_list: list[str] | None = None,
         kayit_saati: str = "",
         max_deneme: int = 60,
-        retry_aralik: float = RETRY_ARALIK_VARSAYILAN,
+        retry_aralik: float = 3.0,
         dry_run: bool = False,
     ):
         self.token = token

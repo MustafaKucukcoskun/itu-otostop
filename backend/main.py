@@ -27,7 +27,7 @@ from models import (
     RegistrationState, TokenTestResult, CRNResultItem, CRNStatus,
 )
 from auth import ClerkVerifier
-from engine import RegistrationEngine, RETRY_ARALIK_VARSAYILAN
+from engine import RegistrationEngine
 from isolation import IsolationBroker
 from token_expiry import expires_before, remaining_after_target
 from persistence import PendingStore
@@ -50,7 +50,7 @@ class SessionState:
     scrn_list: list[str] = field(default_factory=list)
     kayit_saati: str = ""
     max_deneme: int = 60
-    retry_aralik: float = RETRY_ARALIK_VARSAYILAN
+    retry_aralik: float = 3.0
     dry_run: bool = False
     engine: Optional[RegistrationEngine] = None
     engine_thread: Optional[threading.Thread] = None
@@ -405,7 +405,7 @@ def _restore_pending() -> int:
             s.scrn_list = list(kayit.get("scrn_list") or [])
             s.kayit_saati = kayit.get("kayit_saati") or ""
             s.max_deneme = int(kayit.get("max_deneme") or 60)
-            s.retry_aralik = float(kayit.get("retry_aralik") or RETRY_ARALIK_VARSAYILAN)
+            s.retry_aralik = float(kayit.get("retry_aralik") or 3.5)
             s.dry_run = bool(kayit.get("dry_run"))
             if not (s.token and s.ecrn_list and s.kayit_saati):
                 continue
