@@ -215,6 +215,43 @@ IPUCLARI = {
 }
 
 
+def birak_al_birlestir(ekleme: Optional[dict], birakma: Optional[dict]) -> dict:
+    """Hem Bırak hem Ekle listesindeki dersin NİHAİ durumu.
+
+    Bırak-al akışı: Bırak:[A], Ekle:[B, A] — B alınamazsa A geri alınsın.
+    OBS A için iki ayrı sonuç döndürüyor; motor ikisini aynı anahtara yazıyor
+    ve sonra işlenen bırakma eklemeyi eziyordu: A geri alınmış olsa da ekran
+    "Bırakıldı" diyordu. Dersin akıbetine ikisi BİRLİKTE karar verir:
+
+      bırakma bilinmiyor          → ekleme sonucu
+      bırakılamadı                → bırakma hatası (takas hiç olmadı)
+      bırakıldı + eklendi         → kayıtlı: geri alındı
+      bırakıldı + zaten kayıtlı   → BIRAKILMIŞ: ekleme bırakmadan önce işlendi
+      bırakıldı + ekleme bekliyor → bekliyor
+      bırakıldı + ekleme olmadı   → bırakılmış
+    """
+    ekleme = ekleme or {"status": "pending", "message": "Bekliyor"}
+    if birakma and birakma.get("status") == "bilinmiyor":
+        # İstek gitti, OBS bırakma sonucunu söylemedi. Eklenebildiyse ders
+        # şu an kayıtlı (bırakılmadan eklenemezdi); değilse akıbet belirsiz.
+        if ekleme.get("status") == "success":
+            return dict(ekleme)
+        return {"status": "error",
+                "message": "Bırakma sonucu bildirilmedi — ÖBS'den kontrol edin"}
+    if not birakma or birakma.get("status") != "dropped":
+        return dict(birakma) if birakma else dict(ekleme)
+    durum = ekleme.get("status")
+    if durum == "success":
+        return {"status": "success", "message": "Bırakıldı, geri alındı"}
+    if durum in ("pending", "debounce"):
+        return {"status": "pending", "message": "Bırakıldı, geri alma bekleniyor"}
+    if durum == "already":
+        return {"status": "dropped",
+                "message": "Bırakıldı — geri alınamadı (ekleme önce işlendi)"}
+    return {"status": "dropped",
+            "message": f"Bırakıldı — geri alınmadı ({ekleme.get('message', '')})"}
+
+
 @dataclass
 class CalibrationData:
     server_offset: float = 0.0
@@ -343,6 +380,10 @@ class RegistrationEngine:
         # YAPILMAZ: tetik yolunda ağ beklemek hassasiyeti bozar.
         self._rtt_jitter: float = 0.0003
         self._crn_results: dict[str, dict] = {}
+        # Hem Bırak hem Ekle listesindeki derslerin BIRAKMA sonucu. Ayrı
+        # tutuluyor: _crn_results'a yazılınca eklemenin sonucunu eziyordu.
+        # Dışarıya giden görünüm ikisini birleştirir (_gorunen_sonuclar).
+        self._birak_al: dict[str, dict] = {}
         self._trigger_time: Optional[float] = None
         # Tetik öncesi hazırlanan istek (eşzamanlılık: tetikten sonra iş kalmasın)
         self._prepped: Optional[requests.PreparedRequest] = None
@@ -459,7 +500,21 @@ class RegistrationEngine:
 
     @property
     def crn_results(self) -> dict:
-        return self._crn_results
+        return self._gorunen_sonuclar()
+
+    def _gorunen_sonuclar(self) -> dict:
+        """Arayüze, /status'a ve diske giden sonuçlar — bırak-al birleşik."""
+        sonuc = dict(self._crn_results)
+        for crn, birakma in self._birak_al.items():
+            sonuc[crn] = birak_al_birlestir(sonuc.get(crn), birakma)
+        return sonuc
+
+    def _birakma_yaz(self, crn: str, sonuc: dict) -> None:
+        """Bırakma sonucunu yaz; ders Ekle listesinde de varsa eklemeyi EZME."""
+        if crn in self.ecrn_list:
+            self._birak_al[crn] = sonuc
+        else:
+            self._crn_results[crn] = sonuc
 
     @property
     def trigger_time(self) -> Optional[float]:
@@ -1080,7 +1135,7 @@ class RegistrationEngine:
         modalı gösteriliyordu — hiçbir şey tamamlanmamışken.
         """
         return {
-            "results": dict(self._crn_results),
+            "results": self._gorunen_sonuclar(),
             "cancelled": self._cancelled.is_set(),
             "stood_down": self._stood_down.is_set(),
         }
@@ -1192,7 +1247,7 @@ class RegistrationEngine:
             if deneme <= 2:
                 for crn in kalan:
                     self._crn_results[crn] = {"status": "debounce", "message": "DRY RUN: Sistem henüz açılmadı"}
-                self._emit("crn_update", {"results": dict(self._crn_results)})
+                self._emit("crn_update", {"results": self._gorunen_sonuclar()})
                 time.sleep(0.1)
             else:
                 for crn in list(kalan):
@@ -1201,8 +1256,8 @@ class RegistrationEngine:
                 # Bırakmalar da simüle edilmeli; yoksa sondaki _finalize_all
                 # onları "sonuç bildirilmedi" diye kırmızıya çevirir.
                 for crn in self.scrn_list:
-                    self._crn_results[crn] = {"status": "dropped", "message": "DRY RUN: Simüle edilmiş bırakma"}
-                self._emit("crn_update", {"results": dict(self._crn_results)})
+                    self._birakma_yaz(crn, {"status": "dropped", "message": "DRY RUN: Simüle edilmiş bırakma"})
+                self._emit("crn_update", {"results": self._gorunen_sonuclar()})
                 break
 
         basarili = len(self.ecrn_list) - len(kalan)
@@ -1363,7 +1418,7 @@ class RegistrationEngine:
                     rc = item.get("resultCode")
                     if item.get("statusCode") == 0:
                         self._log(f"✅ {crn} → BIRAKILDI")
-                        self._crn_results[crn] = {"status": "dropped", "message": "Bırakıldı"}
+                        self._birakma_yaz(crn, {"status": "dropped", "message": "Bırakıldı"})
                     elif rc in ("VAL02", "VAL16"):
                         continue  # henüz işlenmedi — sonraki istekte yine gider
                     else:
@@ -1373,11 +1428,11 @@ class RegistrationEngine:
                         desc = f"Bırakılamadı ({rc})" + (
                             f": {ek}" if ek else " — ÖBS'den kontrol edin")
                         self._log(f"❌ {crn} → {desc}", "error")
-                        self._crn_results[crn] = {"status": "error", "message": desc}
+                        self._birakma_yaz(crn, {"status": "error", "message": desc})
                     kalan_scrn.remove(crn)
                     crn_degisti = True
 
-                self._emit("crn_update", {"results": dict(self._crn_results)})
+                self._emit("crn_update", {"results": self._gorunen_sonuclar()})
             else:
                 tum_val02 = False
                 self._log(f"HTTP {resp.status_code}: {resp.text[:200]}", "error")
@@ -1401,6 +1456,16 @@ class RegistrationEngine:
             self._log(f"  Kalan: {kalan}", "warning")
         if kalan_scrn:
             self._log(f"  Bırakma sonucu gelmedi: {kalan_scrn}", "warning")
+            # Bırak-al dersinde eklemenin sonucu ("Çakışma" gibi) dersin elde
+            # olduğunu ima eder; oysa bırakılıp bırakılmadığı bilinmiyor.
+            if not self._cancelled.is_set():
+                isaretli = False
+                for crn in kalan_scrn:
+                    if crn in self.ecrn_list:
+                        self._birak_al[crn] = {"status": "bilinmiyor", "message": ""}
+                        isaretli = True
+                if isaretli:
+                    self._emit("crn_update", {"results": self._gorunen_sonuclar()})
         if kalan or kalan_scrn:
             self._finalize_pending(kalan + kalan_scrn)
 
@@ -1451,7 +1516,7 @@ class RegistrationEngine:
                 }
             degisti = True
         if degisti:
-            self._emit("crn_update", {"results": dict(self._crn_results)})
+            self._emit("crn_update", {"results": self._gorunen_sonuclar()})
 
     # ── Saat yardımcısı ──
 
