@@ -63,3 +63,21 @@ def test_timeout_is_a_whole_number_of_seconds():
                                              job_launcher.hesapla_timeout(1234.7))
     assert body["overrides"]["timeout"].endswith("s")
     assert float(_timeout_of(body)) == _timeout_of(body)
+
+
+# ══════════════════════════════════════════════════════════════
+# Varsayılan bir sayı bırakmak, tuzağı açık bırakmaktır
+# ══════════════════════════════════════════════════════════════
+#
+# Sabit 1800 İKİ yerde yazılıydı: denetleyicinin çağrısında ve launch()'ın
+# varsayılanında. Denetleyiciyi düzeltmek yetmez — varsayılan orada durdukça
+# yeni bir çağıran sessizce eski hataya düşer: hedeften bir saat önce açılan
+# konteyner, hedefe varmadan Cloud Run tarafından öldürülür.
+
+
+def test_launch_requires_an_explicit_timeout():
+    """Çağıran düşünmek zorunda olmalı; sessiz bir varsayılan olmamalı."""
+    import inspect
+    p = inspect.signature(job_launcher.JobLauncher.launch).parameters["task_timeout"]
+    assert p.default is inspect.Parameter.empty, (
+        f"task_timeout varsayilani var: {p.default} — tuzak acik")
