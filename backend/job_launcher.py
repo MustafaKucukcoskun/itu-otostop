@@ -125,8 +125,13 @@ class JobLauncher:
             self._token_exp = time.time() + float(data.get("expires_in", 3600))
             return self._token
 
-    def launch(self, session_id: str, ticket: str, task_timeout: int = 1800) -> str:
-        """Konteyneri açar; çalıştırma adını döndürür. Hata fırlatabilir."""
+    def launch(self, session_id: str, ticket: str, task_timeout: int) -> str:
+        """Konteyneri aç; çalıştırma adını döndür. Hata fırlatabilir.
+
+        `task_timeout` ZORUNLU, varsayılanı yok: eskiden 1800'dü ve bu sayı
+        hedeften bir saat önce açılan konteyneri hedefe varmadan öldürürdü.
+        Değeri `hesapla_timeout(kalan)` üretir.
+        """
         url, body = build_run_request(self.cfg, session_id, ticket, task_timeout)
         r = requests.post(
             url,
