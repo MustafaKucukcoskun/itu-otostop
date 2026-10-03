@@ -2,7 +2,7 @@
 
 import { m, AnimatePresence } from "motion/react";
 import { Check, X } from "lucide-react";
-import { isOk } from "@/lib/crn-status";
+import { isAlindi, isBasarisiz, isNotr } from "@/lib/crn-status";
 
 interface SuccessOverlayProps {
   show: boolean;
@@ -39,10 +39,8 @@ export function SuccessOverlay({
   dryRun = false,
   onDismiss,
 }: SuccessOverlayProps) {
-  const successCount = results.filter((r) => isOk(r.status)).length;
-  const failCount = results.filter(
-    (r) => !isOk(r.status) && r.status !== "pending",
-  ).length;
+  const successCount = results.filter((r) => isAlindi(r.status)).length;
+  const failCount = results.filter((r) => isBasarisiz(r.status)).length;
   const allFailed = successCount === 0 && failCount > 0;
 
   // Dry run'da motor CRN'leri "success" olarak işaretliyor (simülasyon).
@@ -135,9 +133,9 @@ export function SuccessOverlay({
                       </span>
                       <span
                         className={`shrink-0 uppercase tracking-wider ${
-                          isOk(r.status)
+                          isAlindi(r.status) || r.status === "dropped"
                             ? "text-status-ok"
-                            : r.status === "pending"
+                            : isNotr(r.status)
                               ? "text-muted-foreground"
                               : "text-status-err"
                         }`}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState, useEffect } from "react";
-import { isOk, ozetMetni } from "@/lib/crn-status";
+import { birakilanEki, isAlindi, isBasarisiz, ozetMetni } from "@/lib/crn-status";
 
 // ── Web Audio beep generator ──
 
@@ -157,13 +157,13 @@ export function useNotification() {
       if (ozet) {
         playSound("success");
         const body = Object.entries(results)
-          .filter(([, r]) => isOk(r.status))
+          .filter(([, r]) => isAlindi(r.status))
           .map(([crn]) => crn)
           .join(", ");
         // Eski başlık "1/3" diyerek eksik kalanı ima ediyordu; o bilgi
         // telefondan bildirime bakan öğrenci için kaybolmamalı.
-        const basarisiz = Object.values(results).filter(
-          (r) => !isOk(r.status),
+        const basarisiz = Object.values(results).filter((r) =>
+          isBasarisiz(r.status),
         ).length;
         sendNotification(
           `${ozet} 🎉`,
@@ -173,7 +173,7 @@ export function useNotification() {
         playSound("error");
         sendNotification(
           "Kayıt Başarısız",
-          "Hiçbir ders kaydedilemedi. Detaylar için uygulamayı kontrol edin.",
+          `Hiçbir ders kaydedilemedi${birakilanEki(results)}. Detaylar için uygulamayı kontrol edin.`,
         );
       }
     },
