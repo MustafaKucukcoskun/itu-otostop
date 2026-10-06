@@ -1,5 +1,7 @@
 # 🎓 İTÜ OBS Ders Kayıt Otomasyonu (Otostop)
 
+🇬🇧 [English README](README.en.md)
+
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 İTÜ Öğrenci Bilgi Sistemi (OBS) üzerinden ders kayıt işlemini otomatikleştiren full-stack uygulama. Milisaniye düzeyinde zamanlama hassasiyeti ile kayıt saati geldiğinde derslere anında kayıt olmanızı sağlar.
@@ -10,7 +12,7 @@
 
 | Özellik | Açıklama |
 |---------|----------|
-| 🎯 **Hassas Zamanlama** | HTTP `Date` header geçişi ile sunucu saati ±3ms doğrulukta ölçülür |
+| 🎯 **Hassas Zamanlama** | NTP ile saat kalibrasyonu, OBS'e RTT ölçümü ve ölçüme dayalı güvenlik tamponu |
 | ⚡ **Sıfır Gecikme** | TCP+TLS bağlantı ısıtma + PreparedRequest ile ilk istek ~6ms |
 | 📡 **Gerçek Zamanlı UI** | WebSocket üzerinden canlı log, geri sayım ve CRN durum takibi |
 | 🔄 **Akıllı Retry** | 3sn debounce'a uygun VAL02/VAL16 retry stratejisi |
@@ -176,7 +178,7 @@ tetik = hedef_epoch + server_offset - rtt_tek_yon + buffer
 gcloud run deploy itu-otostop-api \
   --source backend/ \
   --platform managed \
-  --region europe-west1 \
+  --region europe-west3 \
   --allow-unauthenticated \
   --port 8080 \
   --memory 1Gi --cpu 2 \
